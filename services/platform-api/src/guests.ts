@@ -1,0 +1,168 @@
+import type { FastifyInstance } from "fastify";
+import { pool, tx } from "./db.ts";
+import { requireActor, allow, problem } from "./auth.ts";
+import { audit } from "./groups.ts";
+import { moveNameAcrossHouse } from "./people.ts";
+
+export const ALLERGENS = ["celery", "cereals_gluten", "crustaceans", "eggs", "fish", "lupin", "milk", "molluscs", "mustard", "nuts", "peanuts", "sesame", "soya", "sulphites"];
+const SEVERITY = ["PREFERENCE", "INTOLERANCE", "ALLERGY", "ANAPHYLAXIS"];
+const COLS = `p.id, p.given_name, p.family_name, p.email, p.phone, p.organisation, p.notes, p.updated_at,
+  d.diet, d.allergens, d.severity, d.notes diet_notes, d.declared_at,
+  (select count(distinct (o.room_id, o.on_date)) from room_occupancy o where o.person_id=p.id) nights_on_board`;
+
+/** Guest records. Dietary/allergen data is a safety record: every change is audited and the kitchen sees it. */
+export default async function routes(f: FastifyInstance) {
+  f.get<{ Querystring: { q?: string; allergens?: string; limit?: string } }>("/guests", async (req, reply) => {
+    const a = await requireActor(req, reply); if (!a || !allow(a, "guest.read", reply)) return;
+    const q = (req.query.q ?? "").trim();
+    const r = await pool.query(`select ${COLS} from person p left join diet_profile d on d.person_id=p.id
+      where p.tenant_id=$1 and ($2 = '' or (p.given_name || ' ' || p.family_name) ilike '%' || $2 || '%' or p.email ilike '%' || $2 || '%' or p.organisation ilike '%' || $2 || '%')
+        and ($3::boolean is not true or coalesce(array_length(d.allergens,1),0) > 0)
+      order by p.family_name, p.given_name limit $4`, [a.tenantId, q, req.query.allergens === "1", Number(req.query.limit ?? 100)]);
+    return { items: r.rows, allergens: ALLERGENS, severities: SEVERITY };
+  });
+
+  f.post<{ Body: { given_name: string; family_name: string; email?: string; phone?: string; organisation?: string; notes?: string } }>("/guests", async (req, reply) => {
+    const a = await requireActor(req, reply); if (!a || !allow(a, "guest.write", reply)) return;
+    const b = req.body ?? {} as any;
+    if (!b.given_name?.trim() || !b.family_name?.trim()) return reply.code(422).send(problem(422, "validation", "First and last name are required"));
+    return tx(async c => {
+      const r = await c.query(`insert into person (tenant_id, given_name, family_name, email, phone, organisation, notes) values ($1,$2,$3,$4,$5,$6,$7) returning id`,
+        [a.tenantId, b.given_name.trim(), b.family_name.trim(), b.email?.trim() || null, b.phone?.trim() || null, b.organisation?.trim() || null, b.notes || null]);
+      await audit(c, a, "person", r.rows[0].id, "guest.create", { payload: { name: `${b.given_name} ${b.family_name}` } });
+      reply.code(201); return { id: r.rows[0].id };
+    });
+  });
+
+  f.patch<{ Params: { id: string }; Body: Record<string, string | null> }>("/guests/:id", async (req, reply) => {
+    const a = await requireActor(req, reply); if (!a || !allow(a, "guest.write", reply)) return;
+    const allowed = ["given_name", "family_name", "email", "phone", "organisation", "notes"];
+    return tx(async c => {
+      const cur = (await c.query(`select given_name, family_name, email from person where id=$1 and tenant_id=$2 for update`, [req.params.id, a.tenantId])).rows[0];
+      if (!cur) { reply.code(404); return problem(404, "not_found", "No such guest"); }
+      const sets: string[] = []; const vals: unknown[] = [];
+      for (const k of allowed) if (k in (req.body ?? {})) { vals.push((req.body as any)[k] || null); sets.push(`${k}=$${vals.length}`); }
+      if (!sets.length) return reply.code(422).send(problem(422, "validation", "Nothing to change"));
+      vals.push(req.params.id, a.tenantId);
+      await c.query(`update person set ${sets.join(",")} where id=$${vals.length - 1} and tenant_id=$${vals.length}`, vals);
+      const nextGiven = ("given_name" in (req.body ?? {}) ? String((req.body as any).given_name || "") : cur.given_name).trim();
+      const nextFamily = ("family_name" in (req.body ?? {}) ? String((req.body as any).family_name || "") : cur.family_name).trim();
+      const oldName = `${cur.given_name} ${cur.family_name}`.trim();
+      const newName = `${nextGiven} ${nextFamily}`.trim();
+      const moved = await moveNameAcrossHouse(c, {
+        propertyId: a.propertyId,
+        oldName,
+        newName,
+        email: ("email" in (req.body ?? {}) ? (req.body as any).email : cur.email) || cur.email,
+      });
+      await audit(c, a, "person", req.params.id, "guest.update", { payload: { from: oldName, to: newName, moved } });
+      return { ok: true, moved };
+    });
+  });
+
+  /** Replace the dietary declaration. */
+  f.put<{ Params: { id: string }; Body: { diet?: string[]; allergens?: string[]; severity?: string | null; notes?: string | null } }>("/guests/:id/diet", async (req, reply) => {
+    const a = await requireActor(req, reply); if (!a || !allow(a, "diet.write", reply)) return;
+    const b = req.body ?? {};
+    const allergens = (b.allergens ?? []).filter(x => ALLERGENS.includes(x));
+    if (b.severity && !SEVERITY.includes(b.severity)) return reply.code(422).send(problem(422, "validation", "Bad severity"));
+    if (allergens.length && !b.severity) return reply.code(422).send(problem(422, "validation", "Say how serious the allergy is"));
+    return tx(async c => {
+      const p = (await c.query(`select id from person where id=$1 and tenant_id=$2`, [req.params.id, a.tenantId])).rows[0];
+      if (!p) { reply.code(404); return problem(404, "not_found", "No such guest"); }
+      const prev = (await c.query(`select diet, allergens, severity from diet_profile where person_id=$1`, [p.id])).rows[0];
+      await c.query(`insert into diet_profile (tenant_id, person_id, diet, allergens, severity, notes, declared_by_user_id, declared_at, version)
+        values ($1,$2,$3,$4,$5,$6,$7, now(), 1)
+        on conflict (person_id) do update set diet=excluded.diet, allergens=excluded.allergens, severity=excluded.severity, notes=excluded.notes, declared_by_user_id=excluded.declared_by_user_id, declared_at=now(), version=diet_profile.version+1`,
+        [a.tenantId, p.id, b.diet ?? [], allergens, b.severity ?? null, b.notes ?? null, a.userId]);
+      await audit(c, a, "person", p.id, "diet.declare", { payload: { from: prev ?? null, to: { diet: b.diet ?? [], allergens, severity: b.severity ?? null } } });
+      return { ok: true };
+    });
+  });
+
+  /** Attach a person record to a name on the board (all half-days of that name in that room around the date). */
+  f.post<{ Body: { room: string; label: string; date: string; person_id: string | null } }>("/guests/attach", async (req, reply) => {
+    const a = await requireActor(req, reply); if (!a || !allow(a, "guest.write", reply)) return;
+    const { room, label, date, person_id } = req.body ?? {} as any;
+    if (!room || !label || !date) return reply.code(422).send(problem(422, "validation", "room, label and date are required"));
+    const r = await pool.query(`update room_occupancy o set person_id=$4 from room r where r.id=o.room_id and r.property_id=$1 and r.number=$2 and o.occupant_label=$3 and o.on_date between $5::date - 30 and $5::date + 30`, [a.propertyId, room, label, person_id, date]);
+    return { ok: true, rows: r.rowCount };
+  });
+
+  /** Guest 360 — full profile */
+  f.get<{ Params: { id: string } }>("/guests/:id", async (req, reply) => {
+    const a = await requireActor(req, reply); if (!a || !allow(a, "guest.read", reply)) return;
+    const r = await pool.query(`
+      SELECT p.id, p.given_name || ' ' || p.family_name AS display_name, p.email, p.organisation,
+             p.dietary_notes, p.accessibility_notes, p.room_preference, p.arrival_preference,
+             p.travel_notes, p.notes, p.marketing_ok, p.vip, p.flagged, p.flagged_reason,
+             coalesce(ga.email_verified, false) AS email_verified,
+             p.created_at
+      FROM person p
+      LEFT JOIN guest_account ga ON ga.email = p.email AND ga.tenant_id = p.tenant_id
+      WHERE p.id = $1 AND p.tenant_id = $2`, [req.params.id, a.tenantId]);
+    if (!r.rows[0]) return reply.code(404).send(problem(404, "not_found", "Guest not found"));
+    return r.rows[0];
+  });
+
+  /** Guest 360 — patch profile (dietary notes, accessibility, preferences, VIP, flagged) */
+  f.patch<{ Params: { id: string } }>("/guests/:id/profile", async (req: any, reply) => {
+    const a = await requireActor(req, reply); if (!a || !allow(a, "guest.update", reply)) return;
+    const allowed = ["dietary_notes","accessibility_notes","room_preference","arrival_preference","travel_notes","notes","marketing_ok","vip","flagged","flagged_reason"];
+    const fields = Object.entries(req.body ?? {}).filter(([k]) => allowed.includes(k));
+    if (!fields.length) return { ok: true };
+    const sets = fields.map(([k], i) => `${k}=$${i + 2}`).join(", ");
+    const vals = fields.map(([, v]) => v);
+    await pool.query(`UPDATE person SET ${sets} WHERE id=$1 AND tenant_id=${a.tenantId}`, [req.params.id, ...vals]);
+    return { ok: true };
+  });
+
+  /** Guest 360 — stay history */
+  f.get<{ Params: { id: string } }>("/guests/:id/stays", async (req, reply) => {
+    const a = await requireActor(req, reply); if (!a || !allow(a, "guest.read", reply)) return;
+    const r = await pool.query(`
+      SELECT ge.id, ge.programme_name, ge.arrival::text, ge.departure::text, ge.status, ge.people,
+             coalesce(array_agg(rm.number ORDER BY rm.number) FILTER (WHERE rm.number IS NOT NULL), '{}') AS rooms
+      FROM guest_enquiry ge
+      LEFT JOIN guest_room_booking grb ON grb.enquiry_id = ge.id
+      LEFT JOIN room rm ON rm.id = grb.room_id
+      WHERE ge.guest_id = (SELECT id FROM guest_account WHERE email = (SELECT email FROM person WHERE id=$1 AND tenant_id=$2) AND tenant_id=$2)
+        AND ge.property_id = $3
+      GROUP BY ge.id ORDER BY ge.arrival DESC`, [req.params.id, a.tenantId, a.propertyId]);
+    return { items: r.rows };
+  });
+
+  /** Guest 360 — communications log */
+  f.get<{ Params: { id: string } }>("/guests/:id/communications", async (req, reply) => {
+    const a = await requireActor(req, reply); if (!a || !allow(a, "guest.read", reply)) return;
+    const r = await pool.query(`
+      SELECT c.id, c.kind, c.direction, c.subject, c.body, c.status, c.created_at
+      FROM guest_communication c
+      WHERE c.guest_id = (SELECT id FROM guest_account WHERE email = (SELECT email FROM person WHERE id=$1 AND tenant_id=$2) AND tenant_id=$2)
+        AND c.property_id = $3
+      ORDER BY c.created_at DESC LIMIT 100`, [req.params.id, a.tenantId, a.propertyId]);
+    return { items: r.rows };
+  });
+
+  /** Guest 360 — complaints */
+  f.get<{ Params: { id: string } }>("/guests/:id/complaints", async (req, reply) => {
+    const a = await requireActor(req, reply); if (!a || !allow(a, "guest.read", reply)) return;
+    const r = await pool.query(`
+      SELECT c.id, c.severity, c.department, c.description, c.resolution, c.resolved_at, c.created_at
+      FROM guest_complaint c
+      WHERE c.guest_id = (SELECT id FROM guest_account WHERE email = (SELECT email FROM person WHERE id=$1 AND tenant_id=$2) AND tenant_id=$2)
+        AND c.property_id = $3
+      ORDER BY c.created_at DESC`, [req.params.id, a.tenantId, a.propertyId]);
+    return { items: r.rows };
+  });
+
+  /** Who is in house with a declared allergy or diet, per day — for the kitchen. */
+  f.get<{ Querystring: { from: string; to: string } }>("/guests/in-house", async (req, reply) => {
+    const a = await requireActor(req, reply); if (!a || !allow(a, "diet.read", reply)) return;
+    const r = await pool.query(`select o.on_date::text date, p.id, p.given_name || ' ' || p.family_name name, r.number room, d.diet, d.allergens, d.severity, d.notes, g.name group_name
+      from room_occupancy o join room r on r.id=o.room_id join person p on p.id=o.person_id join diet_profile d on d.person_id=p.id left join booking_group g on g.id=o.group_id
+      where r.property_id=$1 and o.on_date between $2 and $3 and (coalesce(array_length(d.allergens,1),0) > 0 or coalesce(array_length(d.diet,1),0) > 0)
+      group by o.on_date, p.id, r.number, d.diet, d.allergens, d.severity, d.notes, g.name order by o.on_date, d.severity desc nulls last, name`, [a.propertyId, req.query.from, req.query.to]);
+    return { items: r.rows };
+  });
+}

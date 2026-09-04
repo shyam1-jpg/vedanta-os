@@ -1,0 +1,16 @@
+{
+  "name": "Vedanta Retreat OS",
+  "short_name": "Vedanta OS",
+  "description": "The Vedanta Way — Retreat Operating System",
+  "start_url": "/house/",
+  "display": "standalone",
+  "background_color": "#faf8f3",
+  "theme_color": "#1a3328",
+  "orientation": "portrait-primary",
+  "icons": [
+    { "src": "/icon-192.png", "sizes": "192x192", "type": "image/png", "purpose": "any maskable" },
+    { "src": "/icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "any maskable" }
+  ],
+  "categories": ["business", "productivity"],
+  "lang": "en-GB"
+}

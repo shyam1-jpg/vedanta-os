@@ -1,0 +1,416 @@
+"use client";
+import { useEffect, useMemo, useState } from "react";
+import Link from "next/link";
+import { type Group, type GroupStatus, RETREAT_TYPES } from "@/lib/data";
+import { useStore } from "@/lib/store";
+import NewGroupForm from "@/components/NewGroupForm";
+import EditGroupForm from "@/components/EditGroupForm";
+import EmailDialog from "@/components/EmailDialog";
+import { bookingValue, gbp } from "@/lib/pricing";
+import { api, ApiError } from "@/lib/api";
+import { fmt, nights } from "@/lib/format";
+
+const TODAY = new Date().toISOString().slice(0, 10);
+const FLOW: GroupStatus[] = ["ENQUIRY", "PROVISIONAL", "CONFIRMED", "IN_HOUSE", "COMPLETED"];
+const NEXT: Partial<Record<GroupStatus, { cmd: string; api: string; to: GroupStatus }[]>> = {
+  ENQUIRY: [{ cmd: "Hold provisionally", api: "hold", to: "PROVISIONAL" }, { cmd: "Confirm", api: "confirm", to: "CONFIRMED" }],
+  PROVISIONAL: [{ cmd: "Confirm", api: "confirm", to: "CONFIRMED" }],
+  CONFIRMED: [{ cmd: "Check group in", api: "check_in", to: "IN_HOUSE" }],
+  IN_HOUSE: [{ cmd: "Check group out", api: "check_out", to: "COMPLETED" }],
+};
+
+export default function GroupsScreen() {
+  const { groups, updateGroup, command, can, loading, reload } = useStore();
+  const [filter, setFilter] = useState<"upcoming" | "attention" | "all">("upcoming");
+  const [selId, setSelId] = useState<string | null>(null);
+  const [creating, setCreating] = useState(false);
+  const [editing, setEditing] = useState(false);
+  const [formUrl, setFormUrl] = useState<string | null>(null);
+  const [email, setEmail] = useState<"form_link" | "confirmation" | null>(null);
+  const [attendees, setAttendees] = useState<{ given_name: string; family_name: string; diet: string[] | null; allergens: string[] | null; severity: string | null; room_preference: string | null; arrives_early: boolean }[] | null>(null);
+  const [toast, setToast] = useState<string | null>(null);
+  const [folio, setFolio] = useState<{ id: string; total_agreed: number | null; total_agreed_fmt: string | null; total_paid: number; total_paid_fmt: string; balance_due: number; balance_due_fmt: string; status: string; payments: { id: string; kind: string; method: string | null; amount: number; amount_fmt: string; reference: string | null; note: string | null; due_date: string | null; paid_at: string | null }[]; invoices: { id: string; number: string; kind: string; amount: number; amount_fmt: string; issued_at: string; due_date: string | null; sent_at: string | null }[] } | null>(null);
+  const [folioTab, setFolioTab] = useState<"payments" | "invoices">("payments");
+  const [payDraft, setPayDraft] = useState({ kind: "deposit", method: "bank_transfer", amount: "", reference: "", note: "" });
+  const [invDraft, setInvDraft] = useState({ kind: "invoice", amount: "", due_date: "" });
+  const [comms, setComms] = useState<{ id: string; kind: string; scheduled_for: string; sent_at: string | null; cancelled_at: string | null; email_status: string | null; to_email: string | null }[]>([]);
+  const [enquiries, setEnquiries] = useState<{ id: string; name: string; email: string; people: number; arrival: string; departure: string; notes: string | null; programme_name?: string | null; dietary_notes?: string | null; accessibility_notes?: string | null; room_preference?: string | null; arrival_time_note?: string | null; travel_notes?: string | null }[]>([]);
+  const [sheet, setSheet] = useState<{ programme: string; guests: number | null; rooms_placed: string[]; rooms_short: number; meals: { breakfast: number; lunch: number; dinner: number } | null; dietary: string | null; departments: { code: string; work: string }[] } | null>(null);
+  const [stays, setStays] = useState<{ id: string; name: string; email: string; people: number; arrival: string; departure: string; status: string; programme_name: string | null; rooms: { number: string; section: string | null }[]; booking_id: string | null }[]>([]);
+  const [roomDraft, setRoomDraft] = useState<Record<string, string>>({});
+  const today = new Date().toISOString().slice(0, 10);
+  const sel = groups.find(g => g.id === selId) ?? groups.filter(g => g.status !== "CANCELLED" && g.status !== "COMPLETED" && g.departure >= today).sort((a, b) => a.arrival.localeCompare(b.arrival))[0];
+  useEffect(() => {
+    setAttendees(null); setFormUrl(null); setSheet(null); setFolio(null); setComms([]);
+    if (sel?.attendees) api<{ items: typeof attendees }>(`/v1/groups/${sel.id}/attendees`).then(r => setAttendees(r.items)).catch(() => {});
+    if (sel?.id) api<NonNullable<typeof sheet>>(`/v1/groups/${sel.id}/sheet`).then(setSheet).catch(() => setSheet(null));
+    if (sel?.id) api<NonNullable<typeof folio>>(`/v1/groups/${sel.id}/folio`).then(setFolio).catch(() => {});
+    if (sel?.id) api<{ items: typeof comms }>(`/v1/groups/${sel.id}/comms`).then(r => setComms(r.items)).catch(() => {});
+  }, [sel?.id, sel?.attendees]); // eslint-disable-line react-hooks/exhaustive-deps
+  const loadGuestBook = () => {
+    api<{ items: typeof enquiries }>("/v1/guest-enquiries").then(r => setEnquiries(r.items)).catch(() => {});
+    api<{ items: typeof stays }>("/v1/guest-stays").then(r => setStays(r.items)).catch(() => {});
+  };
+  useEffect(loadGuestBook, []);
+
+  const shown = useMemo(() => {
+    const live = groups.filter(g => g.status !== "CANCELLED" && g.status !== "COMPLETED" && g.departure >= TODAY);
+    if (filter === "attention") return live.filter(g => g.bookingForm !== "COMPLETE" || !g.termsSigned || g.status === "ENQUIRY");
+    if (filter === "all") return groups;
+    return live;
+  }, [groups, filter]);
+
+  const byMonth = useMemo(() => {
+    const m = new Map<string, Group[]>();
+    for (const g of [...shown].sort((a, b) => a.arrival.localeCompare(b.arrival))) {
+      const k = fmt(g.arrival, { month: "long", year: "numeric" });
+      m.set(k, [...(m.get(k) ?? []), g]);
+    }
+    return [...m.entries()];
+  }, [shown]);
+
+  const say = (t: string) => { setToast(t); setTimeout(() => setToast(null), 3500); };
+  const run = async (fn: () => Promise<unknown>) => { try { await fn(); } catch (e) { say(e instanceof ApiError ? e.problem.detail : "Something went wrong"); } };
+  const apply = (id: string, patch: Record<string, unknown>) => run(() => updateGroup(id, patch));
+  const cmd = (id: string, c: string, reason?: string) => run(() => command(id, c, reason));
+
+  const roomsAllocated = sel?.roomsAllocated ?? 0;
+  const stepIdx = sel ? FLOW.indexOf(sel.status) : -1;
+  const paperworkTodo = sel ? [sel.bookingForm !== "COMPLETE", !sel.termsSigned].filter(Boolean).length : 0; // rooms can be allocated after confirming
+
+  return (
+    <>
+      <div className="topbar">
+        <div><h1>The book</h1><p>{shown.length} shown · {groups.filter(g => g.status === "CONFIRMED" && g.departure >= TODAY).length} confirmed ahead{loading ? " · refreshing…" : ""}</p></div>
+        <div style={{ display: "flex", gap: 10, alignItems: "center" }}>
+          <div className="seg" role="tablist">
+            {(["upcoming", "attention", "all"] as const).map(f => (
+              <button key={f} role="tab" aria-selected={filter === f} className={filter === f ? "on" : ""} onClick={() => setFilter(f)}>
+                {f === "upcoming" ? "Upcoming" : f === "attention" ? "Needs attention" : "All"}
+              </button>))}
+          </div>
+          {can("group.create") && <button className="btn primary" onClick={() => setCreating(true)}>New group booking</button>}
+        </div>
+      </div>
+
+      {enquiries.length > 0 && (
+        <div className="panel" style={{ marginBottom: 18 }}>
+          <h3>From the guest book</h3>
+          <p className="m" style={{ color: "var(--ink-2)" }}>Guests sent these from /book. Take one into the house book to hold rooms.</p>
+          {enquiries.map(e => (
+            <div className="urow" key={e.id}>
+              <div><div className="t">{e.name}{e.programme_name ? ` · ${e.programme_name}` : ""}</div><div className="m">{e.email} · {e.arrival} → {e.departure} · {e.people} people{e.room_preference ? ` · ${e.room_preference}` : ""}{e.dietary_notes ? ` · diet: ${e.dietary_notes}` : ""}{e.accessibility_notes ? ` · access: ${e.accessibility_notes}` : ""}{e.travel_notes ? ` · travel: ${e.travel_notes}` : ""}{e.notes ? ` · ${e.notes}` : ""}</div></div>
+              {can("group.create") && <button className="btn primary" onClick={() => run(async () => { await api(`/v1/guest-enquiries/${e.id}/take`, { method: "POST" }); await reload(); loadGuestBook(); say("Private stay opened — assign rooms below"); })}>Take into the book</button>}
+            </div>
+          ))}
+        </div>
+      )}
+
+      {stays.length > 0 && (
+        <div className="panel" style={{ marginBottom: 18 }}>
+          <h3>Guest stays — rooms per client</h3>
+          <p className="m" style={{ color: "var(--ink-2)" }}>Each client has a private book. Assign rooms here. Guests only see their own rooms — never another client&apos;s details.</p>
+          {stays.map(s => (
+            <div className="urow" key={s.id}>
+              <div>
+                <div className="t">{s.name}{s.programme_name ? ` · ${s.programme_name}` : ""}</div>
+                <div className="m">{s.email} · {s.arrival} → {s.departure} · {s.people} people · {s.rooms.length ? s.rooms.map(r => r.number).join(", ") : "no rooms yet"}</div>
+              </div>
+              {can("occupancy.write") && (
+                <span style={{ display: "flex", gap: 6 }}>
+                  <input placeholder="Room e.g. 110" value={roomDraft[s.id] ?? ""} onChange={e => setRoomDraft(d => ({ ...d, [s.id]: e.target.value }))} style={{ width: 110 }} />
+                  <button className="btn primary" onClick={() => run(async () => {
+                    await api(`/v1/guest-stays/${s.id}/rooms`, { method: "POST", body: JSON.stringify({ room: roomDraft[s.id] }) });
+                    setRoomDraft(d => ({ ...d, [s.id]: "" }));
+                    loadGuestBook();
+                    await reload();
+                    say(`Room assigned to ${s.name} only`);
+                  })}>Assign room</button>
+                </span>
+              )}
+            </div>
+          ))}
+        </div>
+      )}
+
+      <div className="split">
+        <div className="list">
+          {byMonth.length === 0 && <div className="empty">{loading ? "Loading bookings…" : "Nothing here."}</div>}
+          {byMonth.map(([month, gs]) => (
+            <div key={month}>
+              <div className="month">{month}</div>
+              {gs.map(g => {
+                const todo = (g.bookingForm !== "COMPLETE" ? 1 : 0) + (!g.termsSigned ? 1 : 0);
+                return (
+                  <button key={g.id} className={"row" + (g.id === sel?.id ? " sel" : "")} onClick={() => setSelId(g.id)}>
+                    <span className="bar" style={{ background: g.colour }} />
+                    <span>
+                      <div className="t">{g.name}</div>
+                      <div className="m">{fmt(g.arrival)} {g.arrivalSlot} → {fmt(g.departure)} {g.departureSlot} · {g.guests} guests{g.roomsWanted ? ` · ${g.roomsWanted} rooms` : ""}</div>
+                    </span>
+                    <span className="r">
+                      <span className={"chip " + g.status}>{g.status.replace("_", " ").toLowerCase()}</span>
+                      <span className="m">{g.openOnGuestBook ? "on guest book" : "private"}</span>
+                      {todo > 0 && g.status !== "CANCELLED" && <span className="warn">{todo} paperwork item{todo > 1 ? "s" : ""}</span>}
+                    </span>
+                  </button>);
+              })}
+            </div>))}
+        </div>
+
+        {sel ? (
+          <section className="detail" aria-live="polite">
+            <header>
+              <div>
+                <h2>{sel.name}</h2>
+                <div style={{ color: "var(--ink-2)" }}>{sel.organisation}{sel.contact ? ` · ${sel.contact}` : ""} · {RETREAT_TYPES[sel.retreatType] ?? sel.retreatType} · {sel.useBasis === "EXCLUSIVE" ? "Exclusive use" : "Shared use"}{sel.source === "IMPORT:SHEET" ? " · from the sheet" : ""} · {sel.openOnGuestBook ? "on guest book" : "private"}</div>
+              </div>
+              <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
+                {can("group.update") && sel.status !== "CANCELLED" && <button className="btn" onClick={() => setEditing(true)}>Edit</button>}
+                <span className={"chip " + sel.status}>{sel.status.replace("_", " ").toLowerCase()}</span>
+              </div>
+            </header>
+
+            <div className="steps" aria-label="Booking progress">
+              {FLOW.map((s, i) => <span key={s} className={i < stepIdx ? "done" : i === stepIdx ? "now" : ""}>{s.replace("_", " ").toLowerCase()}</span>)}
+            </div>
+
+            <div className="dates">
+              <div><div className="d">{fmt(sel.arrival)}</div><div className="s">Arrive {sel.arrivalSlot}{sel.arrivalTime ? ` · ${sel.arrivalTime}` : ""}</div></div>
+              <div className="arrow">{nights(sel.arrival, sel.departure) === 0 ? "day" : `${nights(sel.arrival, sel.departure)} nights`} →</div>
+              <div style={{ textAlign: "right" }}><div className="d">{fmt(sel.departure)}</div><div className="s">Depart {sel.departureSlot}{sel.departureTime ? ` · ${sel.departureTime}` : ""}</div></div>
+            </div>
+
+            <div className="facts">
+              <div><span>Guests</span><b>{sel.guests}</b></div>
+              <div><span>Rooms</span><b>{sel.roomsWanted ? `${roomsAllocated} of ${sel.roomsWanted} allocated` : "None (day visit)"}</b></div>
+              <div><span>Meal covers</span><b>{sel.guests} per service{sel.guests > 130 ? " — over 130, split sittings" : ""}</b></div>
+              <div><span>Package</span><b>{sel.packageInfo?.name ?? sel.packageName ?? "—"}{sel.spa ? " · spa access" : ""}</b></div>
+              <div><span>Price as agreed</span><b>{sel.priceNotes || "—"}</b></div>
+              <div>{(() => { const v = bookingValue(sel); return <><span>Booking value</span><b>{v.value == null ? <span className="warn">Not priced — {v.how}</span> : gbp(v.value)}</b>{v.value != null && <div className="m" style={{ fontSize: 11, color: "var(--ink-2)" }}>{v.how}</div>}</>; })()}</div>
+            </div>
+
+            {sel.dietaryNotes && <div className="note" style={{ borderColor: "var(--moss)", background: "var(--moss-soft)" }}>Dietary: {sel.dietaryNotes}</div>}
+            {sel.notes && <div className="note" style={{ whiteSpace: "pre-wrap", maxHeight: 140, overflow: "auto" }}>{sel.notes}</div>}
+            {sheet && (
+              <div className="note" style={{ background: "var(--stone)" }}>
+                <b>Programme operating sheet</b>
+                <div className="m">{sheet.guests ?? "—"} guests · {sheet.rooms_placed.length} rooms placed{sheet.rooms_short ? ` · ${sheet.rooms_short} still needed` : ""}{sheet.meals ? ` · kitchen ${sheet.meals.dinner} dinner covers` : ""}</div>
+                <ul className="m" style={{ margin: "8px 0 0", paddingLeft: 18 }}>
+                  {sheet.departments.map(d => <li key={d.code}>{d.code.toLowerCase()}: {d.work}</li>)}
+                </ul>
+              </div>
+            )}
+
+            <h3>Paperwork</h3>
+            <ul className="check">
+              <li><span className={"box " + (sel.bookingForm === "COMPLETE" ? "ok" : "todo")}>{sel.bookingForm === "COMPLETE" ? "✓" : ""}</span>Booking form
+                <em>{sel.bookingForm === "COMPLETE" ? "Complete" : sel.bookingForm === "SENT" ? "Sent, awaiting reply" : "Not sent"}</em>
+                {can("group.update") && <button className="btn" style={{ marginLeft: 8 }} onClick={() => run(async () => { const r = await api<{ url: string }>(`/v1/groups/${sel.id}/form-link`, { method: "POST", body: "{}" }); await navigator.clipboard?.writeText(r.url).catch(() => {}); setFormUrl(r.url); say("Form link copied — send it to the organiser"); })}>{sel.formToken ? "Copy link" : "Create link"}</button>}
+                {can("email.send") && sel.formToken && <button className="btn" style={{ marginLeft: 4 }} onClick={() => setEmail("form_link")}>Email organiser</button>}
+                {sel.bookingForm !== "COMPLETE" && sel.bookingForm === "SENT" && <button className="btn" style={{ marginLeft: 8 }} disabled={!can("group.update")} onClick={() => apply(sel.id, { booking_form_status: "COMPLETE" })}>Mark complete</button>}
+              </li>
+              <li><span className={"box " + (sel.termsSigned ? "ok" : "todo")}>{sel.termsSigned ? "✓" : ""}</span>Terms and conditions signed
+                <em>{sel.termsSigned ? "2025/26 T&Cs on file" : "Outstanding"}</em>
+                {!sel.termsSigned && <button className="btn" style={{ marginLeft: 8 }} disabled={!can("group.update")} onClick={() => apply(sel.id, { terms_signed: true })}>Record signed copy</button>}
+              </li>
+              <li><span className={"box " + (sel.roomsWanted === 0 || roomsAllocated >= sel.roomsWanted ? "ok" : "todo")}>{sel.roomsWanted === 0 || roomsAllocated >= sel.roomsWanted ? "✓" : ""}</span>Rooms allocated
+                <em>{sel.roomsWanted === 0 ? "Not needed" : `${roomsAllocated} of ${sel.roomsWanted}`}</em>
+                <Link className="btn" style={{ marginLeft: 8 }} href="/rooms/">Open room board</Link>
+              </li>
+              <li><span className={"box " + (sel.feedback === "RECEIVED" ? "ok" : "")}>{sel.feedback === "RECEIVED" ? "✓" : ""}</span>Feedback form
+                <em>{sel.status === "COMPLETED" ? (sel.feedback === "RECEIVED" ? "Received" : "Send after departure") : "After the stay"}</em>
+                {sel.status === "COMPLETED" && sel.feedback !== "RECEIVED" && <button className="btn" style={{ marginLeft: 8 }} disabled={!can("group.update")} onClick={() => apply(sel.id, { feedback_form_status: sel.feedback === "SENT" ? "RECEIVED" : "SENT" })}>{sel.feedback === "SENT" ? "Mark received" : "Send form"}</button>}
+              </li>
+            </ul>
+
+            {formUrl && <div className="note" style={{ wordBreak: "break-all" }}>Organiser form link: <a href={formUrl} target="_blank" rel="noreferrer">{formUrl}</a></div>}
+            {attendees && attendees.length > 0 && (<>
+              <h3 style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>Attendees from the organiser form ({attendees.length}{sel.formSubmittedAt ? ` · submitted ${new Date(sel.formSubmittedAt).toLocaleDateString("en-GB")}` : ""})
+                {can("occupancy.write") && sel.status !== "COMPLETED" && sel.status !== "CANCELLED" && <button className="btn" onClick={() => run(async () => { const r = await api<{ placed: { room: string; names: string[] }[]; unplaced: string[]; note?: string }>(`/v1/groups/${sel.id}/auto-place`, { method: "POST", body: "{}" }); say(r.placed.length ? `Placed ${r.placed.reduce((n, p) => n + p.names.length, 0)} people in ${r.placed.length} rooms${r.unplaced.length ? `; ${r.unplaced.length} could not be placed` : ""}` : (r.note ?? "Nothing to place")); })}>Place on the board</button>}</h3>
+              <ul className="who" style={{ marginBottom: 14 }}>{attendees.map(a => <li key={a.given_name + a.family_name}><i style={{ background: a.allergens?.length ? "var(--brick)" : a.diet?.length ? "var(--moss)" : "var(--line)" }} />{a.given_name} {a.family_name}
+                <span className="m" style={{ fontSize: 12, color: "var(--ink-2)" }}>{[a.room_preference?.replace("share_with:", "share with "), a.arrives_early ? "arrives early" : null, a.diet?.join(", ").replace(/_/g, " "), a.allergens?.length ? `${a.allergens.join(", ")} (${a.severity?.toLowerCase()})` : null].filter(Boolean).join(" · ")}</span></li>)}</ul>
+            </>)}
+            <h3>Folio</h3>
+            {/* Agreed total */}
+            <div style={{ display: "flex", alignItems: "center", gap: 12, marginBottom: 10 }}>
+              <span className="m" style={{ color: "var(--ink-2)" }}>Agreed total:</span>
+              <b>{folio?.total_agreed_fmt ?? "Not set"}</b>
+              {can("group.update") && (
+                <button className="btn" style={{ fontSize: 12, padding: "2px 10px" }} onClick={() => {
+                  const v = prompt("Set agreed total (£):", folio?.total_agreed?.toString() ?? "");
+                  if (v !== null && !isNaN(Number(v))) run(() =>
+                    api(`/v1/groups/${sel.id}/folio`, { method: "PATCH", body: JSON.stringify({ total_agreed: Number(v) }) })
+                      .then(() => api<NonNullable<typeof folio>>(`/v1/groups/${sel.id}/folio`).then(setFolio)));
+                }}>Edit</button>
+              )}
+            </div>
+            {/* Balance summary chips */}
+            {folio && (
+              <div style={{ display: "flex", gap: 10, marginBottom: 14, flexWrap: "wrap" }}>
+                <span className="chip CONFIRMED">Paid {folio.total_paid_fmt}</span>
+                <span className={`chip ${folio.balance_due > 0 ? "ENQUIRY" : "CONFIRMED"}`}>
+                  {folio.balance_due > 0 ? `Balance due ${folio.balance_due_fmt}` : "Settled ✓"}
+                </span>
+              </div>
+            )}
+            {/* Tabs */}
+            <div className="seg" role="tablist" style={{ marginBottom: 12 }}>
+              {(["payments", "invoices"] as const).map(t => (
+                <button key={t} role="tab" className={folioTab === t ? "active" : ""} onClick={() => setFolioTab(t)}>
+                  {t === "payments" ? `Payments (${folio?.payments.length ?? 0})` : `Invoices (${folio?.invoices.length ?? 0})`}
+                </button>
+              ))}
+            </div>
+            {folioTab === "payments" && (
+              <>
+                {/* Payment list */}
+                {(folio?.payments ?? []).length === 0
+                  ? <p className="m" style={{ color: "var(--ink-2)", marginBottom: 10 }}>No payments recorded yet.</p>
+                  : (folio?.payments ?? []).map(p => (
+                    <div key={p.id} style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "6px 0", borderBottom: "1px solid var(--rule)" }}>
+                      <span>
+                        <b>{p.amount_fmt}</b>
+                        <span className="m" style={{ color: "var(--ink-2)", marginLeft: 8 }}>{p.kind} · {p.method ?? "—"}{p.reference ? ` · ${p.reference}` : ""}</span>
+                      </span>
+                      <span className="m" style={{ color: "var(--ink-2)" }}>
+                        {p.paid_at ? `Received ${p.paid_at.slice(0, 10)}` : p.due_date ? `Due ${p.due_date}` : "Pending"}
+                        {!p.paid_at && can("group.update") && (
+                          <button className="btn" style={{ fontSize: 11, padding: "1px 8px", marginLeft: 8 }}
+                            onClick={() => run(() =>
+                              api(`/v1/groups/${sel.id}/folio/payments/${p.id}/receive`, { method: "POST" })
+                                .then(() => api<NonNullable<typeof folio>>(`/v1/groups/${sel.id}/folio`).then(setFolio))
+                                .then(() => say("Payment marked received")))}>
+                            Mark received
+                          </button>
+                        )}
+                      </span>
+                    </div>
+                  ))}
+                {/* Record payment form */}
+                {can("group.update") && (
+                  <div style={{ marginTop: 14, background: "var(--surface-2)", borderRadius: 8, padding: "14px 16px" }}>
+                    <div className="m" style={{ fontWeight: 600, marginBottom: 10 }}>Record payment</div>
+                    <div className="frow" style={{ gap: 8, flexWrap: "wrap" }}>
+                      <select value={payDraft.kind} onChange={e => setPayDraft(d => ({ ...d, kind: e.target.value }))}>
+                        {["deposit", "balance", "refund", "writeoff", "adjustment"].map(k => <option key={k} value={k}>{k}</option>)}
+                      </select>
+                      <select value={payDraft.method} onChange={e => setPayDraft(d => ({ ...d, method: e.target.value }))}>
+                        {["bank_transfer", "card", "cash", "cheque", "stripe"].map(m => <option key={m} value={m}>{m.replace("_", " ")}</option>)}
+                      </select>
+                      <input placeholder="Amount £" value={payDraft.amount} style={{ width: 100 }} onChange={e => setPayDraft(d => ({ ...d, amount: e.target.value }))} />
+                      <input placeholder="Reference" value={payDraft.reference} onChange={e => setPayDraft(d => ({ ...d, reference: e.target.value }))} />
+                      <input placeholder="Note" value={payDraft.note} onChange={e => setPayDraft(d => ({ ...d, note: e.target.value }))} />
+                      <button className="btn primary" disabled={!payDraft.amount || isNaN(Number(payDraft.amount))}
+                        onClick={() => run(() =>
+                          api(`/v1/groups/${sel.id}/folio/payments`, { method: "POST", body: JSON.stringify({ ...payDraft, amount: Number(payDraft.amount), paid_at: new Date().toISOString() }) })
+                            .then(() => api<NonNullable<typeof folio>>(`/v1/groups/${sel.id}/folio`).then(setFolio))
+                            .then(() => { setPayDraft({ kind: "deposit", method: "bank_transfer", amount: "", reference: "", note: "" }); say("Payment recorded"); }))}>
+                        Record
+                      </button>
+                    </div>
+                  </div>
+                )}
+              </>
+            )}
+            {folioTab === "invoices" && (
+              <>
+                {(folio?.invoices ?? []).length === 0
+                  ? <p className="m" style={{ color: "var(--ink-2)", marginBottom: 10 }}>No invoices issued yet.</p>
+                  : (folio?.invoices ?? []).map(inv => (
+                    <div key={inv.id} style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "6px 0", borderBottom: "1px solid var(--rule)" }}>
+                      <span><b>{inv.number}</b><span className="m" style={{ color: "var(--ink-2)", marginLeft: 8 }}>{inv.kind} · {inv.amount_fmt}</span></span>
+                      <span className="m" style={{ color: "var(--ink-2)" }}>{inv.sent_at ? `Sent ${inv.sent_at.slice(0, 10)}` : `Issued ${inv.issued_at}`}</span>
+                    </div>
+                  ))}
+                {can("group.update") && (
+                  <div style={{ marginTop: 14, background: "var(--surface-2)", borderRadius: 8, padding: "14px 16px" }}>
+                    <div className="m" style={{ fontWeight: 600, marginBottom: 10 }}>Issue invoice</div>
+                    <div className="frow" style={{ gap: 8 }}>
+                      <select value={invDraft.kind} onChange={e => setInvDraft(d => ({ ...d, kind: e.target.value }))}>
+                        {["invoice", "receipt", "credit_note"].map(k => <option key={k} value={k}>{k.replace("_", " ")}</option>)}
+                      </select>
+                      <input placeholder="Amount £" value={invDraft.amount} style={{ width: 100 }} onChange={e => setInvDraft(d => ({ ...d, amount: e.target.value }))} />
+                      <input type="date" value={invDraft.due_date} onChange={e => setInvDraft(d => ({ ...d, due_date: e.target.value }))} />
+                      <button className="btn primary" disabled={!invDraft.amount || isNaN(Number(invDraft.amount))}
+                        onClick={() => run(() =>
+                          api(`/v1/groups/${sel.id}/folio/invoices`, { method: "POST", body: JSON.stringify({ ...invDraft, amount: Number(invDraft.amount) }) })
+                            .then(() => api<NonNullable<typeof folio>>(`/v1/groups/${sel.id}/folio`).then(setFolio))
+                            .then(() => { setInvDraft({ kind: "invoice", amount: "", due_date: "" }); say(`Invoice issued`); }))}>
+                        Issue
+                      </button>
+                    </div>
+                  </div>
+                )}
+              </>
+            )}
+
+            <h3>Guest communications</h3>
+            <div style={{ marginBottom: 14 }}>
+              {comms.length === 0
+                ? <p className="m" style={{ color: "var(--ink-2)" }}>No communications scheduled. Confirm the booking to auto-schedule guest emails.</p>
+                : comms.map(c => (
+                  <div key={c.id} style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "7px 0", borderBottom: "1px solid var(--rule)" }}>
+                    <div>
+                      <b style={{ fontSize: 13 }}>{c.kind.replace(/_/g, " ")}</b>
+                      {c.to_email && <span className="m" style={{ color: "var(--ink-2)", fontSize: 12, marginLeft: 8 }}>→ {c.to_email}</span>}
+                      <div className="m" style={{ color: "var(--ink-2)", fontSize: 12 }}>
+                        {c.sent_at ? `Sent ${new Date(c.sent_at).toLocaleDateString("en-GB")}` :
+                         c.cancelled_at ? `Cancelled` :
+                         `Scheduled ${new Date(c.scheduled_for).toLocaleDateString("en-GB")}`}
+                      </div>
+                    </div>
+                    <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
+                      <span className={`chip ${c.sent_at ? "CONFIRMED" : c.cancelled_at ? "CANCELLED" : "PROVISIONAL"}`} style={{ fontSize: 11 }}>
+                        {c.email_status ?? (c.cancelled_at ? "cancelled" : c.sent_at ? "sent" : "scheduled")}
+                      </span>
+                      {!c.sent_at && !c.cancelled_at && can("group.update") && (
+                        <button className="btn" style={{ fontSize: 11, padding: "2px 8px" }}
+                          onClick={() => run(() => api(`/v1/groups/${sel.id}/comms/${c.id}`, { method: "DELETE" })
+                            .then(() => api<{ items: typeof comms }>(`/v1/groups/${sel.id}/comms`).then(r => setComms(r.items)))
+                            .then(() => say("Communication cancelled")))}>Cancel</button>
+                      )}
+                    </div>
+                  </div>
+                ))}
+            </div>
+
+            <h3>Guest book</h3>
+            <div style={{ display: "flex", alignItems: "center", gap: 12, marginBottom: 14 }}>
+              <label style={{ display: "flex", alignItems: "center", gap: 8, cursor: can("group.update") ? "pointer" : "default" }}>
+                <input
+                  type="checkbox"
+                  checked={!!sel.openOnGuestBook}
+                  disabled={!can("group.update") || sel.status === "CANCELLED" || sel.status === "COMPLETED"}
+                  onChange={e => apply(sel.id, { open_for_guests: e.target.checked })}
+                />
+                <span>Publish on the public guest book (<code>/book</code>)</span>
+              </label>
+              {sel.openOnGuestBook
+                ? <span className="chip CONFIRMED" style={{ fontSize: 11 }}>Visible to guests</span>
+                : <span className="chip ENQUIRY" style={{ fontSize: 11 }}>Private</span>}
+            </div>
+            {sel.openOnGuestBook && (
+              <p className="m" style={{ color: "var(--ink-2)", marginBottom: 14 }}>
+                This retreat appears on /book. Guests can browse, choose a room type, and send an enquiry. Uncheck to remove it from public view at any time.
+              </p>
+            )}
+            <div className="actions">
+              {(NEXT[sel.status] ?? []).map(n => (
+                <button key={n.cmd} className="btn primary" disabled={!can("group.confirm") || (n.to === "CONFIRMED" && paperworkTodo > 0)}
+                  title={n.to === "CONFIRMED" && paperworkTodo > 0 ? "Complete the paperwork first" : undefined}
+                  onClick={() => cmd(sel.id, n.api)}>{n.cmd}</button>))}
+              {sel.status !== "CANCELLED" && sel.status !== "COMPLETED" && can("group.cancel") && (
+                <button className="btn danger" onClick={() => { const why = prompt(`Cancel ${sel.name}? This releases ${roomsAllocated} rooms. Reason:`); if (why !== null) cmd(sel.id, "cancel", why); }}>Cancel booking</button>)}
+              <span style={{ marginLeft: "auto", color: "var(--ink-2)", fontSize: 12, alignSelf: "center" }}>v{sel.version} · every change is logged</span>
+            </div>
+          </section>
+        ) : <div className="detail empty">Select a booking</div>}
+      </div>
+      {email && sel && <EmailDialog groupId={sel.id} kind={email} onClose={() => setEmail(null)} onSent={m => { setEmail(null); say(m); }} />}
+      {editing && sel && <EditGroupForm g={sel} onClose={() => setEditing(false)} onSaved={m => { setEditing(false); say(m); }} />}
+      {creating && <NewGroupForm onClose={() => setCreating(false)} onCreated={g => { setCreating(false); setSelId(g.id); setFilter("upcoming"); say(`Created ${g.name} as an enquiry`); }} />}
+      {toast && <div className="toast">{toast}</div>}
+    </>
+  );
+}
