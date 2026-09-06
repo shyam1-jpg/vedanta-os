@@ -36,7 +36,7 @@ SELECT
   CASE WHEN (SELECT count(*) FROM room r WHERE r.property_id = p.id AND NOT r.staff_only) > 0
     THEN round(100.0 * sum(g.expected_guests) / (
       (SELECT count(*) FROM room r WHERE r.property_id = p.id AND NOT r.staff_only) *
-      extract(days FROM date_trunc('month', g.arrival_date::timestamptz) + interval '1 month' - date_trunc('month', g.arrival_date::timestamptz))
+      max(extract(days FROM date_trunc('month', g.arrival_date::timestamptz) + interval '1 month' - date_trunc('month', g.arrival_date::timestamptz)))
     ), 1)
   END AS occupancy_pct
 FROM property p
