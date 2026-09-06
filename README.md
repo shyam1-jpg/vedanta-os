@@ -32,6 +32,8 @@ cd apps/web-admin && npm install && npm run dev
 
 Open http://localhost:3000 and pick a user (development sign-in). The live trial also accepts **`shyam_1@hotmail.co.uk`** with no password until Microsoft 365 is connected.
 
+The production web bundle uses one origin: `/` redirects guests to `/book/`, house operations remain at `/house/`, and staff use `/pocket/`. Run `npm run build:web-bundle` to create `dist-web/` for static hosting.
+
 ## Deploy the trial
 
 Fastest: Apply `vedanta-platform/render.monorepo.yaml` from this branch on Render (see [docs/deploy.md](docs/deploy.md)). First sign-in: `shyam_1@hotmail.co.uk`. Longer term, push **this folder** as its own private GitHub repo (`GET-ON-GITHUB.md`).

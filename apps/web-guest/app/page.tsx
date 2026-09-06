@@ -161,7 +161,8 @@ export default function Book() {
       setOk(r.access_code
         ? `Saved. Your private access code is ${r.access_code}. It expires in 14 days. Write it down.`
         : sel ? `Your place on ${sel.name} is with the house.` : "Your enquiry is with the house.");
-    } catch (e) { setErr((e as Error).message); } finally { setBusy(false); }
+      return r;
+    } catch (e) { setErr((e as Error).message); return null; } finally { setBusy(false); }
   };
 
   const signOut = () => { tok.set(null); setMe(null); setMine(null); setSel(null); setStep("browse"); setOk(null); setErr(null); };

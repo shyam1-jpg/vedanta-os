@@ -202,8 +202,8 @@ export default function Guest360() {
                         ? <textarea rows={2} value={(draft as Record<string, string | null>)[field] ?? ""}
                             onChange={e => setDraft(d => ({ ...d, [field]: e.target.value }))}
                             style={{ width: "100%", resize: "vertical" }} />
-                        : <p className="m" style={{ color: (guest as Record<string, string | null>)[field] ? "var(--ink)" : "var(--ink-3)", margin: 0 }}>
-                            {(guest as Record<string, string | null>)[field] ?? "Not recorded"}
+                        : <p className="m" style={{ color: (guest as unknown as Record<string, string | null>)[field] ? "var(--ink)" : "var(--ink-3)", margin: 0 }}>
+                            {(guest as unknown as Record<string, string | null>)[field] ?? "Not recorded"}
                           </p>}
                     </div>
                   );

@@ -4,6 +4,7 @@
   "type": "module",
   "workspaces": ["apps/*", "services/*", "packages/*"],
   "scripts": {
+    "build:web-bundle": "node tools/build-web-bundle.mjs",
     "test:domains": "node --test --experimental-strip-types domains/**/*.test.ts",
     "db:up": "docker compose -f infra/docker-compose.yml up -d",
     "api": "npm --workspace services/platform-api run dev",
