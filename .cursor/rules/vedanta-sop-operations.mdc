@@ -1,0 +1,431 @@
+---
+description: Vedanta Way Ltd Kitchen SOP & Operations architecture, safety, UX and implementation rules
+alwaysApply: true
+---
+
+# Vedanta Way Ltd — Kitchen SOP & Operations
+
+You are extending the existing Vedanta Retreat Operating System. Do not create a disconnected mini-app and do not rewrite the working stack.
+
+## Read first
+Before making changes, inspect and preserve:
+- `README.md`
+- `PROGRESS.md`
+- `docs/MASTER_ARCHITECTURE_2026.md`
+- `docs/design.md`
+- existing `apps/web-admin`, `apps/web-staff`, `services/platform-api`, `domains`, `db/migrations`, and `packages/contracts` patterns.
+
+Follow the repo principle:
+**INSPECT → PRESERVE → CONSOLIDATE → EXTEND → CONNECT → TEST → RELEASE.**
+
+## Product name
+Use:
+**VEDANTA WAY LTD**
+**Kitchen SOP & Operations**
+
+Do not repeatedly label screens or cards “Commercial Kitchen”.
+
+## Product goal
+Create a lightweight, premium, mobile-first operating layer that professional kitchen staff can use during a real shift.
+
+The staff experience must answer:
+1. What do I need to do now?
+2. How do I do it safely and correctly?
+3. What must I record?
+4. What happens if the result is outside the permitted limit?
+5. Does a manager need to verify it?
+
+The system is not primarily a document reader. SOP content must be actionable.
+
+## Where it belongs
+Use the existing Vedanta OS:
+- staff/mobile experience: extend `apps/web-staff` / Pocket
+- manager/admin experience: extend `apps/web-admin`
+- API: extend `services/platform-api`
+- domain rules: add to existing domain structure
+- database: additive numbered migrations only
+- contracts: preserve and extend OpenAPI contracts
+
+Do not introduce a new framework merely for this module.
+
+## Installable mobile direction
+Phase 1 should make the existing Pocket staff experience installable as a PWA on iPhone, iPad and Android where feasible, with strong offline behaviour for essential shift/SOP use.
+
+Do not introduce a separate React Native/Expo app in Phase 1.
+A native shell may be evaluated later only for requirements that the PWA cannot satisfy reliably.
+
+## Users / roles
+Support the existing permission model and kitchen roles such as:
+- Head Chef
+- Chef de Cuisine
+- Senior Chef de Partie
+- Chef de Partie
+- Commis Chef
+- Kitchen Assistant
+- Kitchen Porter
+
+Role visibility must be permission-driven, not hard-coded by job title alone.
+
+## Mobile navigation target
+For authorised kitchen staff, provide a simple operational entry point such as:
+- Today
+- My Shift
+- Tasks
+- SOP
+- Equipment
+- Temperatures
+- Cleaning
+- Training
+
+Do not crowd Pocket with management-only functions.
+
+## Manager capabilities
+Management may additionally access:
+- Production
+- Deliveries
+- Stock / storage checks
+- Corrective actions
+- Audit
+- Reports
+- SOP administration
+- Equipment administration
+- Training / competency
+
+## Core data model
+Design the domain so the system can eventually hold hundreds of SOPs without creating a custom form for every procedure.
+
+An SOP should support:
+- stable SOP ID
+- title
+- department / area / category
+- status: draft / review / approved / retired
+- version / revision
+- responsible roles
+- required competency
+- frequency
+- estimated duration
+- purpose
+- prerequisites
+- PPE
+- hazards
+- equipment
+- ingredients/materials where relevant
+- pre-start checks
+- ordered steps
+- critical control information where relevant
+- expected result
+- common problems
+- corrective action
+- cleaning / shutdown where relevant
+- escalation / emergency information
+- manager verification requirement
+- manufacturer documentation
+- images
+- animation/video media
+- issue date
+- review date
+- approver
+- audit history
+
+## Flexible SOP step types
+Do not hard-code SOPs into static pages.
+Create reusable step/input types so an SOP step can request or display one or more of:
+- instruction text
+- acknowledgement / checkbox
+- pass / flag / fail
+- number
+- temperature
+- weight
+- time
+- timer
+- date/time
+- free note
+- photo
+- signature / sign-off
+- QR scan
+- NFC verification if supported later
+- equipment meter reading
+- label confirmation
+- file/manual link
+- image
+- video / animation
+- corrective-action trigger
+
+Each submitted operational record must keep the original SOP version used at the time.
+
+## Shift operations
+Support reusable templates for:
+- Opening
+- Production
+- Service
+- Closing
+
+Checklist/task states:
+- Not started
+- In progress
+- Complete
+- Flagged / corrective action required
+- Not applicable (reason required when safety/compliance relevant)
+
+Capture where appropriate:
+- assigned person
+- role
+- scheduled time
+- started_at
+- completed_at
+- actual duration
+- readings
+- notes
+- photos
+- corrective actions
+- verification
+
+## Temperature and food-safety recording
+Support, without duplicating forms for each location:
+- fridges
+- freezers
+- walk-ins
+- delivery temperatures
+- cooking checks
+- hot holding
+- cooling
+- blast chilling
+- reheating
+
+Critical limits must be centrally configurable and versioned. Do not scatter magic numbers across UI code.
+
+Out-of-range values must never be visually treated as a normal success.
+Trigger the configured corrective-action workflow and record what was done.
+
+Do not allow AI to invent or silently change food-safety limits.
+
+## Cooling / leftovers workflow
+Model a structured record including, as applicable:
+- product / batch
+- quantity
+- service end time
+- initial reading
+- cooling method
+- blast-chiller start
+- blast-chiller finish
+- final reading
+- label created
+- storage location
+- planned reuse
+- use-by decision
+- staff member
+- corrective action
+- manager verification
+
+## Storage / stock rotation
+Support editable storage locations, including examples such as:
+- Counter Fridge 1–3
+- Upright Fridges
+- Walk-in Fridge
+- Upright Freezers
+- Walk-in Freezer
+- Dry Store 1–2
+
+Support FIFO / FEFO workflows without assuming all products use identical date rules.
+
+## Deliveries
+A delivery workflow should be able to capture:
+- supplier
+- PO/reference if available
+- time
+- product / quantity
+- packaging condition
+- quality
+- date coding
+- temperature when required
+- allergen/label information when relevant
+- accepted / rejected / partial
+- discrepancy
+- photo
+- person checking
+- storage completion
+- corrective action
+
+## Equipment register
+Every item should be capable of holding:
+- equipment ID
+- name
+- manufacturer
+- exact model
+- serial number
+- location
+- photo
+- rating-plate photo
+- control-panel photo
+- status
+- manufacturer manual
+- linked SOPs
+- daily checks
+- cleaning requirements
+- maintenance requirements
+- last service
+- next service
+- fault history
+- training requirement
+- QR identifier
+- future NFC identifier
+
+Never create model-specific operating instructions until the exact model/manual is confirmed.
+Manufacturer instructions and competent-person approval take precedence over AI-generated draft text.
+
+## QR behaviour
+A QR attached to equipment should deep-link to the exact equipment record, not just a generic equipment category.
+The quick equipment page should expose only what is useful at point of work, e.g.:
+- Start-up
+- Normal operation
+- Cleaning
+- Shutdown
+- Safety
+- Fault procedure
+- Training
+- Report fault
+
+## Training
+An SOP may include:
+- text guide
+- step images
+- short animation
+- short video
+- full training video
+- knowledge check
+- practical assessment
+- competency sign-off
+- trainer
+- retraining/review date
+
+Viewing a video is not the same as practical competency.
+Keep those states separate.
+
+## Media / future AI-assisted capture
+Design media relationships so a manager can later collect:
+- equipment photos
+- rating plates
+- manuals
+- narrated chef demonstrations
+- training clips
+
+AI may help convert collected material into draft SOP text, metadata or storyboards, but drafts must remain unapproved until reviewed by an authorised competent person.
+
+## Kitchen production / covers
+Kitchen operations may receive cover forecasts from the existing retreat/booking records and later connect to Parslia for recipe/menu intelligence.
+Do not duplicate Parslia as a competing recipe master.
+
+Support common cover planning ranges such as 20–200 plus custom cover counts, but never hard-code recipes or yields from guessed values.
+
+## Task timing
+Capture planned and actual duration for prep and cleaning tasks for planning and continuous improvement.
+Never create speed leaderboards or incentives that encourage unsafe knife/equipment work.
+
+## Offline behaviour
+Essential Pocket functions should remain usable during temporary loss of internet:
+- view cached approved critical SOPs
+- view assigned shift/tasks already synchronised
+- record permitted checklist/temperature/task data locally
+- clearly show pending sync state
+- sync safely when connection returns
+
+Design for duplicate prevention / idempotency and conflict handling.
+Do not queue sensitive payment-card data offline.
+
+## Audit / integrity
+For safety, compliance, SOP approval, competency and corrective actions, retain:
+- actor
+- timestamp
+- original record/version
+- change/command
+- reason where relevant
+- verification/approver
+
+Use command endpoints for state-changing domain actions where consistent with the existing architecture.
+Do not silently overwrite history.
+
+## hotel operations integration direction
+Vedanta owns its source records.
+Future hotel/hospitality platform integration should happen through explicit adapters/API mappings, not by making an external platform the only database of record.
+
+Keep external IDs in dedicated integration mapping fields/tables where appropriate.
+Do not contaminate core domain keys with provider-specific assumptions.
+
+## Design language
+Extend `docs/design.md`; do not replace it with a generic SaaS theme.
+Target: calm, premium hospitality, professional kitchen usability.
+
+Existing visual language to respect:
+- stone/paper surfaces
+- green-black ink
+- restrained lake/moss/marigold accents
+- brick/red only for real danger/cancellation
+- Newsreader for display headings
+- IBM Plex Sans for operational UI
+
+For kitchen mobile use:
+- large touch targets
+- excellent contrast
+- simple hierarchy
+- minimal typing
+- one-hand operation where practical
+- no decorative animation in operational screens
+- animation/video only when instructional
+
+Red should communicate a real exception, safety failure, destructive action or urgent issue.
+
+## Safety / compliance rules
+- Never let AI invent a safety procedure and publish it automatically.
+- Never publish equipment instructions without exact equipment identification and approval.
+- Never hide an out-of-range reading.
+- Never let a user mark a safety-critical failure complete without the configured corrective action/verification.
+- Do not weaken allergen/privacy/security controls already in the repository.
+- No PAN/CVV storage.
+
+## Implementation order
+Do not build every idea at once.
+
+Phase 1 foundation:
+1. inspect current SOP/manual/task/compliance patterns
+2. define additive database/domain/API contracts
+3. SOP library + SOP viewer
+4. Today / My Shift kitchen view
+5. opening and closing templates
+6. temperature recording with corrective action
+7. cleaning task templates
+8. equipment register and QR deep-link structure
+9. PWA install/offline foundation for Pocket
+10. manager SOP/equipment authoring basics
+11. audit trail + permissions
+12. tests + docs
+
+Later phases:
+- delivery receiving
+- cooling/blast chilling/leftovers
+- storage/FEFO
+- training and competency
+- rich media/animations
+- maintenance integration
+- production/cover planning
+- hotel-platform adapters
+- native wrapper only if justified
+
+## Definition of done
+A module is not done because a page renders.
+Done means, as applicable:
+- domain model
+- permissions
+- additive migration
+- API contract
+- validation
+- manager UI
+- Pocket/mobile UI
+- error states
+- offline behaviour where required
+- audit/event history
+- tests
+- accessibility/usability
+- documentation
+- regression check against existing Vedanta OS
+
+When uncertain, preserve existing behaviour and document the conflict instead of guessing.
