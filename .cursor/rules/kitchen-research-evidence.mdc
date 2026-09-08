@@ -1,0 +1,410 @@
+---
+description: Authoritative source hierarchy and real-kitchen evidence rules for Vedanta SOP development
+alwaysApply: true
+---
+
+# Vedanta Kitchen Research & Evidence Standard
+
+This rule exists so the SOP system is built from authoritative evidence and real Vedanta operating data, not generic AI text or random internet advice.
+
+## 1. Source hierarchy
+When researching or drafting safety, hygiene, allergen, equipment, cleaning or operational content, use sources in this order unless the context requires otherwise:
+
+### Tier 1 — law / regulator / competent authority
+For UK food safety and workplace safety, prefer:
+- Food Standards Agency (FSA): https://www.food.gov.uk/
+- FSA Safer Food Better Business (SFBB): https://www.food.gov.uk/business-guidance/safer-food-better-business-sfbb
+- FSA MyHACCP where appropriate: https://myhaccp.food.gov.uk/
+- Health and Safety Executive (HSE) catering guidance: https://www.hse.gov.uk/catering/
+- HSE COSHH: https://www.hse.gov.uk/coshh/
+- GOV.UK / legislation where a legal requirement must be confirmed.
+
+Do not rely on blogs or search-result summaries for statutory limits.
+
+### Tier 2 — exact manufacturer documentation
+For any piece of equipment, use the exact model's current manufacturer manual, safety instructions, cleaning instructions and service requirements.
+Examples of manufacturer source libraries relevant to Vedanta include:
+- RATIONAL documents: https://www.rational-online.com/en_gb/customercare/downloads/documents/
+- Falcon Foodservice user manuals: https://www.falconfoodservice.com/info-centre/literature/user-manuals
+- Falcon install/service manuals: https://www.falconfoodservice.com/info-centre/literature/install-manuals
+- MEIKO downloads/manuals: https://www.meiko.com/en-gb/downloads-media/downloads
+
+Never substitute a similar model's instructions without clearly flagging it as unverified.
+
+### Tier 3 — site-approved professional controls
+Use Vedanta's own approved documents where they are stricter or more operationally specific and do not conflict with law/manufacturer requirements:
+- site risk assessments
+- HACCP/SFBB records
+- COSHH assessments
+- SDS for the exact chemical product
+- EHO-agreed controls
+- approved SOPs
+- maintenance/service records
+- fire-safety procedures
+- approved allergen policy
+
+### Tier 4 — measured Vedanta live-kitchen evidence
+For productivity, workflow, staffing, task duration, yield, waste, queueing and practical operating sequence, prefer measured site data over generic internet benchmarks.
+
+### Tier 5 — reputable professional references
+Use recognised professional hospitality/catering bodies, technical guidance and peer-reviewed or industry evidence only when Tiers 1–4 do not answer the question.
+
+### Never treat as authoritative
+- random blogs
+- marketing copy
+- social-media posts
+- anonymous forum claims
+- AI-generated text without source traceability
+- generic timing benchmarks presented as mandatory standards
+
+## 2. Conflict resolution
+When sources conflict, use this logic:
+1. applicable law/regulator requirement
+2. exact manufacturer safety/instruction requirement
+3. documented site risk assessment / approved food-safety system
+4. approved Vedanta SOP
+5. measured live-kitchen practice
+6. professional reference / benchmark
+
+For non-safety productivity questions, measured Vedanta data should normally outrank generic benchmarks.
+
+Never use live practice to override a legal, food-safety or manufacturer safety requirement.
+
+## 3. Evidence must be stored, not just read
+Design the SOP data model so important content can be traced to evidence.
+
+At minimum, an evidence/source record should be capable of storing:
+- source_id
+- source_type: regulator / law / manufacturer / SDS / risk_assessment / Vedanta_SOP / service_record / training / observation / other
+- publisher / organisation
+- title
+- URL or file reference
+- jurisdiction
+- manufacturer
+- equipment model
+- document/version/revision
+- publication date if known
+- retrieved/attached date
+- exact page/section/paragraph reference where practical
+- notes
+- verified_by
+- verified_at
+- review_due_at
+- status: unverified / verified / superseded
+- file hash/version identifier where practical
+
+Create link records so one SOP, one SOP step, one critical limit, one equipment item or one training item can reference multiple evidence sources.
+
+## 4. Safety-critical values require provenance
+Examples:
+- fridge limits
+- hot holding limits
+- blast chilling/cooling criteria
+- cooking/reheating validation
+- chemical dilution/contact time
+- fryer oil-fill requirement
+- equipment operating temperature range
+- cleaning-cycle chemicals
+- maintenance intervals
+
+Do not put these values into UI components as unexplained constants.
+Store them as configuration/domain data with:
+- value
+- unit
+- scope
+- source/evidence
+- effective date
+- review date
+- approval
+
+Changing a safety-critical value must create an audit event/version.
+
+## 5. Current UK baseline examples — verify before implementation
+These examples show how evidence should work; they are not permission to hard-code values without a linked source.
+
+- FSA guidance states cold food must be kept at 8°C or below in England, Wales and Northern Ireland, and recommends setting fridges at 5°C or below to allow for fluctuations.
+- FSA SFBB provides structured chilling/cooling methods and corrective-action expectations; blast chilling is recognised as a method designed to cool hot food quickly and safely.
+- FSA allergen guidance requires food businesses to provide allergen information and manage allergens effectively; staff allergen training is required.
+- HSE catering guidance identifies slips/trips, manual handling, contact with hot surfaces/harmful substances, dermatitis and knife cuts as major catering risks.
+- HSE knife guidance requires task-suitable knives, stable cutting surfaces, training, secure storage and safe carrying/handling practices.
+- HSE advises that fryer emptying/cleaning should follow manufacturer instructions.
+- HSE COSHH guidance for catering covers exposure to cleaning products, wet work, fumes, ventilation, PPE and safe storage of cleaning chemicals.
+
+Use the current regulator page/manual itself as the source in the product, not this summary.
+
+## 6. Exact equipment rule
+Before producing an operational SOP for a machine, collect:
+- manufacturer
+- exact model
+- serial number if available
+- rating-plate photo
+- front photo
+- control-panel photo
+- installed location
+- power/fuel type where relevant
+- exact manual
+- cleaning manual/section
+- service/maintenance instructions
+- local isolator/emergency controls where appropriate
+- current condition / known faults
+- staff currently competent to use it
+
+If exact identity is missing, create only an equipment placeholder and a data-collection task. Do not publish operating instructions.
+
+## 7. Manufacturer manual ingestion workflow
+When a manual is supplied or found:
+1. verify exact manufacturer + model match
+2. store document metadata
+3. identify safety warnings
+4. identify permitted user operations
+5. identify prohibited user operations / engineer-only work
+6. identify start-up, normal operation, shutdown and cleaning instructions
+7. identify maintenance/service intervals
+8. capture page/section citations
+9. draft Vedanta quick SOP
+10. competent-person/site review
+11. practical validation on the real machine
+12. approve and version
+
+AI may assist extraction and drafting but must never auto-approve.
+
+## 8. Real active kitchen data — what the app should capture
+The long-term value of Vedanta's system comes from its own operating evidence.
+
+Capture, where useful and proportionate:
+
+### Shift context
+- date
+- service: breakfast/lunch/dinner/event
+- covers planned
+- covers actual
+- dietary/allergen complexity count
+- staff scheduled
+- staff actually present
+- role/section assignments
+- shift start/end
+- unusual constraints / events
+
+### Production task observation
+- task type
+- recipe/dish
+- quantity / unit
+- cover count
+- role performing
+- equipment used
+- scheduled start/end
+- actual start/end
+- active work duration where practical
+- wait/hold/interruption reason if relevant
+- output/yield
+- waste
+- rework
+- quality acceptance
+- safety exception
+- notes
+
+### Equipment use
+- equipment ID
+- operation type
+- user
+- start/end
+- set point/programme where appropriate
+- fault/error code
+- downtime
+- corrective action
+- engineer escalation
+
+### Food safety
+- temperature/check type
+- equipment/product/location
+- reading
+- target/configured limit
+- pass/flag/fail
+- corrective action
+- recheck
+- verifier
+
+### Deliveries
+- supplier
+- delivery time
+- expected vs received
+- temperature where applicable
+- damaged/short/wrong product
+- date-code issue
+- allergen/label issue
+- reject/accept/partial
+- put-away completion
+
+### Storage
+- location
+- temperature
+- label/date-code issues
+- FEFO/FIFO issue
+- overstock/space issue
+- damaged product
+- corrective action
+
+### Cleaning
+- area/equipment
+- task
+- planned frequency
+- start/end
+- chemical/product used
+- dilution/contact time where applicable
+- PPE confirmation
+- verification
+- failure/re-clean
+
+### Cooling / blast chill / leftovers
+- product/batch
+- quantity
+- start state/time/temp
+- method
+- blast-chiller ID if used
+- checkpoints
+- final time/temp
+- label/storage location
+- planned reuse/discard decision
+- corrective action
+
+### Waste / yield
+- item
+- gross input
+- usable output
+- trim/waste
+- spoilage
+- overproduction
+- returned/unused service food
+- reason
+
+### Maintenance
+- asset
+- symptom/fault
+- severity
+- reported_at
+- work-around if safe
+- out-of-service status
+- engineer visit
+- parts
+- return-to-service verification
+
+### Training / competency
+- SOP/equipment
+- training material viewed
+- knowledge check
+- supervised practical
+- assessor
+- competent / needs further training
+- restrictions
+- review/retraining date
+
+## 9. Build a benchmark engine from Vedanta data, not guesses
+For prep/cleaning/task-time guidance:
+- initial external or chef estimates must be labelled `provisional`
+- do not present a single guessed time as a performance requirement
+- record actual observations
+- group by task, quantity, role, equipment, cover band and relevant complexity
+- calculate median and useful percentile/range after enough observations
+- retain sample count
+- exclude or flag observations affected by equipment faults, incidents or exceptional interruptions
+- never generate competitive speed leaderboards
+- never penalise staff automatically for taking longer
+- safety and quality always outrank speed
+
+Recommended benchmark fields:
+- task_type
+- quantity_band
+- unit
+- role_band
+- equipment_context
+- cover_band
+- sample_count
+- median_duration
+- p25/p75 or robust range
+- last_calculated_at
+- confidence/status
+- approved_for_planning
+
+## 10. Context-aware operational intelligence
+When the app later estimates labour/task planning, consider:
+- covers
+- menu complexity
+- dietary/allergen modifications
+- batch size
+- equipment availability
+- staff competency
+- prep already completed
+- delivery timing
+- cleaning/deep-clean workload
+- maintenance downtime
+
+Do not estimate from covers alone.
+
+## 11. SOP lifecycle
+Use a controlled lifecycle:
+DRAFT → TECHNICAL REVIEW → FOOD-SAFETY/SAFETY REVIEW WHERE NEEDED → SITE VALIDATION → APPROVED → PUBLISHED → SUPERSEDED/RETIRED
+
+An approved version must be immutable. Editing creates a new draft revision.
+
+Operational records must retain the SOP revision used at the time.
+
+## 12. Approval responsibility
+The system should support separate approval dimensions when relevant:
+- operational owner (e.g. Head Chef)
+- food safety / allergen reviewer
+- H&S / competent person
+- equipment competent person / engineer if required
+
+Not every SOP needs all approvers, but high-risk procedures may.
+
+## 13. Chemicals / COSHH
+For cleaning chemicals, collect the exact product and supplier documentation:
+- product name
+- supplier/manufacturer
+- SDS
+- COSHH assessment
+- intended use
+- dilution
+- contact time
+- PPE
+- incompatibilities
+- first aid/spill response
+- storage
+- expiry/review
+
+Never infer dilution/contact time from another brand's product.
+
+## 14. Allergens
+Allergen logic must be evidence-backed and recipe/ingredient driven.
+
+Support the UK 14 regulated allergens, but also allow site-specific dietary/intolerance notes outside those 14.
+Do not convert a preference into an allergy or an allergy into a preference.
+Do not infer absence of an allergen solely because a previous menu did not list it.
+Supplier/ingredient changes must be able to trigger allergen re-verification.
+
+## 15. Research logging
+When Cursor or an AI-assisted workflow researches content, capture a research note containing:
+- question asked
+- sources consulted
+- date
+- relevant excerpt/summary
+- applicability to Vedanta
+- unresolved assumptions
+- who must verify
+
+This can live as structured data later; during development, maintain it in docs/ or test fixtures where appropriate.
+
+## 16. Product principle
+The final system should be able to answer not just:
+`What is the SOP?`
+
+but also:
+- Why is this requirement here?
+- Which source/manual supports it?
+- Which equipment model does it apply to?
+- Who approved it?
+- Which version was used on this shift?
+- What happened when it failed?
+- What does our own kitchen data show in practice?
+
+That evidence trail is a core product feature, not optional documentation.
