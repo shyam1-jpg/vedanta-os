@@ -10,12 +10,13 @@
   "theme_color": "#1a3328",
   "orientation": "any",
   "icons": [
-    { "src": "/app-icon.svg", "sizes": "any", "type": "image/svg+xml", "purpose": "any maskable" }
+    { "src": "/icon-192.png", "sizes": "192x192", "type": "image/png", "purpose": "any maskable" },
+    { "src": "/icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "any maskable" }
   ],
   "shortcuts": [
-    { "name": "Kitchen", "short_name": "Kitchen", "url": "/kitchen/", "icons": [{ "src": "/app-icon.svg", "sizes": "any", "type": "image/svg+xml" }] },
-    { "name": "Tasks", "short_name": "Tasks", "url": "/tasks/", "icons": [{ "src": "/app-icon.svg", "sizes": "any", "type": "image/svg+xml" }] },
-    { "name": "Maintenance", "short_name": "Maintenance", "url": "/maintenance/", "icons": [{ "src": "/app-icon.svg", "sizes": "any", "type": "image/svg+xml" }] }
+    { "name": "Kitchen", "short_name": "Kitchen", "url": "/kitchen/", "icons": [{ "src": "/icon-192.png", "sizes": "192x192", "type": "image/png" }] },
+    { "name": "Tasks", "short_name": "Tasks", "url": "/tasks/", "icons": [{ "src": "/icon-192.png", "sizes": "192x192", "type": "image/png" }] },
+    { "name": "Maintenance", "short_name": "Maintenance", "url": "/maintenance/", "icons": [{ "src": "/icon-192.png", "sizes": "192x192", "type": "image/png" }] }
   ],
   "categories": ["business", "productivity"],
   "lang": "en-GB"
