@@ -1,6 +1,6 @@
 "use client";
 import Link from "next/link";
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useState, type CSSProperties } from "react";
 import { api } from "@/lib/api";
 import { fmt, addDays } from "@/lib/format";
 
@@ -45,15 +45,15 @@ export default function Kitchen() {
   const todayOrders = orders.filter(o => o.for_date === TODAY || !o.for_date);
   const todayPeak = Math.max(today?.breakfast ?? 0, today?.lunch ?? 0, today?.dinner ?? 0);
 
-  const nextMeal = useMemo(() => {
+  const nextMeal = useMemo<[string, number]>(() => {
     const hour = new Date().getHours();
     if (hour < 10) return ["Breakfast", today?.breakfast ?? 0];
     if (hour < 15) return ["Lunch", today?.lunch ?? 0];
     return ["Dinner", today?.dinner ?? 0];
   }, [today]);
 
-  const card: React.CSSProperties = { background: "var(--paper, #fff)", border: "1px solid var(--line, #e6e0d5)", borderRadius: 16, padding: 16, minHeight: 110 };
-  const metric: React.CSSProperties = { fontSize: 30, fontWeight: 700, lineHeight: 1.05, marginTop: 8 };
+  const card: CSSProperties = { background: "var(--paper, #fff)", border: "1px solid var(--line, #e6e0d5)", borderRadius: 16, padding: 16, minHeight: 110 };
+  const metric: CSSProperties = { fontSize: 30, fontWeight: 700, lineHeight: 1.05, marginTop: 8 };
 
   return (
     <>
