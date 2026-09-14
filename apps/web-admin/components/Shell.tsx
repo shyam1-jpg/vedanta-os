@@ -2,6 +2,7 @@
 import { useEffect, useState, type ReactNode } from "react";
 import { usePathname, useRouter } from "next/navigation";
 import Nav from "@/components/Nav";
+import PwaRegister from "@/components/PwaRegister";
 import { StoreProvider, useStore } from "@/lib/store";
 import { token } from "@/lib/api";
 
@@ -31,5 +32,5 @@ function HouseShell({ children }: { children: ReactNode }) {
   }, [hasToken, ready, user, router]);
 
   if (hasToken === false || (ready && !user) || !user) return null;
-  return <div className="shell"><Nav /><main className="main">{children}</main></div>;
+  return <div className="shell"><Nav /><main className="main">{children}</main><PwaRegister /></div>;
 }
