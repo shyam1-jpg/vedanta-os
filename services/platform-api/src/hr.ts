@@ -4,6 +4,7 @@
 import type { FastifyInstance } from "fastify";
 import { pool, tx } from "./db.ts";
 import { requireActor, allow, problem } from "./auth.ts";
+import { openText, sealText } from "./fieldCrypto.ts";
 
 export default async function hr(f: FastifyInstance) {
 
@@ -98,7 +99,7 @@ export default async function hr(f: FastifyInstance) {
       WHERE ar.property_id = $1 ${canManage ? "" : "AND ar.user_id = $2"}
       ORDER BY ar.from_date DESC LIMIT 100`,
       canManage ? [a.propertyId] : [a.propertyId, userId]);
-    return { items: r.rows };
+    return { items: r.rows.map(row => ({ ...row, notes: openText(row.notes) })) };
   });
 
   f.post("/v1/absence", async (req: any, reply) => {
@@ -106,7 +107,7 @@ export default async function hr(f: FastifyInstance) {
     const { kind, from_date, to_date, days, notes } = req.body ?? {};
     if (!from_date || !to_date) return reply.code(422).send(problem(422, "validation", "from_date and to_date required"));
     const r = (await pool.query(`INSERT INTO absence_request (tenant_id, property_id, user_id, kind, from_date, to_date, days, notes) VALUES ($1,$2,$3,$4,$5,$6,$7,$8) RETURNING id`,
-      [a.tenantId, a.propertyId, a.userId, kind ?? "holiday", from_date, to_date, days ?? null, notes ?? null])).rows[0];
+      [a.tenantId, a.propertyId, a.userId, kind ?? "holiday", from_date, to_date, days ?? null, sealText(notes ?? null)])).rows[0];
     return { id: r.id };
   });
 
@@ -135,7 +136,7 @@ export default async function hr(f: FastifyInstance) {
                   ELSE 'valid' END AS cert_status
       FROM training_record WHERE user_id=$1 AND property_id=$2 ORDER BY completed_at DESC`,
       [userId, a.propertyId]);
-    return { items: r.rows };
+    return { items: r.rows.map(row => ({ ...row, notes: openText(row.notes), certificate_ref: openText(row.certificate_ref) })) };
   });
 
   f.get("/v1/training/expiring", async (req, reply) => {
@@ -153,7 +154,7 @@ export default async function hr(f: FastifyInstance) {
     const { user_id, title, kind, completed_at, expires_at, certificate_ref, notes } = req.body ?? {};
     if (!user_id || !title) return reply.code(422).send(problem(422, "validation", "user_id and title required"));
     const r = (await pool.query(`INSERT INTO training_record (tenant_id, property_id, user_id, title, kind, completed_at, expires_at, certificate_ref, notes, recorded_by) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10) RETURNING id`,
-      [a.tenantId, a.propertyId, user_id, title, kind ?? "internal", completed_at ?? null, expires_at ?? null, certificate_ref ?? null, notes ?? null, a.userId])).rows[0];
+      [a.tenantId, a.propertyId, user_id, title, kind ?? "internal", completed_at ?? null, expires_at ?? null, sealText(certificate_ref ?? null), sealText(notes ?? null), a.userId])).rows[0];
     return { id: r.id };
   });
 

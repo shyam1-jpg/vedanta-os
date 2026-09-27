@@ -4,44 +4,44 @@ import { buildOrganogram, HOD_ROLES, HOUSE_DEPARTMENTS, HOUSE_POSITIONS, ROLE_NA
 import { leaveNeedsHodFirst } from "./leave-state.ts";
 
 const house = [
-  { name: "Shyam Prasad", email: "shyam_1@hotmail.co.uk", role: "SYSTEM_OWNER", department: "MGMT" },
-  { name: "Dan", email: "dan@thevedanta.org", role: "GENERAL_MANAGER", department: "MGMT" },
-  { name: "Graham", email: "gram@thevedanta.org", role: "ESTATE_MANAGER", department: "GROUNDS" },
-  { name: "Alexi", email: "alexi@thevedanta.org", role: "ESTATE_ASSISTANT", department: "GROUNDS" },
-  { name: "Damir", email: "damir@thevedanta.org", role: "GROUNDS", department: "GROUNDS" },
-  { name: "Julia", email: "julia@thevedanta.org", role: "HK_SUPERVISOR", department: "HK" },
-  { name: "Shruti", email: "shruti@thevedanta.org", role: "HK_ATTENDANT", department: "HK" },
-  { name: "Krishna", email: "krishna@thevedanta.org", role: "HK_ATTENDANT", department: "HK" },
-  { name: "Lakshay", email: "lakshay@thevedanta.org", role: "RESTAURANT_MANAGER", department: "RESTAURANT" },
-  { name: "Nikhil", email: "nikhil@thevedanta.org", role: "RESTAURANT_SUPERVISOR", department: "RESTAURANT" },
-  { name: "Chetan", email: "chetan@thevedanta.org", role: "RESTAURANT_STAFF", department: "RESTAURANT" },
-  { name: "Shar", email: "shar@thevedanta.org", role: "SALES_MANAGER", department: "SALES" },
+  { name: "Owner Example", email: "owner@example.invalid", role: "SYSTEM_OWNER", department: "MGMT" },
+  { name: "Morgan House", email: "gm.house@example.invalid", role: "GENERAL_MANAGER", department: "MGMT" },
+  { name: "Rowan House", email: "estate.house@example.invalid", role: "ESTATE_MANAGER", department: "GROUNDS" },
+  { name: "Riley House", email: "estate.assist@example.invalid", role: "ESTATE_ASSISTANT", department: "GROUNDS" },
+  { name: "Jamie House", email: "grounds.one@example.invalid", role: "GROUNDS", department: "GROUNDS" },
+  { name: "Quinn House", email: "hk.lead@example.invalid", role: "HK_SUPERVISOR", department: "HK" },
+  { name: "Avery House", email: "hk.one@example.invalid", role: "HK_ATTENDANT", department: "HK" },
+  { name: "Casey House", email: "hk.two@example.invalid", role: "HK_ATTENDANT", department: "HK" },
+  { name: "Jordan House", email: "restaurant.lead@example.invalid", role: "RESTAURANT_MANAGER", department: "RESTAURANT" },
+  { name: "Sam House", email: "restaurant.sup@example.invalid", role: "RESTAURANT_SUPERVISOR", department: "RESTAURANT" },
+  { name: "Alex House", email: "restaurant.one@example.invalid", role: "RESTAURANT_STAFF", department: "RESTAURANT" },
+  { name: "Taylor House", email: "sales.one@example.invalid", role: "SALES_MANAGER", department: "SALES" },
 ];
 
 describe("house organogram", () => {
-  it("puts Dan as general manager and Graham as estate manager", () => {
+  it("puts the sample general manager and estate manager in their seats", () => {
     const org = buildOrganogram(house);
     const mgmt = org.departments.find(d => d.code === "MGMT")!;
     const gm = mgmt.seats.find(s => s.code === "GENERAL_MANAGER")!;
-    assert.deepEqual(gm.people.map(p => p.name), ["Dan"]);
+    assert.deepEqual(gm.people.map(p => p.name), ["Morgan House"]);
     const estate = org.departments.find(d => d.code === "GROUNDS")!;
     const em = estate.seats.find(s => s.code === "ESTATE_MANAGER")!;
-    assert.deepEqual(em.people.map(p => p.name), ["Graham"]);
+    assert.deepEqual(em.people.map(p => p.name), ["Rowan House"]);
     assert.ok(estate.notes?.toLowerCase().includes("tractor") || estate.notes?.toLowerCase().includes("grounds"));
   });
 
   it("keeps housekeeping, restaurant and grounds named staff together", () => {
     const org = buildOrganogram(house);
     const hk = org.departments.find(d => d.code === "HK")!;
-    assert.deepEqual(hk.seats.find(s => s.code === "HK_SUPERVISOR")!.people.map(p => p.name), ["Julia"]);
-    assert.deepEqual(hk.seats.find(s => s.code === "HK_ATTENDANT")!.people.map(p => p.name), ["Krishna", "Shruti"]);
+    assert.deepEqual(hk.seats.find(s => s.code === "HK_SUPERVISOR")!.people.map(p => p.name), ["Quinn House"]);
+    assert.deepEqual(hk.seats.find(s => s.code === "HK_ATTENDANT")!.people.map(p => p.name), ["Avery House", "Casey House"]);
     const rest = org.departments.find(d => d.code === "RESTAURANT")!;
-    assert.equal(rest.seats.find(s => s.code === "RESTAURANT_MANAGER")!.people[0].name, "Lakshay");
-    assert.equal(rest.seats.find(s => s.code === "RESTAURANT_SUPERVISOR")!.people[0].name, "Nikhil");
-    assert.equal(rest.seats.find(s => s.code === "RESTAURANT_STAFF")!.people[0].name, "Chetan");
+    assert.equal(rest.seats.find(s => s.code === "RESTAURANT_MANAGER")!.people[0].name, "Jordan House");
+    assert.equal(rest.seats.find(s => s.code === "RESTAURANT_SUPERVISOR")!.people[0].name, "Sam House");
+    assert.equal(rest.seats.find(s => s.code === "RESTAURANT_STAFF")!.people[0].name, "Alex House");
     const grounds = org.departments.find(d => d.code === "GROUNDS")!;
-    assert.equal(grounds.seats.find(s => s.code === "ESTATE_ASSISTANT")!.people[0].name, "Alexi");
-    assert.equal(grounds.seats.find(s => s.code === "GROUNDS")!.people[0].name, "Damir");
+    assert.equal(grounds.seats.find(s => s.code === "ESTATE_ASSISTANT")!.people[0].name, "Riley House");
+    assert.equal(grounds.seats.find(s => s.code === "GROUNDS")!.people[0].name, "Jamie House");
   });
 
   it("shows named people only — not a wall of empty posts", () => {
@@ -50,7 +50,7 @@ describe("house organogram", () => {
     assert.ok(HOUSE_POSITIONS.some(p => p.code === "CHEF_DE_PARTIE"));
     assert.ok(HOUSE_POSITIONS.some(p => p.code === "NIGHT_PORTER"));
     const sales = org.departments.find(d => d.code === "SALES")!;
-    assert.equal(sales.seats.find(s => s.code === "SALES_MANAGER")!.people[0].name, "Shar");
+    assert.equal(sales.seats.find(s => s.code === "SALES_MANAGER")!.people[0].name, "Taylor House");
     assert.equal(sales.seats.find(s => s.code === "SALES_ASSISTANT"), undefined);
   });
 

@@ -14,7 +14,7 @@ export const QUALITY_CODES = [
 export type QualityCode = (typeof QUALITY_CODES)[number];
 
 export const SHEET_ONLY_ROOM_NUMBERS = ["301", "302", "303", "304", "305", "306", "307"] as const;
-export const CONFIGURED_ROOM_TOTAL = 45;
+export const CONFIGURED_ROOM_TOTAL = 42;
 /** Documented skip counts disagree. Do not pick a number. */
 export const DOCUMENTED_SKIPPED_PROGRESS_MD = 65;
 export const DOCUMENTED_SKIPPED_DRY_RUN = 6;
@@ -66,7 +66,7 @@ export function buildQualityItems(input: {
     {
       code: "ROOM_COUNT",
       title: "Configured rooms versus imported inventory",
-      detail: "Property config states 45 rooms. The live inventory has 42 (41 guest + 1 staff). Do not invent the missing three.",
+      detail: "The house inventory is 42 rooms (41 guest + staff room 104). Rooms 301–307 are not invented. A configured total that is not 42 is a source conflict.",
       computed: classifyRoomCount({ configured: input.configured, actual: input.actual, guest: input.guest, staff: input.staff }),
       evidence: { configured: input.configured, actual: input.actual, guest: input.guest, staff: input.staff },
       links: [{ href: "/rooms/", label: "Room board" }],

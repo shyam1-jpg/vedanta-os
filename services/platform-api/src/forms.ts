@@ -7,6 +7,7 @@ import { randomBytes } from "node:crypto";
 import type { FastifyInstance } from "fastify";
 import { pool, tx } from "./db.ts";
 import { requireActor, allow, problem } from "./auth.ts";
+import { openList, openText, sealList, sealText } from "./fieldCrypto.ts";
 import { audit } from "./groups.ts";
 import { ALLERGENS } from "./guests.ts";
 
@@ -31,7 +32,7 @@ export default async function routes(f: FastifyInstance) {
     const a = await requireActor(req, reply); if (!a || !allow(a, "guest.read", reply)) return;
     const r = await pool.query(`select p.id person_id, p.given_name, p.family_name, p.email, p.phone, ga.room_preference, ga.arrives_early, d.diet, d.allergens, d.severity, d.notes diet_notes
       from group_attendee ga join person p on p.id=ga.person_id left join diet_profile d on d.person_id=p.id where ga.group_id=$1 order by p.family_name, p.given_name`, [req.params.id]);
-    return { items: r.rows };
+    return { items: r.rows.map(row => ({ ...row, diet: openList(row.diet), allergens: openList(row.allergens), diet_notes: openText(row.diet_notes) })) };
   });
 
   // Public: what the organiser sees
@@ -68,7 +69,7 @@ export default async function routes(f: FastifyInstance) {
         const allergens = (at.allergens ?? []).filter((x: string) => ALLERGENS.includes(x));
         await c.query(`insert into diet_profile (tenant_id, person_id, diet, allergens, severity, notes, declared_at, version) values ($1,$2,$3,$4,$5,$6, now(), 1)
           on conflict (person_id) do update set diet=excluded.diet, allergens=excluded.allergens, severity=excluded.severity, notes=excluded.notes, declared_at=now(), version=diet_profile.version+1`,
-          [g.tenant_id, pid, at.diet ?? [], allergens, allergens.length ? at.severity : (at.severity || null), at.diet_notes || null]);
+          [g.tenant_id, pid, sealList(at.diet ?? []), sealList(allergens), allergens.length ? at.severity : (at.severity || null), sealText(at.diet_notes || null)]);
       }
       await c.query(`update booking_group set booking_form_status='COMPLETE', form_submitted_at=now(), expected_guests=greatest(coalesce(expected_guests,0), (select count(*) from group_attendee where group_id=$1)),
         notes=case when $2::text is null or $2='' then notes else coalesce(notes,'') || E'\nOrganiser form: ' || $2 end, version=version+1 where id=$1`, [g.id, b.notes ?? null]);

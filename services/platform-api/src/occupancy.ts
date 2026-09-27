@@ -1,6 +1,7 @@
 import type { FastifyInstance } from "fastify";
 import { pool, tx } from "./db.ts";
 import { requireActor, allow, problem } from "./auth.ts";
+import { openText } from "./fieldCrypto.ts";
 import { halfDays, audit } from "./groups.ts";
 
 export async function coversFor(propertyId: string, from: string, to: string) {
@@ -25,7 +26,7 @@ export async function coversFor(propertyId: string, from: string, to: string) {
         if (g.retreat_type === "day_retreat" || g.retreat_type === "venue_hire") meals = meals.filter(m => m !== "BREAKFAST");
         const day = days[iso] ??= { date: iso, breakfast: 0, lunch: 0, dinner: 0, groups: [] };
         for (const m of meals) (day as unknown as Record<string, number>)[m.toLowerCase()] += guests;
-        day.groups.push({ id: g.id, name: g.name, colour: g.colour, guests, meals: meals.map(m => m.toLowerCase()), note: first ? `arrive ${g.arrival_slot}${g.arrival_time ? " " + g.arrival_time.slice(0, 5) : ""}` : last ? `depart ${g.departure_slot}${g.departure_time ? " " + g.departure_time.slice(0, 5) : ""}` : undefined, dietary: g.dietary_notes ?? undefined, status: g.status });
+        day.groups.push({ id: g.id, name: g.name, colour: g.colour, guests, meals: meals.map(m => m.toLowerCase()), note: first ? `arrive ${g.arrival_slot}${g.arrival_time ? " " + g.arrival_time.slice(0, 5) : ""}` : last ? `depart ${g.departure_slot}${g.departure_time ? " " + g.departure_time.slice(0, 5) : ""}` : undefined, dietary: openText(g.dietary_notes) ?? undefined, status: g.status });
       }
     }
     return { max_covers: 130, days: Object.values(days).sort((x, y) => x.date.localeCompare(y.date)) };

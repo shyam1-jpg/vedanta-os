@@ -5,8 +5,8 @@ import { buildProgrammeSheet, roomsShort } from "./sheet.ts";
 describe("programme operating sheet", () => {
   it("one booking drives every department without inventing money", () => {
     const sheet = buildProgrammeSheet({
-      name: "Hoffman Graduate Programme",
-      organisation: "Hoffman Institute",
+      name: "Sample Circle Graduate Programme",
+      organisation: "Sample Circle",
       arrival: "2026-10-10",
       departure: "2026-10-17",
       expected_guests: 80,

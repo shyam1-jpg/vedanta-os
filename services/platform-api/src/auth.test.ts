@@ -1,38 +1,101 @@
 import { describe, it } from "node:test";
 import assert from "node:assert/strict";
-import { emailLoginEnabled, staffEmailLoginEnabled, productionOwnerAllowed } from "./auth.ts";
+import { acceptsIdentityHeader, devLoginAllowed, devLoginEmailAllowed, emailLoginEnabled, productionOwnerAllowed } from "./auth.ts";
+import { mfaRequired, tokenShowsMfa } from "./microsoft.ts";
 
 function restore(name: string, value: string | undefined) {
   if (value === undefined) delete process.env[name];
   else process.env[name] = value;
 }
 
-describe("staffEmailLoginEnabled", () => {
-  it("is available for local development by default", () => {
-    const prevEnv = process.env.NODE_ENV;
-    const prevFlag = process.env.ALLOW_EMAIL_LOGIN;
-    process.env.NODE_ENV = "development";
-    delete process.env.ALLOW_EMAIL_LOGIN;
-    try { assert.equal(staffEmailLoginEnabled(), true); }
-    finally { restore("NODE_ENV", prevEnv); restore("ALLOW_EMAIL_LOGIN", prevFlag); }
+describe("staff sign-in", () => {
+  it("never accepts the X-User header as a credential", () => {
+    assert.equal(acceptsIdentityHeader(), false);
   });
 
-  it("can be disabled explicitly in development", () => {
+  it("refuses the development door in production even when the secret and flag are set", () => {
     const prevEnv = process.env.NODE_ENV;
-    const prevFlag = process.env.ALLOW_EMAIL_LOGIN;
-    process.env.NODE_ENV = "development";
-    process.env.ALLOW_EMAIL_LOGIN = "false";
-    try { assert.equal(staffEmailLoginEnabled(), false); }
-    finally { restore("NODE_ENV", prevEnv); restore("ALLOW_EMAIL_LOGIN", prevFlag); }
-  });
-
-  it("is always disabled in production even when ALLOW_EMAIL_LOGIN=true", () => {
-    const prevEnv = process.env.NODE_ENV;
-    const prevFlag = process.env.ALLOW_EMAIL_LOGIN;
+    const prevFlag = process.env.ALLOW_DEV_LOGIN;
+    const prevSecret = process.env.DEV_LOGIN_SECRET;
+    const prevDb = process.env.DATABASE_URL;
     process.env.NODE_ENV = "production";
-    process.env.ALLOW_EMAIL_LOGIN = "true";
-    try { assert.equal(staffEmailLoginEnabled(), false); }
-    finally { restore("NODE_ENV", prevEnv); restore("ALLOW_EMAIL_LOGIN", prevFlag); }
+    process.env.ALLOW_DEV_LOGIN = "true";
+    process.env.DEV_LOGIN_SECRET = "local-dev-secret-value";
+    delete process.env.DATABASE_URL;
+    try { assert.deepEqual(devLoginAllowed(), { ok: false, reason: "production" }); }
+    finally {
+      restore("NODE_ENV", prevEnv);
+      restore("ALLOW_DEV_LOGIN", prevFlag);
+      restore("DEV_LOGIN_SECRET", prevSecret);
+      restore("DATABASE_URL", prevDb);
+    }
+  });
+
+  it("refuses the development door against a hosted database", () => {
+    const prevEnv = process.env.NODE_ENV;
+    const prevFlag = process.env.ALLOW_DEV_LOGIN;
+    const prevSecret = process.env.DEV_LOGIN_SECRET;
+    const prevDb = process.env.DATABASE_URL;
+    process.env.NODE_ENV = "development";
+    process.env.ALLOW_DEV_LOGIN = "true";
+    process.env.DEV_LOGIN_SECRET = "local-dev-secret-value";
+    process.env.DATABASE_URL = "postgres://user:pass@dpg-example.render.com/vedanta";
+    try { assert.equal(devLoginAllowed().ok, false); assert.equal(devLoginAllowed().reason, "hosted-database"); }
+    finally {
+      restore("NODE_ENV", prevEnv);
+      restore("ALLOW_DEV_LOGIN", prevFlag);
+      restore("DEV_LOGIN_SECRET", prevSecret);
+      restore("DATABASE_URL", prevDb);
+    }
+  });
+
+  it("opens the development door only with an explicit flag and a long secret", () => {
+    const prevEnv = process.env.NODE_ENV;
+    const prevFlag = process.env.ALLOW_DEV_LOGIN;
+    const prevSecret = process.env.DEV_LOGIN_SECRET;
+    const prevDb = process.env.DATABASE_URL;
+    process.env.NODE_ENV = "development";
+    delete process.env.DATABASE_URL;
+    process.env.ALLOW_DEV_LOGIN = "true";
+    process.env.DEV_LOGIN_SECRET = "short";
+    try {
+      assert.equal(devLoginAllowed().reason, "secret");
+      process.env.DEV_LOGIN_SECRET = "local-dev-secret-value";
+      assert.equal(devLoginAllowed().ok, true);
+    } finally {
+      restore("NODE_ENV", prevEnv);
+      restore("ALLOW_DEV_LOGIN", prevFlag);
+      restore("DEV_LOGIN_SECRET", prevSecret);
+      restore("DATABASE_URL", prevDb);
+    }
+  });
+
+  it("only lets synthetic example accounts use the development door", () => {
+    assert.equal(devLoginEmailAllowed("dev.chef@example.invalid"), true);
+    assert.equal(devLoginEmailAllowed("someone@thevedanta.org"), false);
+    assert.equal(devLoginEmailAllowed("guest@example.com"), false);
+  });
+});
+
+describe("microsoft multi-factor", () => {
+  it("accepts a token that shows a second factor", () => {
+    assert.equal(tokenShowsMfa({ amr: ["pwd", "mfa"] }), true);
+    assert.equal(tokenShowsMfa({ amr: ["fido"] }), true);
+    assert.equal(tokenShowsMfa({ acr: "mfa" }), true);
+  });
+
+  it("rejects a password-only token", () => {
+    assert.equal(tokenShowsMfa({ amr: ["pwd"] }), false);
+    assert.equal(tokenShowsMfa({}), false);
+  });
+
+  it("cannot turn the MFA check off in production", () => {
+    const prevEnv = process.env.NODE_ENV;
+    const prev = process.env.OIDC_REQUIRE_MFA;
+    process.env.NODE_ENV = "production";
+    process.env.OIDC_REQUIRE_MFA = "false";
+    try { assert.equal(mfaRequired(), true); }
+    finally { restore("NODE_ENV", prevEnv); restore("OIDC_REQUIRE_MFA", prev); }
   });
 });
 

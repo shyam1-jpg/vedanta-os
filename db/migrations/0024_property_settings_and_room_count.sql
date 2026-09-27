@@ -2,6 +2,8 @@
 -- Room count: spec said 45, 2026 Room Sheet lists 42 rooms of which 1 is staff (room 104).
 -- Guest-bookable rooms = 41. Fix rooms_total from 45→42 and add all text fields so they
 -- can be edited from the DB without a code deploy.
+-- On a fresh database this UPDATE runs before seed 0001 creates the property row.
+-- Seed 0021 repeats the same rooms_total and welcome text after the row exists.
 UPDATE property
 SET settings = settings
   || jsonb_build_object(

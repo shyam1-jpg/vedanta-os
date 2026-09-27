@@ -38,7 +38,7 @@ async function requireTaskReader(req: any, reply: any) {
 async function requireTaskWriter(req: any, reply: any) {
   const a = await requireTaskReader(req, reply);
   if (!a) return null;
-  if (a.perms.has("task.write") || a.perms.has("group.read") || a.perms.has("cover.read")) return a;
+  if (a.perms.has("task.write")) return a;
   reply.code(403).send(problem(403, "forbidden", "You cannot change house tasks"));
   return null;
 }

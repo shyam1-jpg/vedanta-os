@@ -12,6 +12,7 @@
 import type { FastifyInstance } from "fastify";
 import { pool } from "./db.ts";
 import { requireActor, allow, problem } from "./auth.ts";
+import { bodyHasCardData, paymentsEnabled, stripeAuditPayload } from "./payments.ts";
 
 const STRIPE_KEY = process.env.STRIPE_SECRET_KEY ?? "";
 const WEBHOOK_SECRET = process.env.STRIPE_WEBHOOK_SECRET ?? "";
@@ -38,11 +39,24 @@ async function stripeRequest(path: string, body?: Record<string, string | number
   return data as any;
 }
 
+function paymentsClosed(reply: any) {
+  return reply.code(503).send(problem(503, "payments_disabled", "Card payments are turned off. The house confirms the deposit. Food is not billed."));
+}
+
+function refuseCard(req: any, reply: any) {
+  if (!bodyHasCardData(req.body)) return false;
+  reply.code(422).send(problem(422, "card_data_refused", "Do not send a card number or security code. The payment page collects the card."));
+  return true;
+}
+
 export default async function stripe(f: FastifyInstance) {
+  f.get("/guest/payments", async () => ({ enabled: paymentsEnabled() }));
 
   // Create a Stripe Checkout session for a deposit on a booking group
   f.post<{ Params: { id: string } }>("/v1/groups/:id/stripe/checkout", async (req: any, reply) => {
     const a = await requireActor(req, reply); if (!a || !allow(a, "group.update", reply)) return;
+    if (!paymentsEnabled()) return paymentsClosed(reply);
+    if (refuseCard(req, reply)) return;
     if (!STRIPE_KEY) return reply.code(503).send(problem(503, "stripe_not_configured", "Set STRIPE_SECRET_KEY to enable online payments"));
 
     const g = (await pool.query(
@@ -82,6 +96,8 @@ export default async function stripe(f: FastifyInstance) {
 
   // Create a Stripe Checkout session for a guest deposit on an enquiry
   f.post<{ Params: { id: string } }>("/v1/guest-enquiries/:id/stripe/checkout", async (req: any, reply) => {
+    if (!paymentsEnabled()) return paymentsClosed(reply);
+    if (refuseCard(req, reply)) return;
     if (!STRIPE_KEY) return reply.code(503).send(problem(503, "stripe_not_configured", "Set STRIPE_SECRET_KEY to enable online payments"));
     // Guest auth — no actor needed, uses guest JWT
     const tok = (req.headers.authorization ?? "").replace("Bearer ", "");
@@ -143,7 +159,8 @@ export default async function stripe(f: FastifyInstance) {
     // Idempotency check
     const already = (await pool.query(`SELECT id FROM stripe_event WHERE id=$1`, [event.id])).rows[0];
     if (already) return { ok: true, duplicate: true };
-    await pool.query(`INSERT INTO stripe_event (id, kind, payload, processed_at) VALUES ($1,$2,$3,now()) ON CONFLICT DO NOTHING`, [event.id, event.type, JSON.stringify(event)]);
+    await pool.query(`INSERT INTO stripe_event (id, kind, payload, processed_at) VALUES ($1,$2,$3,now()) ON CONFLICT DO NOTHING`, [event.id, event.type, JSON.stringify(stripeAuditPayload(event))]);
+    if (!paymentsEnabled()) return { ok: true, ignored: true };
 
     if (event.type === "checkout.session.completed") {
       const session = event.data.object;
@@ -172,9 +189,10 @@ export default async function stripe(f: FastifyInstance) {
   f.get("/v1/stripe/status", async (req, reply) => {
     const a = await requireActor(req, reply); if (!a || !allow(a, "group.update", reply)) return;
     return {
-      configured: !!STRIPE_KEY,
+      enabled: paymentsEnabled(),
+      configured: paymentsEnabled() && !!STRIPE_KEY,
       webhook_configured: !!WEBHOOK_SECRET,
-      mode: STRIPE_KEY.startsWith("sk_live") ? "live" : STRIPE_KEY ? "test" : "not_configured",
+      mode: !paymentsEnabled() ? "disabled" : STRIPE_KEY.startsWith("sk_live") ? "live" : STRIPE_KEY ? "test" : "not_configured",
     };
   });
 }

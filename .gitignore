@@ -4,6 +4,10 @@ dist-web/
 out/
 .env
 .env.local
+.env.*
+!infra/deploy/.env.example
 dist/
+*.tsbuildinfo
+db/import/*.sql
 *.log
 .DS_Store

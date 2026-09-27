@@ -2,9 +2,9 @@
 -- Production staff are provisioned explicitly through BOOTSTRAP_OWNER_EMAIL /
 -- BOOTSTRAP_ADMIN_EMAILS and authenticate with Microsoft 365.
 --
--- These placeholder accounts are harmless in production because email-only staff
--- sign-in is hard-disabled when NODE_ENV=production. They exist only so a fresh
--- local database has role examples for UI/permission testing.
+-- These placeholder accounts use @example.invalid. The development door also
+-- refuses production, a hosted database, and any address that is not @example.invalid.
+-- They exist only so a fresh local database has role examples for UI/permission testing.
 DO $$
 DECLARE t uuid; p uuid; u uuid; r record;
 BEGIN

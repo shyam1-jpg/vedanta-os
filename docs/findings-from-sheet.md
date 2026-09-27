@@ -4,9 +4,8 @@ Source: `The Vedanta Calendar.xlsx` — sheets `2022–2030 Calendar` and `2024/
 
 ## How the business actually books
 1. **Groups, not individuals.** Nearly every booking is an organiser bringing a group:
-   Hoffman Institute (recurring, ~37 rooms, £1,039 pp), OmLife, Think Gita, Chinmaya
-   Mission, Michelle Yoga day retreats, weddings (Grand Vedanta package £8,000), KCSOC
-   (111 guests, all rooms), volunteer trips. Roughly 60–90 group bookings a year.
+   recurring residential programmes, day retreats, weddings, and volunteer trips.
+   Roughly 60–90 group bookings a year. Named clients from the sheet are not repeated here.
 2. **Per-person package pricing** — Standard / Premium, twin vs single rate, with or
    without spa access, exclusive vs shared use of the venue. Prices agreed per group.
 3. **A paperwork lifecycle per group:** booking form sent → complete; T&Cs PDF signed

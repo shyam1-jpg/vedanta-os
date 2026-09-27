@@ -1,5 +1,5 @@
 -- House organogram: positions of the estate, and the named people who hold them.
--- Idempotent. Dan is general manager (not system owner). Graham is estate manager.
+-- Idempotent. Sample seats only. Names and addresses are placeholders.
 
 UPDATE department SET name = 'Front of house' WHERE code = 'FRONT';
 UPDATE department SET name = 'Estate and grounds' WHERE code = 'GROUNDS';
@@ -74,27 +74,27 @@ INSERT INTO app_user (tenant_id, email, display_name, status)
 SELECT t.id, v.email, v.name, 'ACTIVE'
 FROM tenant t
 CROSS JOIN (VALUES
-  ('dan@thevedanta.org', 'Dan'),
-  ('gram@thevedanta.org', 'Graham'),
-  ('julia@thevedanta.org', 'Julia'),
-  ('shruti@thevedanta.org', 'Shruti'),
-  ('krishna@thevedanta.org', 'Krishna'),
-  ('lakshay@thevedanta.org', 'Lakshay'),
-  ('nikhil@thevedanta.org', 'Nikhil'),
-  ('chetan@thevedanta.org', 'Chetan'),
-  ('alexi@thevedanta.org', 'Alexi'),
-  ('damir@thevedanta.org', 'Damir'),
-  ('shar@thevedanta.org', 'Shar')
+  ('gm.house@example.invalid', 'Morgan House'),
+  ('estate.house@example.invalid', 'Rowan House'),
+  ('hk.lead@example.invalid', 'Quinn House'),
+  ('hk.one@example.invalid', 'Avery House'),
+  ('hk.two@example.invalid', 'Casey House'),
+  ('restaurant.lead@example.invalid', 'Jordan House'),
+  ('restaurant.sup@example.invalid', 'Sam House'),
+  ('restaurant.one@example.invalid', 'Alex House'),
+  ('estate.assist@example.invalid', 'Riley House'),
+  ('grounds.one@example.invalid', 'Jamie House'),
+  ('sales.one@example.invalid', 'Taylor House')
 ) AS v(email, name)
 ON CONFLICT (tenant_id, email) DO UPDATE SET display_name = EXCLUDED.display_name, status = 'ACTIVE';
 
--- One role each. Removes Dan and Graham from system-owner.
+-- One role each. Sample people are not system owners.
 DELETE FROM membership m
 USING app_user u
 WHERE m.user_id = u.id AND u.email IN (
-  'dan@thevedanta.org','gram@thevedanta.org','julia@thevedanta.org','shruti@thevedanta.org','krishna@thevedanta.org',
-  'lakshay@thevedanta.org','nikhil@thevedanta.org','chetan@thevedanta.org','alexi@thevedanta.org','damir@thevedanta.org',
-  'shar@thevedanta.org','manager@thevedanta.org'
+  'gm.house@example.invalid','estate.house@example.invalid','hk.lead@example.invalid','hk.one@example.invalid','hk.two@example.invalid',
+  'restaurant.lead@example.invalid','restaurant.sup@example.invalid','restaurant.one@example.invalid','estate.assist@example.invalid','grounds.one@example.invalid',
+  'sales.one@example.invalid','ops.house@example.invalid'
 );
 
 INSERT INTO membership (tenant_id, user_id, property_id, role_id, department_id)
@@ -103,18 +103,18 @@ FROM tenant t
 JOIN property p ON p.tenant_id = t.id
 JOIN app_user u ON u.tenant_id = t.id
 JOIN (VALUES
-  ('dan@thevedanta.org', 'GENERAL_MANAGER', 'MGMT'),
-  ('gram@thevedanta.org', 'ESTATE_MANAGER', 'GROUNDS'),
-  ('julia@thevedanta.org', 'HK_SUPERVISOR', 'HK'),
-  ('shruti@thevedanta.org', 'HK_ATTENDANT', 'HK'),
-  ('krishna@thevedanta.org', 'HK_ATTENDANT', 'HK'),
-  ('lakshay@thevedanta.org', 'RESTAURANT_MANAGER', 'RESTAURANT'),
-  ('nikhil@thevedanta.org', 'RESTAURANT_SUPERVISOR', 'RESTAURANT'),
-  ('chetan@thevedanta.org', 'RESTAURANT_STAFF', 'RESTAURANT'),
-  ('alexi@thevedanta.org', 'ESTATE_ASSISTANT', 'GROUNDS'),
-  ('damir@thevedanta.org', 'GROUNDS', 'GROUNDS'),
-  ('shar@thevedanta.org', 'SALES_MANAGER', 'SALES'),
-  ('manager@thevedanta.org', 'OPERATIONS_MANAGER', 'MGMT')
+  ('gm.house@example.invalid', 'GENERAL_MANAGER', 'MGMT'),
+  ('estate.house@example.invalid', 'ESTATE_MANAGER', 'GROUNDS'),
+  ('hk.lead@example.invalid', 'HK_SUPERVISOR', 'HK'),
+  ('hk.one@example.invalid', 'HK_ATTENDANT', 'HK'),
+  ('hk.two@example.invalid', 'HK_ATTENDANT', 'HK'),
+  ('restaurant.lead@example.invalid', 'RESTAURANT_MANAGER', 'RESTAURANT'),
+  ('restaurant.sup@example.invalid', 'RESTAURANT_SUPERVISOR', 'RESTAURANT'),
+  ('restaurant.one@example.invalid', 'RESTAURANT_STAFF', 'RESTAURANT'),
+  ('estate.assist@example.invalid', 'ESTATE_ASSISTANT', 'GROUNDS'),
+  ('grounds.one@example.invalid', 'GROUNDS', 'GROUNDS'),
+  ('sales.one@example.invalid', 'SALES_MANAGER', 'SALES'),
+  ('ops.house@example.invalid', 'OPERATIONS_MANAGER', 'MGMT')
 ) AS v(email, role, dept) ON lower(u.email) = v.email
 JOIN role r ON r.tenant_id = t.id AND r.code = v.role
 JOIN department d ON d.property_id = p.id AND d.code = v.dept
@@ -127,17 +127,17 @@ SELECT u.id, u.tenant_id, p.id, v.designation
 FROM app_user u
 JOIN property p ON p.tenant_id = u.tenant_id
 JOIN (VALUES
-  ('dan@thevedanta.org', 'General manager'),
-  ('gram@thevedanta.org', 'Estate manager — tractor, farming and grounds'),
-  ('julia@thevedanta.org', 'Housekeeping supervisor'),
-  ('shruti@thevedanta.org', 'Housekeeping'),
-  ('krishna@thevedanta.org', 'Housekeeping'),
-  ('lakshay@thevedanta.org', 'Restaurant manager'),
-  ('nikhil@thevedanta.org', 'Restaurant supervisor'),
-  ('chetan@thevedanta.org', 'Restaurant staff'),
-  ('alexi@thevedanta.org', 'Estate manager assistant'),
-  ('damir@thevedanta.org', 'Ground staff'),
-  ('shar@thevedanta.org', 'Sales manager')
+  ('gm.house@example.invalid', 'General manager'),
+  ('estate.house@example.invalid', 'Estate manager — tractor, farming and grounds'),
+  ('hk.lead@example.invalid', 'Housekeeping supervisor'),
+  ('hk.one@example.invalid', 'Housekeeping'),
+  ('hk.two@example.invalid', 'Housekeeping'),
+  ('restaurant.lead@example.invalid', 'Restaurant manager'),
+  ('restaurant.sup@example.invalid', 'Restaurant supervisor'),
+  ('restaurant.one@example.invalid', 'Restaurant staff'),
+  ('estate.assist@example.invalid', 'Estate manager assistant'),
+  ('grounds.one@example.invalid', 'Ground staff'),
+  ('sales.one@example.invalid', 'Sales manager')
 ) AS v(email, designation) ON lower(u.email) = v.email
 ON CONFLICT (user_id) DO UPDATE SET designation = EXCLUDED.designation, updated_at = now();
 
@@ -147,5 +147,5 @@ ON CONFLICT DO NOTHING;
 
 -- Generic desk logins must not sit in seats that named people already hold.
 UPDATE app_user SET status = 'LEFT'
-WHERE email IN ('housekeeping@thevedanta.org', 'chef@thevedanta.org', 'kitchen@thevedanta.org')
+WHERE email IN ('housekeeping@example.invalid', 'chef@example.invalid', 'kitchen@example.invalid')
   AND status <> 'LEFT';

@@ -13,7 +13,7 @@ export default function NewGroupForm({ onClose, onCreated }: { onClose: () => vo
   const [f, setF] = useState({
     name: "", organisation: "", contact: "", contactEmail: "", retreatType: TYPES[0], useBasis: "SHARED" as "SHARED" | "EXCLUSIVE",
     arrival: "2026-05-01", arrivalSlot: "PM" as Slot, arrivalTime: "4pm", departure: "2026-05-03", departureSlot: "PM" as Slot, departureTime: "2pm",
-    guests: 20, roomsWanted: 10, packageName: PACKAGES[0], priceNotes: "", notes: "", dietaryNotes: "",
+    guests: 20, roomsWanted: 10, packageName: PACKAGES[0], priceNotes: "", notes: "", dietaryNotes: "", publicTitle: "", openOnGuestBook: false,
   });
   const set = <K extends keyof typeof f>(k: K, v: (typeof f)[K]) => setF(s => ({ ...s, [k]: v }));
   const [err, setErr] = useState<string | null>(null);
@@ -39,7 +39,7 @@ export default function NewGroupForm({ onClose, onCreated }: { onClose: () => vo
     try {
       const g = await addGroup({ name: f.name, organisation: f.organisation, contact_email: f.contactEmail || null, retreat_type: f.retreatType, use_basis: f.useBasis,
         arrival: f.arrival, arrival_slot: f.arrivalSlot, arrival_time: f.arrivalTime, departure: f.departure, departure_slot: f.departureSlot, departure_time: f.departureTime,
-        expected_guests: f.guests, expected_rooms: isDay ? 0 : f.roomsWanted, package_name: f.packageName, price_notes: f.priceNotes, spa_access: f.packageName.includes("spa"), notes: f.notes, dietary_notes: f.dietaryNotes });
+        expected_guests: f.guests, expected_rooms: isDay ? 0 : f.roomsWanted, package_name: f.packageName, price_notes: f.priceNotes, spa_access: f.packageName.includes("spa"), notes: f.notes, dietary_notes: f.dietaryNotes, public_title: f.publicTitle || null, open_for_guests: f.openOnGuestBook });
       onCreated(g);
     } catch (e) { setErr(e instanceof ApiError ? e.problem.detail : "Could not create the booking"); }
     finally { setBusy(false); }
@@ -51,8 +51,9 @@ export default function NewGroupForm({ onClose, onCreated }: { onClose: () => vo
         <header><h2 id="ng-title">New group booking</h2><button className="btn" onClick={onClose} aria-label="Close">✕</button></header>
 
         <div className="fgrid">
-          <label className="span2">Booking name<input value={f.name} onChange={e => set("name", e.target.value)} placeholder="e.g. Hoffman Process — May" autoFocus /></label>
-          <label>Organisation<input value={f.organisation} onChange={e => set("organisation", e.target.value)} placeholder="Hoffman Institute" /></label>
+          <label className="span2">Booking name<input value={f.name} onChange={e => set("name", e.target.value)} placeholder="e.g. Spring Retreat — May" autoFocus /></label>
+          <label className="span2">Public title on /book<input value={f.publicTitle} onChange={e => set("publicTitle", e.target.value)} placeholder="What guests may see. Leave blank to keep a private name off /book." /></label>
+          <label>Organisation<input value={f.organisation} onChange={e => set("organisation", e.target.value)} placeholder="Example Circle" /></label>
           <label>Contact email<input type="email" value={f.contactEmail} onChange={e => set("contactEmail", e.target.value)} placeholder="organiser@example.org" /></label>
           <label>Type<select value={f.retreatType} onChange={e => set("retreatType", e.target.value)}>{TYPES.map(t => <option key={t} value={t}>{RETREAT_TYPES[t]}</option>)}</select></label>
           <label>Use of venue<select value={f.useBasis} onChange={e => set("useBasis", e.target.value as "SHARED" | "EXCLUSIVE")}><option value="SHARED">Shared with other guests</option><option value="EXCLUSIVE">Exclusive use</option></select></label>
@@ -86,6 +87,10 @@ export default function NewGroupForm({ onClose, onCreated }: { onClose: () => vo
           <label>Price as agreed<input value={f.priceNotes} onChange={e => set("priceNotes", e.target.value)} placeholder="Twin £249 pp · Single £339 pp" /></label>
           <label className="span2">Dietary and allergen notes for the kitchen<input value={f.dietaryNotes} onChange={e => set("dietaryNotes", e.target.value)} placeholder="e.g. 4 vegan, 1 severe nut allergy, all vegetarian" /></label>
           <label className="span2">Notes<textarea rows={2} value={f.notes} onChange={e => set("notes", e.target.value)} placeholder="Early arrivals, meals, anything the team needs to know" /></label>
+          <label className="span2" style={{ display: "flex", alignItems: "center", gap: 10 }}>
+            <input type="checkbox" checked={f.openOnGuestBook} onChange={e => set("openOnGuestBook", e.target.checked)} />
+            Show on the guest book once the public title is safe to publish
+          </label>
         </div>
 
         {(err || problems.length > 0) && <div className="note">{err ?? problems[0]}</div>}

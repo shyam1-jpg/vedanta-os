@@ -8,7 +8,8 @@ import type { FastifyInstance } from "fastify";
 import { pool, tx } from "./db.ts";
 import { emailLoginEnabled, problem, requireActor, allow } from "./auth.ts";
 import { audit } from "./groups.ts";
-import { cleanName, guestCopy, isPublicProgrammeName, nightsBetween, programmeBasis, programmeKind, publicProgrammeName } from "../../../domains/guest/programmes.ts";
+import { cleanName, guestCopy, guestFacingProgrammeName, nightsBetween, programmeBasis, programmeKind, publicProgrammeName } from "../../../domains/guest/programmes.ts";
+import { openText, sealText } from "./fieldCrypto.ts";
 import { roomsForStay } from "../../../domains/guest/stay.ts";
 import { accessOutcome, issueExpiry, nextFailedAttempts, publicLoginDetail, RECOVERY_OK } from "../../../domains/guest/access.ts";
 import { groupPublicTypes, shapePublicRoom } from "../../../domains/guest/availability.ts";
@@ -36,7 +37,7 @@ type GuestRow = {
 const PROGRAMME_SQL = `select g.id, g.name, g.organisation, g.retreat_type, g.use_basis,
   g.arrival_date::text arrival, g.arrival_slot, to_char(g.arrival_time,'HH24:MI') arrival_time,
   g.departure_date::text departure, g.departure_slot, to_char(g.departure_time,'HH24:MI') departure_time,
-  g.expected_guests, g.package_name, g.price_notes, g.sheet_text, g.spa_access,
+  g.expected_guests, g.package_name, g.price_notes, g.sheet_text, g.spa_access, g.public_title,
   pk.name package_label, pk.price_twin, pk.price_single, pk.price_basis, pk.includes_spa, pk.includes_meals
 from booking_group g
 left join package pk on pk.id = g.package_id
@@ -50,7 +51,7 @@ where g.property_id=$1
 
 function shapeProgramme(r: any) {
   const kind = programmeKind(r.retreat_type);
-  const name = publicProgrammeName(cleanName(r.name), kind);
+  const name = guestFacingProgrammeName(r.name, r.public_title, kind) ?? publicProgrammeName(cleanName(r.name), kind);
   const about = guestCopy(r.sheet_text);
   const price = guestCopy(r.price_notes);
   return {
@@ -171,13 +172,13 @@ export default async function guestPortal(f: FastifyInstance) {
   f.get("/guest/programmes", async () => {
     const prop = await propertyRow();
     const r = await pool.query(`${PROGRAMME_SQL} order by g.arrival_date, g.arrival_slot`, [prop.id]);
-    return { items: r.rows.filter(x => isPublicProgrammeName(x.name)).map(shapeProgramme) };
+    return { items: r.rows.filter(x => guestFacingProgrammeName(x.name, x.public_title, programmeKind(x.retreat_type))).map(shapeProgramme) };
   });
 
   f.get("/guest/programmes/:id", async (req: any, reply) => {
     const prop = await propertyRow();
     const r = (await pool.query(`${PROGRAMME_SQL} and g.id=$2`, [prop.id, req.params.id])).rows[0];
-    if (!r || !isPublicProgrammeName(r.name)) return reply.code(404).send(problem(404, "not_found", "That programme is not open"));
+    if (!r || !guestFacingProgrammeName(r.name, r.public_title, programmeKind(r.retreat_type))) return reply.code(404).send(problem(404, "not_found", "That programme is not open"));
     return shapeProgramme(r);
   });
 
@@ -277,7 +278,7 @@ export default async function guestPortal(f: FastifyInstance) {
     let programmeId: string | null = b.programme_id || null;
     if (programmeId) {
       const p = (await pool.query(`${PROGRAMME_SQL} and g.id=$2`, [prop.id, programmeId])).rows[0];
-      if (!p || !isPublicProgrammeName(p.name)) return reply.code(404).send(problem(404, "not_found", "That programme is not open"));
+      if (!p || !guestFacingProgrammeName(p.name, p.public_title, programmeKind(p.retreat_type))) return reply.code(404).send(problem(404, "not_found", "That programme is not open"));
       arrival = p.arrival;
       departure = p.departure;
     }
@@ -288,9 +289,9 @@ export default async function guestPortal(f: FastifyInstance) {
     const e = (await pool.query(`insert into guest_enquiry (tenant_id,property_id,guest_id,name,email,people,arrival_date,departure_date,notes,programme_id,dietary_notes,accessibility_notes,room_preference,arrival_time_note,travel_notes)
       values ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15) returning id, status`,
       [prop.tenant_id, prop.id, guest.id, name, email, people, arrival, departure, b.notes ?? null, programmeId,
-        String(b.dietary_notes ?? "").trim() || null, String(b.accessibility_notes ?? "").trim() || null,
+        sealText(String(b.dietary_notes ?? "").trim() || null), sealText(String(b.accessibility_notes ?? "").trim() || null),
         String(b.room_preference ?? "").trim() || null, String(b.arrival_time_note ?? "").trim() || null,
-        String(b.travel_notes ?? "").trim() || null])).rows[0];
+        sealText(String(b.travel_notes ?? "").trim() || null)])).rows[0];
     const session = await issueGuest(guest.id, email, name);
     void backupGuestEvent({
       id: `guest_enq_${e.id}`,
@@ -411,7 +412,13 @@ export default async function guestPortal(f: FastifyInstance) {
       from guest_enquiry e
       left join booking_group bg on bg.id = e.programme_id
       where e.property_id=$1 and e.status='ENQUIRY' order by e.created_at desc limit 50`, [a.propertyId]);
-    return { items: r.rows.map(x => ({ ...x, programme_name: x.programme_name ? cleanName(x.programme_name) : null })) };
+    return { items: r.rows.map(x => ({
+      ...x,
+      programme_name: x.programme_name ? cleanName(x.programme_name) : null,
+      dietary_notes: openText(x.dietary_notes),
+      accessibility_notes: openText(x.accessibility_notes),
+      travel_notes: openText(x.travel_notes),
+    })) };
   });
 
   f.get("/v1/guest-stays", async (req, reply) => {
@@ -497,6 +504,7 @@ export default async function guestPortal(f: FastifyInstance) {
            ["#1F3A32", "#8A6A3B", "#4F6758", "#6B3A32"][Number(n.rows[0].count) % 4]])).rows[0];
         bookingId = g.id;
       }
+      if (!bookingId) throw new Error("booking was not created");
       await c.query(`update guest_enquiry set status='CONVERTED', booking_id=$2 where id=$1`, [e.id, bookingId]);
       await audit(c, a, "booking_group", bookingId, "group.create", { to: "ENQUIRY", payload: { from_enquiry: e.id, private: true } });
       void backupGuestEvent({

@@ -31,6 +31,6 @@ describe("decodeCopyField", () => {
     assert.equal(decodeCopyField("back\\\\slash"), "back\\slash");
   });
   it("keeps ordinary text including emails", () => {
-    assert.equal(decodeCopyField("shyam_1@hotmail.co.uk"), "shyam_1@hotmail.co.uk");
+    assert.equal(decodeCopyField("guest@example.invalid"), "guest@example.invalid");
   });
 });

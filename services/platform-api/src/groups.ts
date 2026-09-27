@@ -1,6 +1,7 @@
 import type { FastifyInstance } from "fastify";
 import { pool, tx, type Q } from "./db.ts";
 import { requireActor, allow, problem, type Actor } from "./auth.ts";
+import { openText, sealText } from "./fieldCrypto.ts";
 import { buildProgrammeSheet } from "../../../domains/retreat/sheet.ts";
 
 type Slot = "AM" | "PM";
@@ -37,7 +38,7 @@ export async function audit(c: Q, a: Actor, entity: string, id: string, action: 
 
 const GROUP_COLS = `id, name, organisation, contact_email, contact_phone, arrival_date::text arrival, arrival_slot, arrival_time::text, departure_date::text departure, departure_slot, departure_time::text,
   retreat_type, use_basis, expected_guests, expected_rooms, package_name, price_basis, price_notes, spa_access, status, booking_form_status, terms_signed, terms_document, feedback_form_status,
-  meals_from, meals_to, dietary_notes, notes, colour, version, source, external_ref, updated_at, review_reason, sheet_text,
+  meals_from, meals_to, dietary_notes, notes, colour, version, source, external_ref, updated_at, review_reason, sheet_text, public_title,
   package_id, agreed_price_twin, agreed_price_single, singles_count, agreed_total, form_token, form_sent_at, form_submitted_at, open_for_guests,
   (select json_build_object('code', pk.code, 'name', pk.name, 'price_basis', pk.price_basis, 'price_twin', pk.price_twin, 'price_single', pk.price_single) from package pk where pk.id=booking_group.package_id) package,
   (select count(*) from group_attendee ga where ga.group_id=booking_group.id)::int attendees`;
@@ -51,19 +52,24 @@ export async function freeRooms(c: Q | typeof pool, propertyId: string, g: { arr
   return r.rows.map(x => x.number as string);
 }
 
+function presentGroup<T extends { dietary_notes?: string | null }>(row: T): T {
+  return { ...row, dietary_notes: openText(row.dietary_notes) };
+}
+
 export default async function routes(f: FastifyInstance) {
   f.get("/groups", async (req, reply) => {
     const a = await requireActor(req, reply); if (!a || !allow(a, "group.read", reply)) return;
     const r = await pool.query(`select ${GROUP_COLS}, (select count(distinct room_id) from room_occupancy o where o.group_id=booking_group.id) rooms_allocated
       from booking_group where property_id=$1 order by arrival_date, arrival_slot`, [a.propertyId]);
-    return { items: r.rows };
+    return { items: r.rows.map(presentGroup) };
   });
 
   f.get("/groups/review", async (req, reply) => {
     const a = await requireActor(req, reply); if (!a || !allow(a, "group.read", reply)) return;
     const r = await pool.query(`select ${GROUP_COLS} from booking_group where property_id=$1 and review_reason is not null
       order by (departure_date >= current_date) desc, arrival_date`, [a.propertyId]);
-    return { items: r.rows, upcoming: r.rows.filter((g: any) => g.departure >= new Date().toISOString().slice(0, 10)).length };
+    const items = r.rows.map(presentGroup);
+    return { items, upcoming: items.filter((g: any) => g.departure >= new Date().toISOString().slice(0, 10)).length };
   });
 
   f.post<{ Body: Record<string, unknown> }>("/groups", async (req, reply) => {
@@ -78,12 +84,12 @@ export default async function routes(f: FastifyInstance) {
     return tx(async c => {
       const n = await c.query(`select count(*) from booking_group where property_id=$1`, [a.propertyId]);
       const r = await c.query(`insert into booking_group(tenant_id,property_id,name,organisation,contact_email,contact_phone,arrival_date,arrival_slot,arrival_time,departure_date,departure_slot,departure_time,
-          retreat_type,use_basis,expected_guests,expected_rooms,package_name,price_notes,spa_access,status,booking_form_status,notes,meals_from,meals_to,dietary_notes,colour,source)
-        values($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,'ENQUIRY','NOT_SENT',$20,$21,$22,$23,$24,'ADMIN') returning ${GROUP_COLS}`,
+          retreat_type,use_basis,expected_guests,expected_rooms,package_name,price_notes,spa_access,status,booking_form_status,notes,meals_from,meals_to,dietary_notes,colour,source,public_title)
+        values($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,'ENQUIRY','NOT_SENT',$20,$21,$22,$23,$24,'ADMIN',$25) returning ${GROUP_COLS}`,
         [a.tenantId, a.propertyId, b.name, b.organisation, b.contact_email ?? null, b.contact_phone ?? null, b.arrival, b.arrival_slot, parseTime(b.arrival_time), b.departure, b.departure_slot, parseTime(b.departure_time),
-         b.retreat_type ?? "residential", b.use_basis ?? "SHARED", b.expected_guests ?? null, wanted, b.package_name ?? null, b.price_notes ?? null, !!b.spa_access, b.notes ?? null, b.meals_from ?? null, b.meals_to ?? null, b.dietary_notes ?? null, PALETTE[Number(n.rows[0].count) % PALETTE.length]]);
+         b.retreat_type ?? "residential", b.use_basis ?? "SHARED", b.expected_guests ?? null, wanted, b.package_name ?? null, b.price_notes ?? null, !!b.spa_access, b.notes ?? null, b.meals_from ?? null, b.meals_to ?? null, sealText(typeof b.dietary_notes === "string" ? b.dietary_notes : null), PALETTE[Number(n.rows[0].count) % PALETTE.length], typeof b.public_title === "string" && b.public_title.trim() ? b.public_title.trim() : null]);
       await audit(c, a, "booking_group", r.rows[0].id, "group.create", { to: "ENQUIRY", version: 1 });
-      reply.code(201); return { ...r.rows[0], rooms_allocated: 0 };
+      reply.code(201); return { ...presentGroup(r.rows[0]), rooms_allocated: 0 };
     });
   });
 
@@ -91,7 +97,7 @@ export default async function routes(f: FastifyInstance) {
     const a = await requireActor(req, reply); if (!a || !allow(a, "group.read", reply)) return;
     const r = await pool.query(`select ${GROUP_COLS}, (select count(distinct room_id) from room_occupancy o where o.group_id=booking_group.id) rooms_allocated from booking_group where id=$1 and property_id=$2`, [req.params.id, a.propertyId]);
     if (!r.rowCount) return reply.code(404).send(problem(404, "not_found", "No such booking"));
-    return r.rows[0];
+    return presentGroup(r.rows[0]);
   });
 
   f.get<{ Params: { id: string } }>("/groups/:id/sheet", async (req, reply) => {
@@ -110,7 +116,7 @@ export default async function routes(f: FastifyInstance) {
       expected_rooms: g.expected_rooms,
       rooms_placed: rooms.rows.map((x: { number: string }) => x.number),
       meals: guests ? { breakfast: guests, lunch: guests, dinner: guests } : null,
-      dietary: g.dietary_notes,
+      dietary: openText(g.dietary_notes),
       spa: !!g.spa_access,
       status: g.status,
       exclusive: g.use_basis === "EXCLUSIVE",
@@ -120,11 +126,11 @@ export default async function routes(f: FastifyInstance) {
   f.patch<{ Params: { id: string }; Body: Record<string, unknown>; Headers: { "if-match"?: string } }>("/groups/:id", async (req, reply) => {
     const a = await requireActor(req, reply); if (!a || !allow(a, "group.update", reply)) return;
     const allowed = ["name", "organisation", "contact_email", "contact_phone", "expected_guests", "expected_rooms", "package_name", "price_notes", "spa_access", "booking_form_status", "terms_signed", "terms_document", "feedback_form_status", "notes", "meals_from", "meals_to", "dietary_notes", "retreat_type", "use_basis", "arrival_time", "departure_time",
-      "arrival_date", "arrival_slot", "departure_date", "departure_slot", "review_reason", "package_id", "agreed_price_twin", "agreed_price_single", "singles_count", "agreed_total", "open_for_guests"];
+      "arrival_date", "arrival_slot", "departure_date", "departure_slot", "review_reason", "package_id", "agreed_price_twin", "agreed_price_single", "singles_count", "agreed_total", "open_for_guests", "public_title"];
     const sets: string[] = []; const vals: unknown[] = [];
     for (const k of allowed) if (k in req.body) {
       const raw = req.body[k];
-      const v = k === "open_for_guests" ? !!raw : k.endsWith("_time") ? parseTime(raw) : raw;
+      const v = k === "open_for_guests" ? !!raw : k === "dietary_notes" ? sealText(typeof raw === "string" ? raw : null) : k === "public_title" ? (typeof raw === "string" && raw.trim() ? raw.trim() : null) : k.endsWith("_time") ? parseTime(raw) : raw;
       vals.push(v); sets.push(`${k}=$${vals.length}`);
     }
     if (!sets.length) return reply.code(422).send(problem(422, "validation", "Nothing to change"));
@@ -143,8 +149,10 @@ export default async function routes(f: FastifyInstance) {
       vals.push(req.params.id, a.propertyId, ver);
       const r = await c.query(`update booking_group set ${sets.join(",")}, version=version+1 where id=$${vals.length - 2} and property_id=$${vals.length - 1} and version=$${vals.length} returning ${GROUP_COLS}`, vals);
       if (!r.rowCount) { reply.code(409); return problem(409, "version_conflict", "Someone else changed this booking. Reload and try again."); }
-      await audit(c, a, "booking_group", req.params.id, "group.update", { version: r.rows[0].version, payload: req.body });
-      return r.rows[0];
+      const auditBody = { ...req.body };
+      if ("dietary_notes" in auditBody) auditBody.dietary_notes = "[sealed]";
+      await audit(c, a, "booking_group", req.params.id, "group.update", { version: r.rows[0].version, payload: auditBody });
+      return presentGroup(r.rows[0]);
     });
   });
 

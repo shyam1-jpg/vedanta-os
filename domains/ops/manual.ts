@@ -50,7 +50,7 @@ export const HOUSE_MANUALS: ManualChapter[] = [
     kind: "APP",
     title: "How to use this house",
     sort_order: 10,
-    summary: "Three doors, one house. The desk computer opens the House. A phone opens the Pocket. Guests open the Guest book. Nobody shares a login. There is no password — you are let in by your house email.",
+    summary: "Three doors, one house. The desk computer opens the House. A phone opens the Pocket. Guests open the Guest book. Nobody shares a login. Staff sign in with Microsoft 365. A development door exists only on a local machine.",
     body: "This is the map of the app. Learn the doors first, then the page that belongs to your department. If a page is grey, your role does not open it — ask your head of department, do not borrow someone else's screen.\n\nHouse (desk): Today, House log, Front desk, Night porter, Department boards, Kitchen, Housekeeping, Maintenance, Payroll, Manual, Staff corner.\nPocket (phone): Clock, Holiday, Duty, House log, Front desk, Night, Manual, SOP.\nGuest book: the guest's own stay only. Never open House or Pocket in front of a guest.\n\nKiteline (kiteline.uk) is a different product. The published rota and PIN clock live there. Vedanta clock and the house duty board live here. Do not mix Kiteline PINs into this login.",
     diagram: [
       { title: "House", caption: "Desk · the full board" },
@@ -58,7 +58,7 @@ export const HOUSE_MANUALS: ManualChapter[] = [
       { title: "Guest book", caption: "Guests · their stay only" },
     ],
     steps: [
-      { title: "Sign in", look: "The forest-and-paper sign-in. Your name appears. No password box.", act: "Type your house email. Open House on a desk, Pocket on a phone.", note: "If the house has not added you yet, the door stays shut." },
+      { title: "Sign in", look: "The forest-and-paper sign-in. Microsoft 365 asks for your work account and a second factor.", act: "Sign in with Microsoft. Open House on a desk, Pocket on a phone.", note: "If the house has not added you yet, the door stays shut." },
       { title: "Clock", look: "Payroll (House) or Clock (Pocket) shows in or out.", act: "Clock in when you start. Clock out when you leave. Hours count from that." },
       { title: "Today", look: "Arrivals, rooms tonight, dinner covers.", act: "Read it before service. Front desk and Night porter both use who is arriving late." },
       { title: "House log", look: "Guest asks, daily ticks, handover notes, notices.", act: "Tick your round. Take a guest ask. Leave a note for the next shift instead of WhatsApp." },
@@ -194,7 +194,7 @@ export const HOUSE_MANUALS: ManualChapter[] = [
     title: "Kitchen — how the brigade works",
     sort_order: 70,
     summary: "The pass is clear. Each board has a colour and a job. The allergen board matches today's guests. The FOH crate is a real list, not a WhatsApp. Voices are short. Nobody crosses a raw board onto a ready plate.",
-    body: "We take the French brigade for who owns what, Japanese mise for how a station looks before service, UK hygiene for temperatures, and the quiet of an Indian retreat kitchen for timing vegetarian and allergen plates without drama.\n\nHead chef / kitchen manager owns the pass and the allergen board.\nSous keeps the clock and the sections.\nChef de partie owns a section — they do not wander.\nCommis and assistants fetch, prep, and never send a plate.\nKitchen porter (plongeur) owns wash-up and the floor — the pass depends on them.\n\nFOH orders (waters, bananas, plant milk, biscuits) arrive on Kitchen. Treat them as mise for reception, not a favour.\n\nKiteline Ordering is how supplier food is bought. This House kitchen board is how the house talks to itself.",
+    body: "The house kitchen is vegetarian: no eggs and no onion-family ingredients. Flag only a real exception — vegan or dairy-free, gluten, nuts, or Jain root vegetables.\n\nWe take the French brigade for who owns what, Japanese mise for how a station looks before service, UK hygiene for temperatures, and the quiet of an Indian retreat kitchen for timing vegetarian and allergen plates without drama.\n\nHead chef / kitchen manager owns the pass and the allergen board.\nSous keeps the clock and the sections.\nChef de partie owns a section — they do not wander.\nCommis and assistants fetch, prep, and never send a plate.\nKitchen porter (plongeur) owns wash-up and the floor — the pass depends on them.\n\nFOH orders (waters, bananas, plant milk, biscuits) arrive on Kitchen. Treat them as mise for reception, not a favour.\n\nKiteline Ordering is how supplier food is bought. This House kitchen board is how the house talks to itself.",
     diagram: [
       { title: "Mise", caption: "Station set, Japan" },
       { title: "Section", caption: "Brigade, France" },

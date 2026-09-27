@@ -56,6 +56,7 @@ export default function Book() {
   const [ok, setOk] = useState<string | null>(null);
   const [err, setErr] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+  const [paymentsOn, setPaymentsOn] = useState(false);
   const [asks, setAsks] = useState<GuestAsk[]>([]);
   const [ask, setAsk] = useState({ request_text: "", room_label: "" });
 
@@ -99,6 +100,7 @@ export default function Book() {
     const from = new Date(); const to = new Date(); to.setDate(to.getDate() + 28);
     const f = from.toISOString().slice(0, 10); const t = to.toISOString().slice(0, 10);
     api<{ days: Day[] }>(`/guest/calendar?from=${f}&to=${t}`).then(r => setCal(r.days)).catch(() => {});
+    api<{ enabled: boolean }>("/guest/payments").then(r => setPaymentsOn(!!r.enabled)).catch(() => setPaymentsOn(false));
   }, []);
 
   const pickProgramme = (p: Prog) => {
@@ -321,7 +323,9 @@ export default function Book() {
               {(step === "pay" || step === "done") && (
                 <div className="card" style={{ marginTop: 18 }}>
                   <h2 style={{ fontSize: 22 }}>Payment & deposit</h2>
-                  <p className="m">To secure your place, a deposit is required. You will be taken to a secure Stripe payment page. Your card details are never stored by us — all payments are handled securely by Stripe.</p>
+                  {paymentsOn
+                    ? <p className="m">To secure your place, a deposit is required. You will be taken to a secure Stripe payment page. Your card details are never stored by us — all payments are handled securely by Stripe. Food is not billed.</p>
+                    : <p className="m">The house confirms the deposit. Card payments are not taken on this page. Food is not billed — the restaurant is buffet only.</p>}
                   <div style={{ background: "var(--surface, #f5f0e8)", borderRadius: 10, padding: "14px 16px", marginBottom: 16 }}>
                     <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 6 }}>
                       <span className="m">Deposit amount</span>
@@ -332,6 +336,7 @@ export default function Book() {
                       <span className="m" style={{ color: "var(--ink-2, #666)" }}>Agreed with the house after acceptance</span>
                     </div>
                   </div>
+                  {paymentsOn ? (
                   <button className="btn" disabled={busy || !form.name || !form.email.includes("@")} onClick={async () => {
                     try {
                       const enquiryResult = await doEnquiry();
@@ -340,20 +345,20 @@ export default function Book() {
                         if (r?.url) window.location.href = r.url;
                       }
                     } catch {
-                      // Fall back to save place without payment if Stripe not configured
                       await doEnquiry();
                     }
                   }}>
                     {busy ? "…" : "Pay deposit & save my place"}
                   </button>
+                  ) : null}
                   <button className="btn sec" style={{ marginTop: 10 }} disabled={busy || !form.name || !form.email.includes("@")} onClick={doEnquiry}>
                     Save place — pay deposit later
                   </button>
                   {ok && <div className="note">{ok}</div>}
                   {err && <div className="note">{err}</div>}
-                  <p className="m" style={{ fontSize: 12, color: "var(--ink-3, #999)", marginTop: 14 }}>
-                    🔒 Payments secured by Stripe · No card details stored · Cancel anytime before acceptance
-                  </p>
+                  {paymentsOn && <p className="m" style={{ fontSize: 12, color: "var(--ink-3, #999)", marginTop: 14 }}>
+                    Payments are taken by Stripe. This house does not store the card number or security code.
+                  </p>}
                 </div>
               )}
 
