@@ -14,7 +14,7 @@ property:
   code: VOR
   name: The Vedanta
   tagline: Luxury retreat centre
-  rooms_total: 45
+  rooms_total: 42
   check_in_from: "15:00"
   check_out_by: "11:00"
 
@@ -27,8 +27,8 @@ restaurant:
 staff:
   headcount: 25                 # initial rota sizing and licence planning
 
-# Real inventory lives in db/seed/0001_property.sql (42 rooms from the 2026 Room Sheet).
-# Sponsor stated 45 rooms; 2024/25 sheets also listed 301-307. Discrepancy to confirm.
+# Real inventory is 42 rooms: 41 guest rooms plus staff room 104.
+# Rooms 301–307 are not in the 2026 inventory and are not invented.
 sections: [Ground Floor, Pink Corridor, First Floor, Green Corridor, Second Floor]
 packages: [Standard, Standard with spa, Premium, Day retreat, Venue hire, Grand Vedanta (weddings)]
 use_basis: [Exclusive, Shared]

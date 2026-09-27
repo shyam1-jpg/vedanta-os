@@ -18,6 +18,7 @@ const fromApiGroup = (g: ApiGroup): Group => ({
   feedback: ((g.feedback_form_status as string) ?? "NOT_SENT") as Group["feedback"], notes: (g.notes as string) ?? undefined, dietaryNotes: (g.dietary_notes as string) ?? undefined, mealsFrom: (g.meals_from as string) ?? undefined, mealsTo: (g.meals_to as string) ?? undefined,
   colour: (g.colour as string) ?? "#1F3A32", version: Number(g.version), source: g.source as string,
   openOnGuestBook: !!g.open_for_guests,
+  publicTitle: (g.public_title as string) ?? "",
 });
 const fmtTime = (t: string | null) => { if (!t) return ""; const [h, m] = t.split(":").map(Number); return `${h % 12 || 12}${m ? ":" + String(m).padStart(2, "0") : ""}${h >= 12 ? "pm" : "am"}`; };
 const fromApiRoom = (r: ApiRoom): Room => ({
@@ -27,7 +28,7 @@ const fromApiRoom = (r: ApiRoom): Room => ({
 });
 
 type Store = {
-  user: User | null; ready: boolean; signIn: (email: string) => Promise<void>; signInWithToken: (t: string) => Promise<void>; signOut: () => Promise<void>; can: (p: string) => boolean;
+  user: User | null; ready: boolean; signInDev: (email: string, secret: string) => Promise<void>; signInWithToken: (t: string) => Promise<void>; signOut: () => Promise<void>; can: (p: string) => boolean;
   rooms: Room[]; groups: Group[]; occupancy: Occupancy[]; loading: boolean; error: string | null;
   reload: () => Promise<void>; loadOccupancy: (from: string, to: string) => Promise<void>;
   addGroup: (g: Record<string, unknown>) => Promise<Group>;
@@ -78,7 +79,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
   const store = useMemo<Store>(() => ({
     user, ready, rooms, groups, occupancy, loading, error, reload, loadOccupancy,
     can: (p) => !!user?.permissions.includes(p),
-    signIn: async (email) => { const r = await api<{ token: string; user: User }>("/auth/login", { method: "POST", body: JSON.stringify({ email }) }); token.set(r.token); setUser(r.user); },
+    signInDev: async (email, secret) => { const r = await api<{ token: string; user: User }>("/auth/dev-login", { method: "POST", body: JSON.stringify({ email, secret }) }); token.set(r.token); setUser(r.user); },
     signInWithToken: async (t) => { token.set(t); const u = await api<User>("/me"); setUser(u); },
     signOut: async () => {
       try { if (token.get()) await api("/auth/logout", { method: "POST" }); } catch { /* local cleanup still happens */ }

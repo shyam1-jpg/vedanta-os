@@ -376,6 +376,7 @@ export default function GroupsScreen() {
             </div>
 
             <h3>Guest book</h3>
+            {sel.publicTitle ? <p className="m">Public title: {sel.publicTitle}</p> : <p className="m">No public title yet. A private booking name stays off /book until you set one.</p>}
             <div style={{ display: "flex", alignItems: "center", gap: 12, marginBottom: 14 }}>
               <label style={{ display: "flex", alignItems: "center", gap: 8, cursor: can("group.update") ? "pointer" : "default" }}>
                 <input

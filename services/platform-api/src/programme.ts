@@ -10,7 +10,7 @@ import { requireActor, allow, problem } from "./auth.ts";
 import { audit } from "./groups.ts";
 
 // Department work rules — what each dept needs to do per programme item kind
-const DEPT_RULES: Record<string, { dept: string; title: (item: any) => string; desc?: (item: any) => string }[]> = {
+const DEPT_RULES: Record<string, { dept: string; title: (item: any) => string; desc?: (item: any) => string | undefined }[]> = {
   meal: [
     { dept: "kitchen", title: i => `Prepare ${i.title}`, desc: i => `${i.covers ?? "?"} covers${i.notes ? " · " + i.notes : ""}` },
     { dept: "halls",   title: i => `Set ${i.location ?? "dining room"} for ${i.title}`, desc: i => `${i.covers ?? "?"} covers` },

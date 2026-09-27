@@ -13,8 +13,8 @@ python3 tools/import-sheet/load_groups.py out/groups.json out/groups.sql
 docker exec -i vedanta-db psql -U vedanta -d vedanta < out/groups.sql
 python3 tools/import-sheet/import_roomsheet.py "The Vedanta Calendar.xlsx" out/rooms.sql 2025 2026
 docker exec -i vedanta-db psql -U vedanta -d vedanta < out/rooms.sql
-#    Shortcut: db/import/imported_from_sheet_2026-09-02.sql holds both results of the 2 Sept 2026
-#    export (bookings, notes, room placements) — load it instead of running the importers.
+#    Do not load a booking-sheet dump from git. The old import file held real guest details
+#    and has been removed from the working tree. Use synthetic seed 0022 for a local demo.
 
 # 3. API  (port 4000)
 cd services/platform-api && npm install && npm run dev
@@ -23,8 +23,6 @@ cd services/platform-api && npm install && npm run dev
 cd apps/web-admin && npm install && npm run dev
 ```
 
-Open http://localhost:3000, pick a user on the sign-in screen.
+Open http://localhost:3000.
 
-Development sign-in is by email with no password. Before any real use this is replaced by
-the identity provider (Microsoft Entra / Google / Auth0 / Keycloak) — the API already checks
-permissions per role, so only the login step changes.
+Staff sign in with Microsoft 365. For local development only, set `ALLOW_DEV_LOGIN=true` and `DEV_LOGIN_SECRET` (16 characters or more), then use an `@example.invalid` address. The development door refuses production and a hosted database. There is no email-only staff sign-in and the X-User header is never a credential.

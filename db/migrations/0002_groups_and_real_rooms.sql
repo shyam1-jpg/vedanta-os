@@ -14,7 +14,7 @@ ALTER TABLE room
 
 -- Group bookings carry the commercial agreement; individual reservations hang off them.
 ALTER TABLE booking_group
-  ADD COLUMN organisation text,                  -- e.g. Hoffman Institute, OmLife, Think Gita
+  ADD COLUMN organisation text,                  -- organiser, not a guest name
   ADD COLUMN contact_email text,
   ADD COLUMN contact_phone text,
   ADD COLUMN arrival_date date,

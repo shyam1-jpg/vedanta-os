@@ -22,6 +22,8 @@ export default function Pocket() {
   const [me, setMe] = useState<Me | null>(null);
   const [prop, setProp] = useState<Prop>({ name: "The Vedanta Way", kicker: "Retreat Center" });
   const [email, setEmail] = useState("");
+  const [secret, setSecret] = useState("");
+  const [providers, setProviders] = useState<{ microsoft: boolean; dev: boolean } | null>(null);
   const [err, setErr] = useState<string | null>(null);
   const [tab, setTab] = useState<"clock" | "leave" | "duty" | "sop" | "log" | "desk" | "night" | "manual" | "tasks">("clock");
   const [desk, setDesk] = useState<{
@@ -66,13 +68,21 @@ export default function Pocket() {
   };
   useEffect(() => {
     api<Prop>("/guest/property").then(p => setProp({ name: p.name, kicker: p.kicker })).catch(() => {});
+    api<{ microsoft: boolean; dev: boolean }>("/auth/providers").then(p => setProviders({ microsoft: !!p.microsoft, dev: !!p.dev })).catch(() => {});
+    const hash = window.location.hash.match(/token=([^&]+)/);
+    if (hash) {
+      tok.set(decodeURIComponent(hash[1]));
+      history.replaceState(null, "", window.location.pathname + window.location.search);
+      load().catch(() => tok.set(null));
+      return;
+    }
     if (tok.get()) load().catch(() => tok.set(null));
   }, []);
 
   const enter = async () => {
     setErr(null);
     try {
-      const r = await api<{ token: string }>("/auth/login", { method: "POST", body: JSON.stringify({ email, surface: "staff" }) });
+      const r = await api<{ token: string }>("/auth/dev-login", { method: "POST", body: JSON.stringify({ email, secret, surface: "staff" }) });
       tok.set(r.token); await load();
     } catch (e) { setErr((e as Error).message); }
   };
@@ -98,10 +108,15 @@ export default function Pocket() {
       <div className="hero"><div className="kicker">{prop.kicker}</div><h1>{prop.name}</h1><p>Luxury retreat centre</p></div>
       <div className="wrap">
         <div className="card">
-          <label>Staff email</label>
-          <p className="m">There is no password.</p>
-          <input value={email} onChange={e => setEmail(e.target.value)} placeholder="you@thevedanta.org" />
-          <button className="btn" onClick={enter}>Enter the pocket</button>
+          <h2>Staff pocket</h2>
+          {providers?.microsoft && <a className="btn" href={`${API}/auth/microsoft?surface=staff`}>Sign in with Microsoft</a>}
+          {providers?.dev && (<>
+            <p className="m">Development door. Example addresses only. This stays shut in production.</p>
+            <input type="password" value={secret} onChange={e => setSecret(e.target.value)} placeholder="Development secret" autoComplete="off" />
+            <input value={email} onChange={e => setEmail(e.target.value)} placeholder="dev.front@example.invalid" autoComplete="off" />
+            <button className="btn" onClick={enter}>Enter the pocket</button>
+          </>)}
+          {providers && !providers.microsoft && !providers.dev && <p className="m">No sign-in method is configured.</p>}
           {err && <div className="note">{err}</div>}
         </div>
       </div>

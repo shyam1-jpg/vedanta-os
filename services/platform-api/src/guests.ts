@@ -3,6 +3,7 @@ import { pool, tx } from "./db.ts";
 import { requireActor, allow, problem } from "./auth.ts";
 import { audit } from "./groups.ts";
 import { moveNameAcrossHouse } from "./people.ts";
+import { openList, openText, sealList, sealText } from "./fieldCrypto.ts";
 
 export const ALLERGENS = ["celery", "cereals_gluten", "crustaceans", "eggs", "fish", "lupin", "milk", "molluscs", "mustard", "nuts", "peanuts", "sesame", "soya", "sulphites"];
 const SEVERITY = ["PREFERENCE", "INTOLERANCE", "ALLERGY", "ANAPHYLAXIS"];
@@ -19,7 +20,17 @@ export default async function routes(f: FastifyInstance) {
       where p.tenant_id=$1 and ($2 = '' or (p.given_name || ' ' || p.family_name) ilike '%' || $2 || '%' or p.email ilike '%' || $2 || '%' or p.organisation ilike '%' || $2 || '%')
         and ($3::boolean is not true or coalesce(array_length(d.allergens,1),0) > 0)
       order by p.family_name, p.given_name limit $4`, [a.tenantId, q, req.query.allergens === "1", Number(req.query.limit ?? 100)]);
-    return { items: r.rows, allergens: ALLERGENS, severities: SEVERITY };
+    return {
+      items: r.rows.map(row => ({
+        ...row,
+        notes: openText(row.notes),
+        diet: openList(row.diet),
+        allergens: openList(row.allergens),
+        diet_notes: openText(row.diet_notes),
+      })),
+      allergens: ALLERGENS,
+      severities: SEVERITY,
+    };
   });
 
   f.post<{ Body: { given_name: string; family_name: string; email?: string; phone?: string; organisation?: string; notes?: string } }>("/guests", async (req, reply) => {
@@ -28,7 +39,7 @@ export default async function routes(f: FastifyInstance) {
     if (!b.given_name?.trim() || !b.family_name?.trim()) return reply.code(422).send(problem(422, "validation", "First and last name are required"));
     return tx(async c => {
       const r = await c.query(`insert into person (tenant_id, given_name, family_name, email, phone, organisation, notes) values ($1,$2,$3,$4,$5,$6,$7) returning id`,
-        [a.tenantId, b.given_name.trim(), b.family_name.trim(), b.email?.trim() || null, b.phone?.trim() || null, b.organisation?.trim() || null, b.notes || null]);
+        [a.tenantId, b.given_name.trim(), b.family_name.trim(), b.email?.trim() || null, b.phone?.trim() || null, b.organisation?.trim() || null, sealText(b.notes || null)]);
       await audit(c, a, "person", r.rows[0].id, "guest.create", { payload: { name: `${b.given_name} ${b.family_name}` } });
       reply.code(201); return { id: r.rows[0].id };
     });
@@ -41,7 +52,11 @@ export default async function routes(f: FastifyInstance) {
       const cur = (await c.query(`select given_name, family_name, email from person where id=$1 and tenant_id=$2 for update`, [req.params.id, a.tenantId])).rows[0];
       if (!cur) { reply.code(404); return problem(404, "not_found", "No such guest"); }
       const sets: string[] = []; const vals: unknown[] = [];
-      for (const k of allowed) if (k in (req.body ?? {})) { vals.push((req.body as any)[k] || null); sets.push(`${k}=$${vals.length}`); }
+      for (const k of allowed) if (k in (req.body ?? {})) {
+        const raw = (req.body as any)[k] || null;
+        vals.push(k === "notes" ? sealText(raw) : raw);
+        sets.push(`${k}=$${vals.length}`);
+      }
       if (!sets.length) return reply.code(422).send(problem(422, "validation", "Nothing to change"));
       vals.push(req.params.id, a.tenantId);
       await c.query(`update person set ${sets.join(",")} where id=$${vals.length - 1} and tenant_id=$${vals.length}`, vals);
@@ -74,8 +89,8 @@ export default async function routes(f: FastifyInstance) {
       await c.query(`insert into diet_profile (tenant_id, person_id, diet, allergens, severity, notes, declared_by_user_id, declared_at, version)
         values ($1,$2,$3,$4,$5,$6,$7, now(), 1)
         on conflict (person_id) do update set diet=excluded.diet, allergens=excluded.allergens, severity=excluded.severity, notes=excluded.notes, declared_by_user_id=excluded.declared_by_user_id, declared_at=now(), version=diet_profile.version+1`,
-        [a.tenantId, p.id, b.diet ?? [], allergens, b.severity ?? null, b.notes ?? null, a.userId]);
-      await audit(c, a, "person", p.id, "diet.declare", { payload: { from: prev ?? null, to: { diet: b.diet ?? [], allergens, severity: b.severity ?? null } } });
+        [a.tenantId, p.id, sealList(b.diet ?? []), sealList(allergens), b.severity ?? null, sealText(b.notes ?? null), a.userId]);
+      await audit(c, a, "person", p.id, "diet.declare", { payload: { from: prev ? "[sealed]" : null, to: { diet: "[sealed]", allergens: "[sealed]", severity: b.severity ?? null } } });
       return { ok: true };
     });
   });
@@ -94,26 +109,44 @@ export default async function routes(f: FastifyInstance) {
     const a = await requireActor(req, reply); if (!a || !allow(a, "guest.read", reply)) return;
     const r = await pool.query(`
       SELECT p.id, p.given_name || ' ' || p.family_name AS display_name, p.email, p.organisation,
-             p.dietary_notes, p.accessibility_notes, p.room_preference, p.arrival_preference,
-             p.travel_notes, p.notes, p.marketing_ok, p.vip, p.flagged, p.flagged_reason,
+             ga.dietary_notes, ga.accessibility_notes, ga.room_preference, ga.arrival_preference,
+             ga.travel_notes, ga.notes, ga.marketing_ok, ga.vip, ga.flagged, ga.flagged_reason,
              coalesce(ga.email_verified, false) AS email_verified,
              p.created_at
       FROM person p
-      LEFT JOIN guest_account ga ON ga.email = p.email AND ga.tenant_id = p.tenant_id
+      LEFT JOIN guest_account ga ON lower(ga.email) = lower(p.email) AND ga.tenant_id = p.tenant_id
       WHERE p.id = $1 AND p.tenant_id = $2`, [req.params.id, a.tenantId]);
     if (!r.rows[0]) return reply.code(404).send(problem(404, "not_found", "Guest not found"));
-    return r.rows[0];
+    const row = r.rows[0];
+    return {
+      ...row,
+      dietary_notes: openText(row.dietary_notes),
+      accessibility_notes: openText(row.accessibility_notes),
+      travel_notes: openText(row.travel_notes),
+      notes: openText(row.notes),
+      flagged_reason: openText(row.flagged_reason),
+    };
   });
 
   /** Guest 360 — patch profile (dietary notes, accessibility, preferences, VIP, flagged) */
   f.patch<{ Params: { id: string } }>("/guests/:id/profile", async (req: any, reply) => {
     const a = await requireActor(req, reply); if (!a || !allow(a, "guest.update", reply)) return;
     const allowed = ["dietary_notes","accessibility_notes","room_preference","arrival_preference","travel_notes","notes","marketing_ok","vip","flagged","flagged_reason"];
+    const sealed = new Set(["dietary_notes", "accessibility_notes", "travel_notes", "notes", "flagged_reason"]);
     const fields = Object.entries(req.body ?? {}).filter(([k]) => allowed.includes(k));
     if (!fields.length) return { ok: true };
-    const sets = fields.map(([k], i) => `${k}=$${i + 2}`).join(", ");
-    const vals = fields.map(([, v]) => v);
-    await pool.query(`UPDATE person SET ${sets} WHERE id=$1 AND tenant_id=${a.tenantId}`, [req.params.id, ...vals]);
+    const person = (await pool.query(`select email, given_name, family_name from person where id=$1 and tenant_id=$2`, [req.params.id, a.tenantId])).rows[0];
+    if (!person?.email) return reply.code(422).send(problem(422, "validation", "This guest needs an email before preferences can be saved"));
+    const email = String(person.email).trim().toLowerCase();
+    await pool.query(
+      `insert into guest_account (tenant_id, property_id, email, display_name)
+       values ($1,$2,$3,$4)
+       on conflict (property_id, email) do nothing`,
+      [a.tenantId, a.propertyId, email, `${person.given_name ?? ""} ${person.family_name ?? ""}`.trim() || email],
+    );
+    const sets = fields.map(([k], i) => `${k}=$${i + 3}`).join(", ");
+    const vals = fields.map(([k, v]) => sealed.has(k) && typeof v === "string" ? sealText(v) : v);
+    await pool.query(`update guest_account set ${sets} where tenant_id=$1 and lower(email)=$2`, [a.tenantId, email, ...vals]);
     return { ok: true };
   });
 
@@ -141,7 +174,7 @@ export default async function routes(f: FastifyInstance) {
       WHERE c.guest_id = (SELECT id FROM guest_account WHERE email = (SELECT email FROM person WHERE id=$1 AND tenant_id=$2) AND tenant_id=$2)
         AND c.property_id = $3
       ORDER BY c.created_at DESC LIMIT 100`, [req.params.id, a.tenantId, a.propertyId]);
-    return { items: r.rows };
+    return { items: r.rows.map(row => ({ ...row, body: openText(row.body) })) };
   });
 
   /** Guest 360 — complaints */
@@ -153,7 +186,7 @@ export default async function routes(f: FastifyInstance) {
       WHERE c.guest_id = (SELECT id FROM guest_account WHERE email = (SELECT email FROM person WHERE id=$1 AND tenant_id=$2) AND tenant_id=$2)
         AND c.property_id = $3
       ORDER BY c.created_at DESC`, [req.params.id, a.tenantId, a.propertyId]);
-    return { items: r.rows };
+    return { items: r.rows.map(row => ({ ...row, description: openText(row.description), resolution: openText(row.resolution) })) };
   });
 
   /** Who is in house with a declared allergy or diet, per day — for the kitchen. */
@@ -163,6 +196,13 @@ export default async function routes(f: FastifyInstance) {
       from room_occupancy o join room r on r.id=o.room_id join person p on p.id=o.person_id join diet_profile d on d.person_id=p.id left join booking_group g on g.id=o.group_id
       where r.property_id=$1 and o.on_date between $2 and $3 and (coalesce(array_length(d.allergens,1),0) > 0 or coalesce(array_length(d.diet,1),0) > 0)
       group by o.on_date, p.id, r.number, d.diet, d.allergens, d.severity, d.notes, g.name order by o.on_date, d.severity desc nulls last, name`, [a.propertyId, req.query.from, req.query.to]);
-    return { items: r.rows };
+    return {
+      items: r.rows.map(row => ({
+        ...row,
+        diet: openList(row.diet),
+        allergens: openList(row.allergens),
+        notes: openText(row.notes),
+      })),
+    };
   });
 }

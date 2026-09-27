@@ -89,7 +89,7 @@ export default function Guests() {
             <label>Last name<input value={add.family_name} onChange={e => setAdd({ ...add, family_name: e.target.value })} /></label>
             <label>Email<input value={add.email} onChange={e => setAdd({ ...add, email: e.target.value })} /></label>
             <label>Phone<input value={add.phone} onChange={e => setAdd({ ...add, phone: e.target.value })} /></label>
-            <label className="span2">Organisation / group<input value={add.organisation} onChange={e => setAdd({ ...add, organisation: e.target.value })} placeholder="e.g. Hoffman Institute" /></label>
+            <label className="span2">Organisation / group<input value={add.organisation} onChange={e => setAdd({ ...add, organisation: e.target.value })} placeholder="e.g. Example Circle" /></label>
           </div>
           <div className="actions"><button className="btn" onClick={() => setAdding(false)}>Cancel</button><button className="btn primary" disabled={!add.given_name || !add.family_name} onClick={create}>Add guest</button></div>
         </div></div>)}

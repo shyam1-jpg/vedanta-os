@@ -10,7 +10,10 @@
     "api": "npm --workspace services/platform-api run dev",
     "web": "npm --workspace apps/web-admin run dev",
     "db:migrate": "npm --workspace services/platform-api run migrate",
-    "test:api": "npm --workspace services/platform-api test"
+    "test:api": "npm --workspace services/platform-api test",
+    "typecheck": "tsc -p services/platform-api --noEmit && tsc -p apps/web-admin --noEmit && tsc -p apps/web-guest --noEmit && tsc -p apps/web-staff --noEmit",
+    "test": "npm run test:domains && npm run test:api",
+    "build": "npm --workspace apps/web-admin run build && npm --workspace apps/web-guest run build && npm --workspace apps/web-staff run build"
   },
   "engines": { "node": ">=22" }
 }

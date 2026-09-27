@@ -30,7 +30,7 @@ Never start another app. Never delete, rename or overwrite a working route, tabl
 | Pocket | Next.js static export, `apps/web-staff`, `/pocket/` |
 | Public URL | Cloudflare tunnel → `tools/live-proxy.mjs` :8080 |
 | Database | Neon Postgres. **Current host:** `ep-crimson-lake-ax0s05ee-pooler.c-4.us-east-2.aws.neon.tech` |
-| Auth (house) | Email allow-list, no password (`shyam_1@hotmail.co.uk`). Temporary. |
+| Auth (house) | Microsoft 365 with a second factor in production. Development door is local only. |
 | Auth (guest) | Email + 6-digit access code |
 | Money | `numeric(12,2)` + ISO currency. Never float. |
 | Commands | Domain services + version checks. No silent overwrite. |
@@ -100,7 +100,7 @@ Do not blindly merge open PRs. Integrate only compatible, relevant, tested work.
 
 | Master | Current table / home | Status |
 | --- | --- | --- |
-| Organisation / property | `config/property.yaml` + `vedanta` | Exists. `rooms_total: 45` vs 42 imported = **SOURCE CONFLICT**. |
+| Organisation / property | `config/property.yaml` + `vedanta` | Exists. `rooms_total: 42` (41 guest + staff room 104). |
 | Room / resource | `room` | 42 rows. 41 guest + 104 staff-only. 301–307 **MISSING** from inventory. |
 | Booking / group | `booking_group` | 359 imported. 125 still `review_reason` (assumed departure). |
 | Occupancy | `occupancy` | 23,312 half-days. 11,097 still `group_id` null. |
@@ -121,7 +121,7 @@ Departments may have different screens. They must not create competing masters.
 | Fact | Value | Status |
 | --- | --- | --- |
 | Rooms in `room` | 42 (41 guest + 1 staff) | VERIFIED count |
-| Property config `rooms_total` | 45 | SOURCE CONFLICT with 42 |
+| Property config `rooms_total` | 42 | Matches the 2026 inventory. Rooms 301–307 stay missing. |
 | Room numbers | 101–122 (no 103), 201–218, G01–G03; 104 staff | VERIFIED |
 | Rooms 301–307 | In 2024/25 sheets, not in 2026 inventory | MISSING — do not create |
 | Groups | 359 | VERIFIED |
@@ -148,7 +148,7 @@ Guest: `/book/`. Pocket: `/pocket/`.
 
 Existing: `group.read/write/update`, `room.read/update`, `package.read/write`, `kitchen.read/write`, `cover.read/write`, `purchase.read/write`, `compliance.read/write`, `maintenance.read/write`, `sop.read/write`, `staff.read/write`, `ops.read/write`, `manual.read/write`, `payroll.read/write`, `task.read/write/assign/approve`.
 
-House email `shyam_1@hotmail.co.uk` keeps Manager.
+The owner is whoever `BOOTSTRAP_OWNER_EMAIL` names. That address is not stored in the repository.
 
 ---
 

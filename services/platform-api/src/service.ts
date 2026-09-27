@@ -18,6 +18,22 @@ async function requireHouse(req: any, reply: any) {
   return null;
 }
 
+async function requireBoardWrite(req: any, reply: any) {
+  const a = await requireActor(req, reply, ["ADMIN", "STAFF"]);
+  if (!a) return null;
+  if (a.perms.has("board.write")) return a;
+  reply.code(403).send(problem(403, "forbidden", "You cannot edit the department boards"));
+  return null;
+}
+
+async function requireFohOrder(req: any, reply: any) {
+  const a = await requireActor(req, reply, ["ADMIN", "STAFF"]);
+  if (!a) return null;
+  if (a.perms.has("foh.order")) return a;
+  reply.code(403).send(problem(403, "forbidden", "You cannot raise a front-of-house order"));
+  return null;
+}
+
 async function londonDate(): Promise<string> {
   const r = await pool.query(`select (timezone('Europe/London', now()))::date::text t`);
   return r.rows[0].t;
@@ -59,7 +75,7 @@ export default async function service(f: FastifyInstance) {
   });
 
   f.patch("/v1/service/boards/:dept", async (req: any, reply) => {
-    const a = await requireHouse(req, reply); if (!a) return;
+    const a = await requireBoardWrite(req, reply); if (!a) return;
     const department = parseDepartment(req.params.dept, "FRONT");
     const about = String(req.body?.about ?? "");
     await pool.query(
@@ -73,7 +89,7 @@ export default async function service(f: FastifyInstance) {
   });
 
   f.post("/v1/service/boards/:dept/photos", async (req: any, reply) => {
-    const a = await requireHouse(req, reply); if (!a) return;
+    const a = await requireBoardWrite(req, reply); if (!a) return;
     const department = parseDepartment(req.params.dept, "FRONT");
     const image = String(req.body?.image_data ?? "");
     const caption = String(req.body?.caption ?? "").trim();
@@ -88,7 +104,7 @@ export default async function service(f: FastifyInstance) {
   });
 
   f.delete("/v1/service/photos/:id", async (req: any, reply) => {
-    const a = await requireHouse(req, reply); if (!a) return;
+    const a = await requireBoardWrite(req, reply); if (!a) return;
     await pool.query(`delete from dept_photo where property_id=$1 and id=$2`, [a.propertyId, req.params.id]);
     return { ok: true };
   });
@@ -141,7 +157,7 @@ export default async function service(f: FastifyInstance) {
   });
 
   f.post("/v1/service/orders", async (req: any, reply) => {
-    const a = await requireHouse(req, reply); if (!a) return;
+    const a = await requireFohOrder(req, reply); if (!a) return;
     const items = Array.isArray(req.body?.items) ? req.body.items : [];
     const cleaned = items.map((i: any) => ({
       name: String(i.name ?? "").trim(),
@@ -167,7 +183,7 @@ export default async function service(f: FastifyInstance) {
   });
 
   f.patch("/v1/service/orders/:id", async (req: any, reply) => {
-    const a = await requireHouse(req, reply); if (!a) return;
+    const a = await requireFohOrder(req, reply); if (!a) return;
     const status = ["open", "seen", "done"].includes(String(req.body?.status)) ? String(req.body.status) : "seen";
     const r = await pool.query(
       `update foh_order set status=$3, updated_at=now() where property_id=$1 and id=$2 returning id`,

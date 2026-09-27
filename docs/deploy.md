@@ -91,11 +91,15 @@ Required for production staff access:
 - `MS_CLIENT_ID`
 - `MS_CLIENT_SECRET`
 
-Keep:
+`ALLOW_EMAIL_LOGIN` is ignored. Staff cannot sign in with an email alone.
 
-- `ALLOW_EMAIL_LOGIN=false`
+Also set, and do not commit the values:
 
-The API also refuses production staff email-only login at code level even if this flag is accidentally changed.
+- `FIELD_ENCRYPTION_KEY` — required in production. 32 bytes, base64, or a long passphrase.
+- `PAYMENTS_ENABLED` — leave unset. Card payments stay off until Shyam turns them on.
+- `ALLOW_DEV_LOGIN` — leave unset in production. The development door also refuses a hosted database.
+- `DEV_LOGIN_SECRET` — local only, at least 16 characters.
+- `KITELINE_BACKUP` — leave unset. Kiteline stays off unless this is turned on, and then it needs a signing secret of at least 16 characters.
 
 ## 7. Microsoft 365 / Entra setup
 

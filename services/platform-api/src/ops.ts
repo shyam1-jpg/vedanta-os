@@ -29,6 +29,14 @@ async function requireLogActor(req: any, reply: any) {
   return null;
 }
 
+async function requireLogWriter(req: any, reply: any) {
+  const a = await requireLogActor(req, reply);
+  if (!a) return null;
+  if (a.perms.has("log.write")) return a;
+  reply.code(403).send(problem(403, "forbidden", "You cannot write the house log"));
+  return null;
+}
+
 function shapeBoard(
   date: string,
   handover: any[],
@@ -140,7 +148,7 @@ export default async function ops(f: FastifyInstance) {
   });
 
   f.post("/v1/ops/handover", async (req: any, reply) => {
-    const a = await requireLogActor(req, reply); if (!a) return;
+    const a = await requireLogWriter(req, reply); if (!a) return;
     const note = String(req.body?.body ?? "").trim();
     if (!note) return reply.code(422).send(problem(422, "validation", "Write the handover note"));
     const department = parseDepartment(req.body?.department, "HOUSE");
@@ -155,7 +163,7 @@ export default async function ops(f: FastifyInstance) {
   });
 
   f.post("/v1/ops/notices", async (req: any, reply) => {
-    const a = await requireLogActor(req, reply); if (!a) return;
+    const a = await requireLogWriter(req, reply); if (!a) return;
     const title = String(req.body?.title ?? "").trim();
     const body = String(req.body?.body ?? "").trim();
     if (!title || !body) return reply.code(422).send(problem(422, "validation", "Title and note are required"));
@@ -170,7 +178,7 @@ export default async function ops(f: FastifyInstance) {
   });
 
   f.post("/v1/ops/checklists/:id/tick", async (req: any, reply) => {
-    const a = await requireLogActor(req, reply); if (!a) return;
+    const a = await requireLogWriter(req, reply); if (!a) return;
     const done = req.body?.done !== false;
     const owned = (await pool.query(
       `select id from ops_checklist_item where id=$1 and property_id=$2`,
@@ -191,7 +199,7 @@ export default async function ops(f: FastifyInstance) {
   });
 
   f.post("/v1/ops/guest-requests", async (req: any, reply) => {
-    const a = await requireLogActor(req, reply); if (!a) return;
+    const a = await requireLogWriter(req, reply); if (!a) return;
     const requestText = String(req.body?.request_text ?? req.body?.requestText ?? "").trim();
     if (!requestText) return reply.code(422).send(problem(422, "validation", "Write what is needed"));
     const department = routeGuestRequest(requestText, req.body?.department);
@@ -214,7 +222,7 @@ export default async function ops(f: FastifyInstance) {
   });
 
   f.patch("/v1/ops/guest-requests/:id", async (req: any, reply) => {
-    const a = await requireLogActor(req, reply); if (!a) return;
+    const a = await requireLogWriter(req, reply); if (!a) return;
     const status = parseRequestStatus(req.body?.status);
     const r = await pool.query(
       `update ops_guest_request

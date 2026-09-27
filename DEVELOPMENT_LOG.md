@@ -76,4 +76,4 @@ Statuses supported: New, Assigned, Acknowledged, Accepted, Scheduled, In Progres
 
 ## Intentionally not touched
 
-Existing authentication (email, no password), Kiteline rota/PIN clock, Parslia kitchen, SOP table contents, Firebase rules, production guest data, room statuses, booking states, and all previously published URLs.
+Staff sign-in is Microsoft 365 with a second factor in production. Kiteline stays off unless it is signed. Parslia kitchen, SOP table contents, Firebase rules, production guest data, room statuses, booking states, and all previously published URLs stay as they were.

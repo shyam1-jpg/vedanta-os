@@ -15,9 +15,9 @@ import {
 } from "./findings.ts";
 
 describe("data quality classifications", () => {
-  it("flags 45 configured vs 42 imported as a source conflict, not a guess", () => {
-    assert.equal(classifyRoomCount({ configured: CONFIGURED_ROOM_TOTAL, actual: 42, guest: 41, staff: 1 }), "SOURCE_CONFLICT");
-    assert.equal(classifyRoomCount({ configured: 42, actual: 42, guest: 41, staff: 1 }), "VERIFIED");
+  it("treats 42 as the house total and 45 as a source conflict", () => {
+    assert.equal(classifyRoomCount({ configured: CONFIGURED_ROOM_TOTAL, actual: 42, guest: 41, staff: 1 }), "VERIFIED");
+    assert.equal(classifyRoomCount({ configured: 45, actual: 42, guest: 41, staff: 1 }), "SOURCE_CONFLICT");
   });
   it("does not invent rooms 301–307 — they stay missing until the house confirms", () => {
     const inventory = ["101", "104", "G01"];
@@ -50,7 +50,7 @@ describe("data quality classifications", () => {
       packageCount: 8,
     });
     assert.equal(items.length, 6);
-    assert.equal(items.find(i => i.code === "ROOM_COUNT")?.computed_status, "SOURCE_CONFLICT");
+    assert.equal(items.find(i => i.code === "ROOM_COUNT")?.computed_status, "VERIFIED");
     assert.equal(items.find(i => i.code === "ROOMS_301_307")?.computed_status, "MISSING");
     assert.deepEqual(items.find(i => i.code === "ROOMS_301_307")?.evidence.missing, [...SHEET_ONLY_ROOM_NUMBERS]);
     assert.equal(items.find(i => i.code === "SKIPPED_IMPORT_ROWS")?.computed_status, "SOURCE_CONFLICT");

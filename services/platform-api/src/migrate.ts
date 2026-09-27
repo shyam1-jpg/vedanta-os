@@ -1,13 +1,13 @@
 /**
- * Apply every migration, seed and import file once (recorded in schema_applied).
- * Understands ordinary SQL and pg_dump COPY ... FROM stdin blocks so the sheet
- * import loads on Render without a psql binary.
+ * Apply every migration and seed once (recorded in schema_applied).
+ * Understands ordinary SQL and pg_dump COPY blocks. Booking-sheet dumps are not loaded.
  */
 import { readdirSync, readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import pg from "pg";
 import { clientConfig } from "./db.ts";
+import { sealStoredSensitive } from "./fieldCrypto.ts";
 
 const here = dirname(fileURLToPath(import.meta.url));
 
@@ -175,44 +175,6 @@ export function* copyBlocks(raw: string): Generator<{ table: string; cols: strin
   }
 }
 
-async function pinRoomsToOccupancyDump(client: pg.Client) {
-  let body = "";
-  for (const path of listSql("import")) {
-    for (const block of copyBlocks(readFileSync(path, "utf8"))) {
-      if (/\broom_occupancy\b/i.test(block.table) && block.body) body = block.body;
-    }
-  }
-  if (!body) return;
-  const order: string[] = [];
-  const seen = new Set<string>();
-  for (const line of body.split("\n")) {
-    if (!line || line === "\\.") continue;
-    const id = line.split("\t")[2];
-    if (id && id !== "\\N" && !seen.has(id)) { seen.add(id); order.push(id); }
-  }
-  const rooms = (await client.query(`
-    SELECT id, number FROM room
-    ORDER BY (number ~ '^[0-9]'),
-      CASE WHEN number ~ '^[0-9]+$' THEN number::int ELSE substring(number FROM 2)::int END
-  `)).rows;
-  if (rooms.length !== order.length) {
-    log(`room id pin skipped (${rooms.length} seed rooms, ${order.length} dump ids)`);
-    return;
-  }
-  if (rooms.every((r, i) => r.id === order[i])) return;
-  await client.query("BEGIN");
-  try {
-    for (let i = 0; i < rooms.length; i++) {
-      await client.query(`UPDATE room SET id = $1 WHERE id = $2`, [order[i], rooms[i].id]);
-    }
-    await client.query("COMMIT");
-    log(`pinned ${order.length} room ids so the sheet placements land on the board`);
-  } catch (e) {
-    await client.query("ROLLBACK");
-    throw e;
-  }
-}
-
 async function applySql(client: pg.Client, raw: string, file: string) {
   let sql = stripPsqlMeta(raw);
   let guard = 0;
@@ -256,11 +218,6 @@ function listSql(subdir: string): string[] {
   }
 }
 
-const STAFF_ADMINS: { email: string; name: string }[] = [
-  { email: "shannon@thevedanta.org", name: "Shannon" },
-  { email: "losi@thevedanta.org", name: "Losi" },
-];
-
 async function ensureAdmin(client: pg.Client, email: string, name: string) {
   const addr = email.trim().toLowerCase();
   if (!addr.includes("@")) return;
@@ -285,7 +242,6 @@ async function ensureAdmin(client: pg.Client, email: string, name: string) {
 }
 
 async function bootstrapOwner(client: pg.Client) {
-  for (const a of STAFF_ADMINS) await ensureAdmin(client, a.email, a.name);
   const extra = (process.env.BOOTSTRAP_OWNER_EMAIL ?? "").trim().toLowerCase();
   if (extra) await ensureAdmin(client, extra, process.env.BOOTSTRAP_OWNER_NAME?.trim() || extra.split("@")[0]);
   const more = (process.env.BOOTSTRAP_ADMIN_EMAILS ?? "").split(",").map(s => s.trim()).filter(Boolean);
@@ -293,7 +249,7 @@ async function bootstrapOwner(client: pg.Client) {
 }
 
 export async function migrate(): Promise<void> {
-  const files = [...listSql("migrations"), ...listSql("seed"), ...listSql("import")];
+  const files = [...listSql("migrations"), ...listSql("seed")];
   if (!files.length) throw new Error(`No SQL files under ${dbDir}`);
   const client = await connect();
   try {
@@ -301,7 +257,6 @@ export async function migrate(): Promise<void> {
     await client.query(`CREATE TABLE IF NOT EXISTS public.schema_applied (file text PRIMARY KEY, at timestamptz DEFAULT now())`);
     for (const path of files) {
       const name = path.split("/").pop()!;
-      if (path.includes("/import/")) await pinRoomsToOccupancyDump(client);
       const done = await client.query(`SELECT 1 FROM schema_applied WHERE file = $1`, [name]);
       if (done.rowCount) { log(`skip ${name} (already applied)`); continue; }
       log(`applying ${name}`);
@@ -310,19 +265,8 @@ export async function migrate(): Promise<void> {
       await client.query(`INSERT INTO schema_applied (file) VALUES ($1)`, [name]);
       log(`${name} ok`);
     }
-    await pinRoomsToOccupancyDump(client);
-    const occ = (await client.query(`SELECT count(*)::int AS n FROM room_occupancy`)).rows[0]?.n ?? 0;
-    if (occ === 0) {
-      log("occupancy empty — reloading placements after room id pin");
-      for (const path of listSql("import")) {
-        for (const block of copyBlocks(readFileSync(path, "utf8"))) {
-          if (/\broom_occupancy\b/i.test(block.table) && block.body) {
-            await applyCopy(client, block.table, block.cols, block.body);
-          }
-        }
-      }
-    }
     await bootstrapOwner(client);
+    await sealStoredSensitive(client);
     log("done");
   } finally {
     await client.end();

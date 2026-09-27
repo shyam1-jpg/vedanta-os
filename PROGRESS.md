@@ -3,14 +3,14 @@
 Company: The Vedanta Way Ltd · https://www.thevedanta.org/
 Current booking system: a Google Sheet (to be imported, see docs/migration.md)
 
-Property facts: config states 45 rooms; live imported inventory is 42 (see Data quality). Restaurant 150 seats / 130 max covers · 25 staff · UK/GBP.
+Property facts: 42 rooms (41 guest + staff room 104). Rooms 301–307 are not invented. Restaurant 150 seats / 130 max covers · 25 staff · UK/GBP.
 
 ## Done
 - 2026-09-02 · Session 1 (Week 1, day 1)
   - Repo layout matching spec §31
   - `config/property.yaml` with the real property facts
   - `db/migrations/0001_foundation.sql`: tenant, property, department, users/roles/permissions,
-    audit log, room types, 45 rooms, spaces (restaurant), rate plans, guests, diet/allergen
+    audit log, room types, 42 rooms, spaces (restaurant), rate plans, guests, diet/allergen
     profiles, groups, reservations, room assignment with no-overlap constraint
   - `db/seed/0001_property.sql`: property, departments, room mix, 13 roles, 17 permissions
   - Domain state machines with unit tests (6 passing): reservation, room, purchase order
@@ -66,12 +66,11 @@ Property facts: config states 45 rooms; live imported inventory is 42 (see Data 
 
 - 2026-09-02 · Session 5b — reconciliation
   - Two parallel builds of session 5 collided; the more complete one was kept. The API now has
-    one set of routes (`groups.ts`, `occupancy.ts`), one auth (`auth.ts`: dev sessions via
-    POST /auth/login, Bearer tokens, `X-User` header allowed outside production), CORS for the
+    one set of routes (`groups.ts`, `occupancy.ts`), one auth (`auth.ts`: sessions via
+    Bearer tokens). Email-only sign-in and the X-User header are no longer accepted. CORS for the
     admin app, and `/v1` prefix on all resource routes. Journey re-tested end to end over HTTP
     and in the browser against the 359 imported bookings.
-  - Test bookings removed; `db/import/imported_from_sheet_2026-09-02.sql` is a data dump of
-    booking_group + calendar_note so a fresh database can be loaded without re-running the importer.
+  - Test bookings removed. A booking-sheet dump was later stored under `db/import/`. That file held real guest details and has been deleted from the working tree. It remains in git history until Shyam decides what to do with history.
   - Group bookings screen defaults to the next upcoming booking.
 
 - 2026-09-02 · Session 6 — review screen + Room Sheet import
@@ -184,16 +183,11 @@ Property facts: config states 45 rooms; live imported inventory is 42 (see Data 
 - 2026-09-02 · Session 12 — Render trial path
   - `render.yaml` Blueprint: vedanta-db (Postgres 16), vedanta-api (Node 22), vedanta-admin
     (static Next export). `render.monorepo.yaml` if this folder is not the repo root.
-  - API `migrate.ts` applies migrations, seed and the sheet dump on boot (`schema_applied`),
-    including pg_dump `COPY ... FROM stdin` without needing `psql`. Logs `[migrate] applying … ok`.
-    Empty COPY tables and missing FKs are handled; room ids are pinned so all 23,312 board
-    placements load on a fresh database.
-  - Render Postgres TLS in `db.ts`. `BOOTSTRAP_OWNER_EMAIL` upserts a system owner every boot.
-  - Seed includes `shyam_1@hotmail.co.uk` as SYSTEM_OWNER alongside `shyam@thevedanta.org`.
-  - Staff admins: Dan, Shannon, Losi, Gram (`dan@` / `shannon@` / `losi@` / `gram@thevedanta.org`).
+  - API `migrate.ts` applies migrations and seed on boot (`schema_applied`). The booking-sheet dump is not loaded.
+  - Render Postgres TLS in `db.ts` verifies the server certificate. `BOOTSTRAP_OWNER_EMAIL` and `BOOTSTRAP_ADMIN_EMAILS` are the only owner bootstrap, and they come from the environment.
+  - House organogram seed uses placeholder names and `@example.invalid` addresses. Earlier seeds named real staff. Those values remain in git history.
   - `docs/deploy.md` leads with the Render + Entra steps; example price list included.
-  - Trial email sign-in: `ALLOW_EMAIL_LOGIN=true` on the Blueprint so production can sign in as
-    `shyam_1@hotmail.co.uk` before Microsoft 365 is configured. `/auth/providers` reports `email`.
+  - Staff sign-in is Microsoft 365 with a second factor in production. Email-only sign-in is gone. `ALLOW_EMAIL_LOGIN` is ignored.
 
 - 2026-09-03 · Session 13 — luxury house layer
   - Frontend: estate arrival sign-in, grouped nav, cream/forest/gold system (Cormorant + Outfit),

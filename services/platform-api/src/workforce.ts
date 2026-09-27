@@ -14,6 +14,20 @@ import { hoursFromPunches, canPunch, type Punch } from "../../../domains/staff/h
 import { splitTips, type TipMethod } from "../../../domains/staff/tips.ts";
 import { payrollRow, shiftsFromPunches, weekStartMonday, addDaysIso } from "../../../domains/staff/payroll.ts";
 import { parseDutySlot } from "../../../domains/ops/night.ts";
+import { openText, sealText } from "./fieldCrypto.ts";
+
+function openHr(row: any) {
+  return {
+    ...row,
+    pay_note: openText(row.pay_note),
+    bank_account_name: openText(row.bank_account_name),
+    bank_sort_code: openText(row.bank_sort_code),
+    bank_account_number: openText(row.bank_account_number),
+    national_insurance: openText(row.national_insurance),
+    home_address: openText(row.home_address),
+    date_of_birth: openText(row.date_of_birth),
+  };
+}
 
 const weekStart = (iso: string) => {
   const d = new Date(iso + "T00:00:00Z");
@@ -217,19 +231,31 @@ export default async function workforce(f: FastifyInstance) {
     const a = await house(req, reply, "hr.read"); if (!a) return;
     const r = await pool.query(`select u.id, u.email, u.display_name as name, r.code as role, d.code as department,
         h.designation, h.contracted_hours, h.pay_note, h.hourly_rate,
+        h.bank_account_name, h.bank_sort_code, h.bank_account_number, h.national_insurance, h.home_address, h.date_of_birth,
         (select json_agg(json_build_object('id',c.id,'title',c.title,'status',c.status,'sent_at',c.sent_at) order by c.created_at desc) from staff_contract c where c.user_id=u.id) contracts
       from app_user u join membership m on m.user_id=u.id join role r on r.id=m.role_id
       left join department d on d.id=m.department_id left join staff_hr h on h.user_id=u.id
       where m.property_id=$1 and u.status='ACTIVE' order by u.display_name`, [a.propertyId]);
-    return { items: r.rows };
+    return { items: r.rows.map(openHr) };
   });
   f.patch("/v1/workforce/hr/:id", async (req: any, reply) => {
     const a = await house(req, reply, "hr.read"); if (!a) return;
     const b = req.body ?? {};
-    await pool.query(`insert into staff_hr (user_id, tenant_id, property_id, designation, contracted_hours, pay_note, hourly_rate)
-      values ($1,$2,$3,$4,$5,$6,$7)
-      on conflict (user_id) do update set designation=excluded.designation, contracted_hours=excluded.contracted_hours, pay_note=excluded.pay_note, hourly_rate=excluded.hourly_rate, updated_at=now()`,
-      [req.params.id, a.tenantId, a.propertyId, b.designation ?? null, b.contracted_hours ?? null, b.pay_note ?? null, b.hourly_rate != null && b.hourly_rate !== "" ? Number(b.hourly_rate) : null]);
+    await pool.query(`insert into staff_hr (user_id, tenant_id, property_id, designation, contracted_hours, pay_note, hourly_rate,
+        bank_account_name, bank_sort_code, bank_account_number, national_insurance, home_address, date_of_birth)
+      values ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13)
+      on conflict (user_id) do update set designation=excluded.designation, contracted_hours=excluded.contracted_hours,
+        pay_note=excluded.pay_note, hourly_rate=excluded.hourly_rate,
+        bank_account_name=coalesce(excluded.bank_account_name, staff_hr.bank_account_name),
+        bank_sort_code=coalesce(excluded.bank_sort_code, staff_hr.bank_sort_code),
+        bank_account_number=coalesce(excluded.bank_account_number, staff_hr.bank_account_number),
+        national_insurance=coalesce(excluded.national_insurance, staff_hr.national_insurance),
+        home_address=coalesce(excluded.home_address, staff_hr.home_address),
+        date_of_birth=coalesce(excluded.date_of_birth, staff_hr.date_of_birth),
+        updated_at=now()`,
+      [req.params.id, a.tenantId, a.propertyId, b.designation ?? null, b.contracted_hours ?? null, sealText(b.pay_note ?? null), b.hourly_rate != null && b.hourly_rate !== "" ? Number(b.hourly_rate) : null,
+        sealText(b.bank_account_name ?? null), sealText(b.bank_sort_code ?? null), sealText(b.bank_account_number ?? null),
+        sealText(b.national_insurance ?? null), sealText(b.home_address ?? null), sealText(b.date_of_birth ?? null)]);
     return { ok: true };
   });
 
@@ -268,6 +294,7 @@ export default async function workforce(f: FastifyInstance) {
         department: u.department,
         designation: u.designation,
         contracted_hours: contracted,
+        pay_note: a.perms.has("hr.read") ? openText(u.pay_note) : null,
         hourly_rate: a.perms.has("hr.read") ? rate : null,
         hours: row.hours,
         pay: a.perms.has("hr.read") ? row.pay : null,

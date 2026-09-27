@@ -33,6 +33,9 @@ import purchasingRoutes from "./purchasing.ts";
 import financeRoutes from "./finance.ts";
 import emergencyRoutes from "./emergency.ts";
 import stripeRoutes from "./stripe.ts";
+import { assertFieldEncryptionReady } from "./fieldCrypto.ts";
+
+assertFieldEncryptionReady();
 
 const app = Fastify({ logger: process.env.NODE_ENV !== "test" });
 const isProd = process.env.NODE_ENV === "production";

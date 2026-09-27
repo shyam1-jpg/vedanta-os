@@ -1,5 +1,5 @@
 -- Seed: Vedanta Oway Retreat property facts (from config/property.yaml)
--- 45 rooms, restaurant 150 seats / 130 covers, 25 staff, roles and permissions.
+-- 42 rooms (41 guest + staff room 104), restaurant 150 seats / 130 covers, 25 staff, roles and permissions.
 
 DO $$
 DECLARE
@@ -42,7 +42,7 @@ BEGIN
   INSERT INTO room (tenant_id, property_id, room_type_id, number, section, beds_single, beds_double, beds_king, mattresses, max_capacity, features, notes, staff_only)
     SELECT t,p,id,'102','Pink Corridor',2,0,0,0,2,'{lake_view,hairdryer}','lake view (small room), hairdryer in the room',false FROM room_type WHERE property_id=p AND code='TWIN';
   INSERT INTO room (tenant_id, property_id, room_type_id, number, section, beds_single, beds_double, beds_king, mattresses, max_capacity, features, notes, staff_only)
-    SELECT t,p,id,'104','Pink Corridor',2,0,0,0,2,'{}','staff room (Nitesh)',true FROM room_type WHERE property_id=p AND code='TWIN';
+    SELECT t,p,id,'104','Pink Corridor',2,0,0,0,2,'{}','staff room',true FROM room_type WHERE property_id=p AND code='TWIN';
   INSERT INTO room (tenant_id, property_id, room_type_id, number, section, beds_single, beds_double, beds_king, mattresses, max_capacity, features, notes, staff_only)
     SELECT t,p,id,'105','Pink Corridor',2,0,0,1,3,'{pool_roof_view}','pool roof view',false FROM room_type WHERE property_id=p AND code='TWIN';
   INSERT INTO room (tenant_id, property_id, room_type_id, number, section, beds_single, beds_double, beds_king, mattresses, max_capacity, features, notes, staff_only)
