@@ -37,6 +37,23 @@ type Draft = {
   single_occupancy: boolean; is_organiser: boolean; preferred_room_id: string;
 };
 
+function OrganiserShuttle({ token }: { token: string }) {
+  const [items, setItems] = useState<{ name: string; time: string; meetingPoint: string; direction: string }[]>([]);
+  useEffect(() => {
+    fetch(`${API}/public/organiser/shuttles`, { headers: { authorization: `Bearer ${token}` } })
+      .then(res => res.ok ? res.json() : { items: [] })
+      .then(body => setItems(body.items ?? []))
+      .catch(() => setItems([]));
+  }, [token]);
+  if (!items.length) return null;
+  return (
+    <section data-testid="organiser-shuttle">
+      <h2>Shuttles</h2>
+      <ul>{items.map((item, index) => <li key={`${item.name}-${index}`}>{item.name} · {item.direction} · {item.time} · {item.meetingPoint}</li>)}</ul>
+    </section>
+  );
+}
+
 function OrganiserSeva({ token }: { token: string }) {
   const [items, setItems] = useState<{ activity: string; date: string; start_time: string; guest_name: string; status: string; group_name: string }[]>([]);
   useEffect(() => {
@@ -445,6 +462,7 @@ export default function RoomAssignPortal() {
         ))}
         {board.groups.length === 0 && <p>There is no retreat on this sign-in.</p>}
         {token && <OrganiserSeva token={token} />}
+        {token && <OrganiserShuttle token={token} />}
         <button className="linkbtn" type="button" onClick={() => { sessionStorage.removeItem(KEY); setPhase("code"); setBoard(null); }}>Use a different code</button>
         {toast && <div className="toast">{toast}</div>}
       </div>

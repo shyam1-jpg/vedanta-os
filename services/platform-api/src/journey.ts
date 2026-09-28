@@ -373,6 +373,7 @@ export async function runGuestJourney(propertyId: string): Promise<number> {
           retreats,
           key_instructions: house.settings.key_instructions,
           guest_lines: "",
+          shuttle: await shuttleNote(propertyId, person.id),
         };
         const template = templateFor(house.settings, plan.kind);
         const subject = renderMerge(template.subject, fields).text;
@@ -525,6 +526,15 @@ export async function openStayLink(token: string) {
   return readPublic(token);
 }
 
+async function shuttleNote(propertyId: string, personId: string): Promise<string> {
+  try {
+    const mod = await import("./transport.ts");
+    return await mod.shuttleForPerson(propertyId, personId);
+  } catch {
+    return "No shuttle is booked. Reply if you are coming by train and would like a seat.";
+  }
+}
+
 async function assignedRoom(groupId: string, personId: string): Promise<{ number: string | null; locked: boolean }> {
   const row = (await pool.query(
     `select r.number, o.assign_locked
@@ -593,7 +603,7 @@ export default async function journeyRoutes(f: FastifyInstance) {
   f.get("/v1/guest-journey/settings", async (req, reply) => {
     const a = await requireActor(req, reply); if (!a || !allow(a, "group.read", reply)) return;
     const house = await loadJourney(a.propertyId);
-    return { ...house.settings, merge_fields: ["first_name", "group_name", "property_name", "arrival", "departure", "details_link", "stay_link", "feedback_link", "rebook_link", "unsubscribe_link", "house_rules", "what_to_bring", "directions", "arrival_window", "retreats", "guest_lines", "key_instructions"], kinds: JOURNEY_KINDS };
+    return { ...house.settings, merge_fields: ["first_name", "group_name", "property_name", "arrival", "departure", "details_link", "stay_link", "feedback_link", "rebook_link", "unsubscribe_link", "house_rules", "what_to_bring", "directions", "arrival_window", "retreats", "guest_lines", "key_instructions", "shuttle"], kinds: JOURNEY_KINDS };
   });
 
   f.put("/v1/guest-journey/settings", async (req, reply) => {
@@ -755,6 +765,7 @@ export default async function journeyRoutes(f: FastifyInstance) {
         to: found.row.departure,
       });
     } catch { /* seva tables are optional until migrated */ }
+    const shuttle = await shuttleNote(found.row.property_id, found.row.person_id);
     const done = check?.status === "checked_in_digitally" || check?.status === "arrived" || check?.status === "keys_issued";
     return {
       given_name: found.row.given_name,
@@ -778,6 +789,7 @@ export default async function journeyRoutes(f: FastifyInstance) {
         ? { room: shown.show, note: shown.note, keys: house.settings.key_instructions, seva: seva.welcome }
         : null,
       seva: { slots: seva.slots, mine: seva.mine },
+      shuttle,
     };
   });
 

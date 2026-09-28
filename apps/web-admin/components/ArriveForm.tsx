@@ -20,6 +20,7 @@ type Loaded = {
   check_in: { enabled: boolean; open: boolean; from: string; id_required: boolean; rules: string; status: string; done: boolean };
   welcome: Welcome | null;
   seva?: { slots: SevaSlot[]; mine: { slot_id: string; status: string }[] };
+  shuttle?: string;
 };
 
 export default function ArriveForm() {
@@ -38,6 +39,10 @@ export default function ArriveForm() {
   const [waiver, setWaiver] = useState(false);
   const [hygiene, setHygiene] = useState(false);
   const [animal, setAnimal] = useState("");
+  const [mode, setMode] = useState("shuttle");
+  const [train, setTrain] = useState("");
+  const [wheelchair, setWheelchair] = useState(false);
+  const [shuttleNote, setShuttleNote] = useState("");
   const [welcome, setWelcome] = useState<Welcome | null>(null);
   const [err, setErr] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
@@ -48,6 +53,7 @@ export default function ArriveForm() {
     if (!res.ok) throw new Error(body?.detail ?? "This link is not valid");
     setPage(body);
     setAccess(!!body.needs_access);
+    if (body.shuttle) setShuttleNote(body.shuttle);
     if (body.welcome) setWelcome(body.welcome);
   };
 
@@ -85,6 +91,22 @@ export default function ArriveForm() {
       const body = await res.json().catch(() => null);
       if (!res.ok) throw new Error(body?.detail ?? "Check-in is not open yet");
       setWelcome(body.welcome);
+    } catch (e) { setErr((e as Error).message); }
+    finally { setBusy(false); }
+  };
+
+  const saveTravel = async (direction: "arrival" | "departure") => {
+    setBusy(true); setErr(null);
+    try {
+      const res = await fetch(`${API}/public/journey/${encodeURIComponent(token)}/travel`, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ direction, mode, train_time: train, access: wheelchair ? ["wheelchair"] : [] }),
+      });
+      const body = await res.json().catch(() => null);
+      if (!res.ok) throw new Error(body?.detail ?? "That journey could not be saved");
+      if (body.shuttle) setShuttleNote(body.shuttle);
+      if (body.suggestion) setErr(body.suggestion);
     } catch (e) { setErr((e as Error).message); }
     finally { setBusy(false); }
   };
@@ -145,6 +167,24 @@ export default function ArriveForm() {
               <button className="btn" type="button" disabled={busy} onClick={() => saveDetails(true)}>Nothing to declare</button>
               {page.complete && <button className="btn" type="button" disabled={busy} onClick={() => saveDetails(true)}>These details are still right</button>}
             </div>
+            <section data-testid="arrive-travel">
+              <h2>Getting here</h2>
+              {shuttleNote && <p>{shuttleNote}</p>}
+              <label>How you are travelling
+                <select aria-label="Travel mode" value={mode} onChange={e => setMode(e.target.value)}>
+                  <option value="shuttle">Shuttle from the station</option>
+                  <option value="own_car">Own car</option>
+                  <option value="taxi">Taxi</option>
+                  <option value="other">Something else</option>
+                </select>
+              </label>
+              <label>Train time<input aria-label="Train time" value={train} onChange={e => setTrain(e.target.value)} placeholder="15:20" /></label>
+              <label className="assign-check"><input type="checkbox" checked={wheelchair} onChange={e => setWheelchair(e.target.checked)} /> Wheelchair or step-free help</label>
+              <div className="actions">
+                <button className="btn" type="button" disabled={busy} onClick={() => saveTravel("arrival")}>Save arrival</button>
+                <button className="btn" type="button" disabled={busy} onClick={() => saveTravel("departure")}>Save departure</button>
+              </div>
+            </section>
             {!!page.seva?.slots?.length && (
               <section data-testid="arrive-seva">
                 <h2>Seva</h2>

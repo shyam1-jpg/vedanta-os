@@ -42,6 +42,7 @@ export const MERGE_FIELDS = [
   "retreats",
   "guest_lines",
   "key_instructions",
+  "shuttle",
 ] as const;
 
 export type JourneySettings = {
@@ -278,6 +279,8 @@ Finding us
 Arrival
 {{arrival_window}}
 
+{{shuttle}}
+
 Please complete or confirm your diet, allergens, and access needs here. The link needs no login:
 {{details_link}}
 
@@ -294,6 +297,8 @@ ${sign}`,
 This is a short note to say we will see you tomorrow, {{arrival}}.
 
 {{arrival_window}}
+
+{{shuttle}}
 
 {{directions}}
 
@@ -385,6 +390,7 @@ export function previewFields(): Record<string, string> {
     retreats: "Example Spring Retreat — 2 November 2026",
     guest_lines: "Test Client 01 — letter sent\nTest Client 03 — no email address",
     key_instructions: DEFAULT_KEYS,
+    shuttle: "Example Station shuttle, pickup 15:10 at the taxi rank.",
   };
 }
 
