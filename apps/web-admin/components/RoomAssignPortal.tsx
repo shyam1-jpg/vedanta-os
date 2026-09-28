@@ -116,7 +116,7 @@ export default function RoomAssignPortal() {
       await call("/public/organiser/assignments", { group_id: group.id, placements });
       if (token) await load(token);
       say("Room list saved");
-    } catch (e) { setErr((e as Error).message); if (token) await load(token); }
+    } catch (e) { if (token) await load(token); setErr((e as Error).message); }
     finally { setBusy(false); }
   };
 
@@ -200,7 +200,7 @@ export default function RoomAssignPortal() {
                 <h3>Not in a room</h3>
                 <ul className="assign-people" data-testid="assign-unassigned">
                   {group.unassigned.map(person => (
-                    <li key={person.person_id} className="assign-client" data-testid="assign-client" draggable={!group.locked} onDragStart={e => e.dataTransfer.setData("text/plain", person.person_id)}>
+                    <li key={person.person_id} className="assign-client" data-testid="assign-client" data-person={person.person_id} draggable={!group.locked} onDragStart={e => e.dataTransfer.setData("text/plain", person.person_id)}>
                       <span>{person.name}</span>
                       <button type="button" className="btn assign-open" data-testid="assign-open" disabled={group.locked} onClick={() => setSheet({ groupId: group.id, personId: person.person_id })}>Assign</button>
                     </li>
@@ -214,6 +214,7 @@ export default function RoomAssignPortal() {
                     key={room.id}
                     className="assign-room"
                     data-testid="assign-room"
+                    data-room={room.number}
                     onDragOver={e => { if (!group.locked) e.preventDefault(); }}
                     onDrop={e => { e.preventDefault(); const personId = e.dataTransfer.getData("text/plain"); if (personId) move(group, personId, room.id); }}
                   >
@@ -225,7 +226,7 @@ export default function RoomAssignPortal() {
                     <p className="m">{room.empty === 0 ? "No empty beds" : `${room.empty} empty bed${room.empty === 1 ? "" : "s"}`}</p>
                     <ul>
                       {room.occupants.map(person => (
-                        <li key={person.person_id} draggable={!group.locked} onDragStart={e => e.dataTransfer.setData("text/plain", person.person_id)}>
+                        <li key={person.person_id} data-person={person.person_id} draggable={!group.locked} onDragStart={e => e.dataTransfer.setData("text/plain", person.person_id)}>
                           {person.name}
                           {!group.locked && <button type="button" className="linkbtn" onClick={() => move(group, person.person_id, null)}>remove</button>}
                         </li>
