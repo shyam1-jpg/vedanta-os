@@ -2,7 +2,7 @@
  * Auto rota from guest numbers. Staffing bands and personal rules are stored, not hard-coded.
  */
 import type { FastifyInstance } from "fastify";
-import { pool, tx } from "./db.ts";
+import { pool, tx, type Q } from "./db.ts";
 import { requireActor, allow, problem, type Actor } from "./auth.ts";
 import {
   DEFAULT_HOUSE_RULES,
@@ -14,7 +14,7 @@ import {
 } from "../../../domains/staff/auto-rota.ts";
 import type { DepartmentStaffing, HouseRules, PlannedShift, RotaPerson } from "../../../domains/staff/auto-rota.ts";
 import { addDaysIso, weekStartMonday } from "../../../domains/staff/payroll.ts";
-import { CONSTRAINT_TEMPLATES, DEFAULT_STAFFING, ROLE_DEFAULTS } from "../../../domains/staff/staffing-defaults.ts";
+import { CONSTRAINT_TEMPLATES, DEFAULT_STAFFING, ROLE_DEFAULTS, STAFFING_SEED } from "../../../domains/staff/staffing-defaults.ts";
 
 function hm(value: unknown): string {
   return String(value ?? "").slice(0, 5);
@@ -36,40 +36,61 @@ async function reader(req: any, reply: any): Promise<Actor | null> {
   return a;
 }
 
-export async function ensureStaffing(propertyId: string, tenantId: string) {
-  const existing = await pool.query(`select count(*)::int n from staffing_band where property_id=$1`, [propertyId]);
-  if (existing.rows[0].n === 0) {
-    await tx(async c => {
-      let sort = 0;
-      for (const dept of DEFAULT_STAFFING) {
-        for (const band of dept.bands) {
-          const row = (await c.query(
-            `insert into staffing_band (tenant_id, property_id, department_code, label, min_guests, max_guests, placeholder, note, sort_order)
-             values ($1,$2,$3,$4,$5,$6,$7,$8,$9) returning id`,
-            [tenantId, propertyId, dept.department, band.label, band.minGuests, band.maxGuests, dept.placeholder, dept.note ?? null, sort++],
-          )).rows[0];
-          let shiftSort = 0;
-          for (const shift of band.shifts) {
-            await c.query(
-              `insert into staffing_shift (band_id, code, label, start_time, end_time, break_minutes, headcount, role_codes, is_kp, is_opener, note, sort_order)
-               values ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12)`,
-              [row.id, shift.code, shift.label, shift.start, shift.end, shift.breakMinutes ?? 30, shift.count, shift.roleCodes, shift.kp, shift.opener, shift.note ?? null, shiftSort++],
-            );
-          }
-        }
+async function writeStaffing(c: Q, propertyId: string, tenantId: string, departments: DepartmentStaffing[]) {
+  await c.query(`delete from staffing_band where property_id=$1`, [propertyId]);
+  let sort = 0;
+  for (const dept of departments) {
+    if (!dept?.department) continue;
+    for (const band of dept.bands ?? []) {
+      const row = (await c.query(
+        `insert into staffing_band (tenant_id, property_id, department_code, label, min_guests, max_guests, placeholder, note, sort_order, basis, sources, example, weekday_office)
+         values ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13) returning id`,
+        [
+          tenantId, propertyId, dept.department, band.label || `${band.minGuests}`, Number(band.minGuests),
+          band.maxGuests == null || band.maxGuests === ("" as any) ? null : Number(band.maxGuests),
+          !!dept.placeholder, dept.note ?? null, sort++, dept.basis ?? null, (dept.sources ?? []).join("\n"),
+          !!band.example, !!dept.weekdayOffice,
+        ],
+      )).rows[0];
+      let shiftSort = 0;
+      for (const shift of band.shifts ?? []) {
+        if (!shift.start || !shift.end) continue;
+        await c.query(
+          `insert into staffing_shift (band_id, code, label, start_time, end_time, break_minutes, headcount, role_codes, is_kp, is_opener, note, sort_order, day_kind, months)
+           values ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14)`,
+          [
+            row.id, shift.code || "SHIFT", shift.label || shift.code || "Shift", shift.start, shift.end,
+            shift.breakMinutes ?? 30, Number(shift.count ?? 1), shift.roleCodes ?? [], !!shift.kp, !!shift.opener,
+            shift.note ?? null, shiftSort++, shift.when ?? "always", shift.months?.length ? shift.months : null,
+          ],
+        );
       }
-    });
+    }
+  }
+}
+
+export async function ensureStaffing(propertyId: string, tenantId: string) {
+  const meta = (await pool.query(`select staffing_seed, staffing_customised from rota_house_rule where property_id=$1`, [propertyId])).rows[0];
+  const existing = await pool.query(`select count(*)::int n from staffing_band where property_id=$1`, [propertyId]);
+  const customised = meta?.staffing_customised === true;
+  const reseed = !customised && (existing.rows[0].n === 0 || meta?.staffing_seed !== STAFFING_SEED);
+  if (reseed) {
+    await tx(async c => { await writeStaffing(c, propertyId, tenantId, DEFAULT_STAFFING); });
   }
   await pool.query(
-    `insert into rota_house_rule (property_id, tenant_id, normal_week_hours, hours_include_break, late_finish, blocked_next_start, default_break_minutes, max_consecutive_days, max_days_per_week)
-     values ($1,$2,40,true,'21:00','07:00',30,6,5) on conflict (property_id) do nothing`,
-    [propertyId, tenantId],
+    `insert into rota_house_rule (property_id, tenant_id, normal_week_hours, hours_include_break, late_finish, blocked_next_start, default_break_minutes, max_consecutive_days, max_days_per_week, grounds_acres_min, grounds_acres_max, staffing_seed)
+     values ($1,$2,40,true,'21:00','07:00',30,6,5,15,20,$3)
+     on conflict (property_id) do update set staffing_seed = case when rota_house_rule.staffing_customised then rota_house_rule.staffing_seed else excluded.staffing_seed end`,
+    [propertyId, tenantId, STAFFING_SEED],
   );
   for (const role of ROLE_DEFAULTS) {
     await pool.query(
       `insert into rota_role_default (property_id, role_code, never_kp, can_do_kp, opens_kitchen) values ($1,$2,$3,$4,$5)
-       on conflict (property_id, role_code) do nothing`,
-      [propertyId, role.role, role.neverKp, role.canDoKp, role.opensKitchen],
+       on conflict (property_id, role_code) do update set
+         never_kp = case when $6 then excluded.never_kp else rota_role_default.never_kp end,
+         can_do_kp = case when $6 then excluded.can_do_kp else rota_role_default.can_do_kp end,
+         opens_kitchen = case when $6 then excluded.opens_kitchen else rota_role_default.opens_kitchen end`,
+      [propertyId, role.role, role.neverKp, role.canDoKp, role.opensKitchen, reseed],
     );
   }
   for (const template of CONSTRAINT_TEMPLATES) {
@@ -91,15 +112,17 @@ async function loadRules(propertyId: string): Promise<{ rules: DepartmentStaffin
     defaultBreakMinutes: houseRow.default_break_minutes,
     maxConsecutiveDays: houseRow.max_consecutive_days,
     maxDaysPerWeek: houseRow.max_days_per_week,
+    groundsAcresMin: Number(houseRow.grounds_acres_min ?? 15),
+    groundsAcresMax: Number(houseRow.grounds_acres_max ?? 20),
   } : DEFAULT_HOUSE_RULES;
   const bands = (await pool.query(
-    `select id, department_code, label, min_guests, max_guests, placeholder, note, sort_order
+    `select id, department_code, label, min_guests, max_guests, placeholder, note, sort_order, basis, sources, example, weekday_office
      from staffing_band where property_id=$1 order by sort_order, min_guests`,
     [propertyId],
   )).rows;
   const shifts = bands.length
     ? (await pool.query(
-      `select band_id, code, label, start_time::text, end_time::text, break_minutes, headcount, role_codes, is_kp, is_opener, note, sort_order
+      `select band_id, code, label, start_time::text, end_time::text, break_minutes, headcount, role_codes, is_kp, is_opener, note, sort_order, day_kind, months
        from staffing_shift where band_id = any($1::uuid[]) order by sort_order`,
       [bands.map((b: { id: string }) => b.id)],
     )).rows
@@ -109,6 +132,10 @@ async function loadRules(propertyId: string): Promise<{ rules: DepartmentStaffin
     const dept = byDept.get(band.department_code) ?? {
       department: band.department_code,
       placeholder: band.placeholder,
+      example: band.placeholder,
+      weekdayOffice: band.weekday_office,
+      basis: band.basis ?? undefined,
+      sources: String(band.sources ?? "").split("\n").map((s: string) => s.trim()).filter(Boolean),
       note: band.note ?? undefined,
       bands: [] as DepartmentStaffing["bands"],
     };
@@ -116,6 +143,7 @@ async function loadRules(propertyId: string): Promise<{ rules: DepartmentStaffin
       label: band.label,
       minGuests: band.min_guests,
       maxGuests: band.max_guests,
+      example: band.example,
       shifts: shifts.filter((s: { band_id: string }) => s.band_id === band.id).map((s: any) => ({
         code: s.code,
         label: s.label,
@@ -127,6 +155,8 @@ async function loadRules(propertyId: string): Promise<{ rules: DepartmentStaffin
         kp: s.is_kp,
         opener: s.is_opener,
         note: s.note ?? undefined,
+        when: s.day_kind ?? "always",
+        months: s.months ?? null,
       })),
     });
     byDept.set(band.department_code, dept);
@@ -239,38 +269,23 @@ export default async function rotaRoutes(f: FastifyInstance) {
     const departments = req.body?.departments as DepartmentStaffing[] | undefined;
     if (!Array.isArray(departments)) return reply.code(422).send(problem(422, "validation", "departments are required"));
     await tx(async c => {
-      await c.query(`delete from staffing_band where property_id=$1`, [a.propertyId]);
-      let sort = 0;
-      for (const dept of departments) {
-        if (!dept?.department) continue;
-        for (const band of dept.bands ?? []) {
-          const row = (await c.query(
-            `insert into staffing_band (tenant_id, property_id, department_code, label, min_guests, max_guests, placeholder, note, sort_order)
-             values ($1,$2,$3,$4,$5,$6,$7,$8,$9) returning id`,
-            [a.tenantId, a.propertyId, dept.department, band.label || `${band.minGuests}`, Number(band.minGuests), band.maxGuests == null || band.maxGuests === ("" as any) ? null : Number(band.maxGuests), !!dept.placeholder, dept.note ?? null, sort++],
-          )).rows[0];
-          let shiftSort = 0;
-          for (const shift of band.shifts ?? []) {
-            if (!shift.start || !shift.end) continue;
-            await c.query(
-              `insert into staffing_shift (band_id, code, label, start_time, end_time, break_minutes, headcount, role_codes, is_kp, is_opener, note, sort_order)
-               values ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12)`,
-              [row.id, shift.code || "SHIFT", shift.label || shift.code || "Shift", shift.start, shift.end, shift.breakMinutes ?? 30, Number(shift.count ?? 1), shift.roleCodes ?? [], !!shift.kp, !!shift.opener, shift.note ?? null, shiftSort++],
-            );
-          }
-        }
-      }
-      if (req.body?.house) {
-        const h = req.body.house;
-        await c.query(
-          `insert into rota_house_rule (property_id, tenant_id, normal_week_hours, hours_include_break, late_finish, blocked_next_start, default_break_minutes, max_consecutive_days, max_days_per_week)
-           values ($1,$2,$3,$4,$5,$6,$7,$8,$9)
-           on conflict (property_id) do update set normal_week_hours=excluded.normal_week_hours, hours_include_break=excluded.hours_include_break,
-             late_finish=excluded.late_finish, blocked_next_start=excluded.blocked_next_start, default_break_minutes=excluded.default_break_minutes,
-             max_consecutive_days=excluded.max_consecutive_days, max_days_per_week=excluded.max_days_per_week`,
-          [a.propertyId, a.tenantId, h.normalWeekHours ?? 40, h.hoursIncludeBreak !== false, h.lateFinish ?? "21:00", h.blockedNextStart ?? "07:00", h.defaultBreakMinutes ?? 30, h.maxConsecutiveDays ?? 6, h.maxDaysPerWeek ?? 5],
-        );
-      }
+      await writeStaffing(c, a.propertyId, a.tenantId, departments);
+      const h = req.body?.house ?? {};
+      await c.query(
+        `insert into rota_house_rule (property_id, tenant_id, normal_week_hours, hours_include_break, late_finish, blocked_next_start, default_break_minutes, max_consecutive_days, max_days_per_week, grounds_acres_min, grounds_acres_max, staffing_seed, staffing_customised)
+         values ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,true)
+         on conflict (property_id) do update set
+           normal_week_hours=excluded.normal_week_hours, hours_include_break=excluded.hours_include_break,
+           late_finish=excluded.late_finish, blocked_next_start=excluded.blocked_next_start, default_break_minutes=excluded.default_break_minutes,
+           max_consecutive_days=excluded.max_consecutive_days, max_days_per_week=excluded.max_days_per_week,
+           grounds_acres_min=excluded.grounds_acres_min, grounds_acres_max=excluded.grounds_acres_max,
+           staffing_customised=true`,
+        [
+          a.propertyId, a.tenantId, h.normalWeekHours ?? 40, h.hoursIncludeBreak !== false, h.lateFinish ?? "21:00", h.blockedNextStart ?? "07:00",
+          h.defaultBreakMinutes ?? 30, h.maxConsecutiveDays ?? 6, h.maxDaysPerWeek ?? 5,
+          Number(h.groundsAcresMin ?? 15), Number(h.groundsAcresMax ?? 20), STAFFING_SEED,
+        ],
+      );
     });
     return { ok: true };
   });
@@ -313,7 +328,7 @@ export default async function rotaRoutes(f: FastifyInstance) {
     await ensureStaffing(a.propertyId, a.tenantId);
     const { rules, house } = await loadRules(a.propertyId);
     const people = await loadPeople(a.propertyId, from, to, house);
-    const days = guestDays({ from, to, guests: req.body?.guests, days: req.body?.days });
+    const days = guestDays({ from, to, guests: req.body?.guests, days: req.body?.days, dayType: req.body?.dayType });
     const result = generateRota({ days, rules, people, house });
     return { ...result, days, week_start: weekStartMonday(from) };
   });

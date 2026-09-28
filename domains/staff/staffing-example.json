@@ -1,0 +1,1641 @@
+{
+  "restaurant": {
+    "label": "Restaurant / front-of-house dining",
+    "bands": [
+      {
+        "min": 0,
+        "max": 0,
+        "shifts": [
+          {
+            "name": "Early FOH (breakfast + lunch buffet, tea/coffee station)",
+            "start": "07:00",
+            "end": "15:00",
+            "count": 0
+          },
+          {
+            "name": "Late FOH (afternoon tea, dinner buffet, clear-down)",
+            "start": "14:00",
+            "end": "22:00",
+            "count": 0
+          },
+          {
+            "name": "Plate-wash / FOH porter (crockery & cutlery)",
+            "start": "11:30",
+            "end": "20:30",
+            "count": 0
+          },
+          {
+            "name": "Dining supervisor (dedicated)",
+            "start": "11:00",
+            "end": "20:00",
+            "count": 0
+          }
+        ]
+      },
+      {
+        "min": 1,
+        "max": 15,
+        "shifts": [
+          {
+            "name": "Early FOH (breakfast + lunch buffet, tea/coffee station)",
+            "start": "07:00",
+            "end": "15:00",
+            "count": 1
+          },
+          {
+            "name": "Late FOH (afternoon tea, dinner buffet, clear-down)",
+            "start": "14:00",
+            "end": "22:00",
+            "count": 1
+          },
+          {
+            "name": "Plate-wash / FOH porter (crockery & cutlery)",
+            "start": "11:30",
+            "end": "20:30",
+            "count": 0
+          },
+          {
+            "name": "Dining supervisor (dedicated)",
+            "start": "11:00",
+            "end": "20:00",
+            "count": 0
+          }
+        ]
+      },
+      {
+        "min": 16,
+        "max": 35,
+        "shifts": [
+          {
+            "name": "Early FOH (breakfast + lunch buffet, tea/coffee station)",
+            "start": "07:00",
+            "end": "15:00",
+            "count": 1
+          },
+          {
+            "name": "Late FOH (afternoon tea, dinner buffet, clear-down)",
+            "start": "14:00",
+            "end": "22:00",
+            "count": 2
+          },
+          {
+            "name": "Plate-wash / FOH porter (crockery & cutlery)",
+            "start": "11:30",
+            "end": "20:30",
+            "count": 0
+          },
+          {
+            "name": "Dining supervisor (dedicated)",
+            "start": "11:00",
+            "end": "20:00",
+            "count": 0
+          }
+        ]
+      },
+      {
+        "min": 36,
+        "max": 60,
+        "shifts": [
+          {
+            "name": "Early FOH (breakfast + lunch buffet, tea/coffee station)",
+            "start": "07:00",
+            "end": "15:00",
+            "count": 2
+          },
+          {
+            "name": "Late FOH (afternoon tea, dinner buffet, clear-down)",
+            "start": "14:00",
+            "end": "22:00",
+            "count": 2
+          },
+          {
+            "name": "Plate-wash / FOH porter (crockery & cutlery)",
+            "start": "11:30",
+            "end": "20:30",
+            "count": 1
+          },
+          {
+            "name": "Dining supervisor (dedicated)",
+            "start": "11:00",
+            "end": "20:00",
+            "count": 0
+          }
+        ]
+      },
+      {
+        "min": 61,
+        "max": 100,
+        "shifts": [
+          {
+            "name": "Early FOH (breakfast + lunch buffet, tea/coffee station)",
+            "start": "07:00",
+            "end": "15:00",
+            "count": 3
+          },
+          {
+            "name": "Late FOH (afternoon tea, dinner buffet, clear-down)",
+            "start": "14:00",
+            "end": "22:00",
+            "count": 4
+          },
+          {
+            "name": "Plate-wash / FOH porter (crockery & cutlery)",
+            "start": "11:30",
+            "end": "20:30",
+            "count": 2
+          },
+          {
+            "name": "Dining supervisor (dedicated)",
+            "start": "11:00",
+            "end": "20:00",
+            "count": 0
+          }
+        ]
+      },
+      {
+        "min": 101,
+        "max": 130,
+        "shifts": [
+          {
+            "name": "Early FOH (breakfast + lunch buffet, tea/coffee station)",
+            "start": "07:00",
+            "end": "15:00",
+            "count": 4
+          },
+          {
+            "name": "Late FOH (afternoon tea, dinner buffet, clear-down)",
+            "start": "14:00",
+            "end": "22:00",
+            "count": 5
+          },
+          {
+            "name": "Plate-wash / FOH porter (crockery & cutlery)",
+            "start": "11:30",
+            "end": "20:30",
+            "count": 2
+          },
+          {
+            "name": "Dining supervisor (dedicated)",
+            "start": "11:00",
+            "end": "20:00",
+            "count": 1
+          }
+        ]
+      }
+    ],
+    "basis": "Buffet attendant/clearer at ~1 per 40 guests for the lighter, staggered breakfast/lunch (early shift) and ~1 per 30 guests at dinner (late shift), rounded up, minimum 1 when guests are in. Industry buffet ratios are 1 server per 20-30 guests (1:40 lean) and 1 busser per ~25 guests with china; self-serve tea/coffee is replenished by the same staff. Dedicated plate-wash at ~1 per 80 covers per service once above ~35 guests (below that the kitchen KA/KP washes up). At 61-100 one late staffer is the designated lead; at 101-130 add a dedicated supervisor (a 'captain' for 100+ buffets).",
+    "notes": "The 1:40 early-shift ratio and the 20-30 minute overlap timing are judgement calls, not published figures.",
+    "sources": [
+      "https://www.quickstaffpro.com/event-staff-scheduling/event-staffing-ratios-catering-success",
+      "https://www.quickstaffpro.com/event-staff-scheduling/catering-staff-roles-full-service-vs-buffet-events",
+      "https://univents.app/en/free-tools/staffing-calculator",
+      "https://feedtheline.org/uncategorized/catering-staff-to-guest-ratio-large-buffet",
+      "https://www.hospitalitycalculators.com/tool/catering/event-staffing"
+    ]
+  },
+  "housekeeping": {
+    "label": "Housekeeping",
+    "bands": [
+      {
+        "min": 0,
+        "max": 0,
+        "shifts": [
+          {
+            "name": "Room attendants, changeover day (mostly departures)",
+            "start": "08:00",
+            "end": "16:00",
+            "count": 0
+          },
+          {
+            "name": "Room attendants, mid-retreat day (stayovers)",
+            "start": "08:00",
+            "end": "16:00",
+            "count": 0
+          },
+          {
+            "name": "Housekeeping supervisor / inspector",
+            "start": "08:00",
+            "end": "16:30",
+            "count": 0
+          }
+        ]
+      },
+      {
+        "min": 1,
+        "max": 15,
+        "shifts": [
+          {
+            "name": "Room attendants, changeover day (mostly departures)",
+            "start": "08:00",
+            "end": "16:00",
+            "count": 2
+          },
+          {
+            "name": "Room attendants, mid-retreat day (stayovers)",
+            "start": "08:00",
+            "end": "16:00",
+            "count": 1
+          },
+          {
+            "name": "Housekeeping supervisor / inspector",
+            "start": "08:00",
+            "end": "16:30",
+            "count": 0
+          }
+        ]
+      },
+      {
+        "min": 16,
+        "max": 35,
+        "shifts": [
+          {
+            "name": "Room attendants, changeover day (mostly departures)",
+            "start": "08:00",
+            "end": "16:00",
+            "count": 3
+          },
+          {
+            "name": "Room attendants, mid-retreat day (stayovers)",
+            "start": "08:00",
+            "end": "16:00",
+            "count": 2
+          },
+          {
+            "name": "Housekeeping supervisor / inspector",
+            "start": "08:00",
+            "end": "16:30",
+            "count": 1
+          }
+        ]
+      },
+      {
+        "min": 36,
+        "max": 60,
+        "shifts": [
+          {
+            "name": "Room attendants, changeover day (mostly departures)",
+            "start": "08:00",
+            "end": "16:00",
+            "count": 5
+          },
+          {
+            "name": "Room attendants, mid-retreat day (stayovers)",
+            "start": "08:00",
+            "end": "16:00",
+            "count": 3
+          },
+          {
+            "name": "Housekeeping supervisor / inspector",
+            "start": "08:00",
+            "end": "16:30",
+            "count": 1
+          }
+        ]
+      },
+      {
+        "min": 61,
+        "max": 100,
+        "shifts": [
+          {
+            "name": "Room attendants, changeover day (mostly departures)",
+            "start": "08:00",
+            "end": "16:00",
+            "count": 7
+          },
+          {
+            "name": "Room attendants, mid-retreat day (stayovers)",
+            "start": "08:00",
+            "end": "16:00",
+            "count": 4
+          },
+          {
+            "name": "Housekeeping supervisor / inspector",
+            "start": "08:00",
+            "end": "16:30",
+            "count": 1
+          }
+        ]
+      },
+      {
+        "min": 101,
+        "max": 130,
+        "shifts": [
+          {
+            "name": "Room attendants, changeover day (mostly departures)",
+            "start": "08:00",
+            "end": "16:00",
+            "count": 8
+          },
+          {
+            "name": "Room attendants, mid-retreat day (stayovers)",
+            "start": "08:00",
+            "end": "16:00",
+            "count": 5
+          },
+          {
+            "name": "Housekeeping supervisor / inspector",
+            "start": "08:00",
+            "end": "16:30",
+            "count": 1
+          }
+        ]
+      }
+    ],
+    "basis": "8h shift minus 30 min break = 7.5h paid, about 6h (360 min) productive. Timings: departure 35-45 min for a standard room (we use 45-55 min because retreat rooms average ~3 guests each at full occupancy), stayover 20-25 min, plus 2-5h of public-area cleaning a day (meditation hall, corridors, toilets), with a +10% buffer. Occupied rooms assumed to be about guests/2, capped at 41 (1-15 guests: up to 8 rooms; 16-35: 18; 36-60: 30; 61+: all 41). Benchmark: 15-17 room credits per attendant per shift (departure = 1, stayover = 0.5); 3-star 16-18 rooms/shift, 4-star 13-15. Supervisor: 1 per 8-12 attendants, or 1 inspector per 4-6 attendants. Below ~3 attendants a working lead attendant inspects instead.",
+    "notes": "At 0 guests, deep-clean and project work is optional (judgement call). Many retreat centres only do a light stayover service or none mid-retreat; if so, the stayover line drops to about 1-2 people for public areas only.",
+    "sources": [
+      "https://www.fluffychs.com/hotel-housekeeping-staffing-rooms-per-attendant",
+      "https://www.oporasupply.com/blogs/opora-field-guide/hotel-housekeeping-productivity-mpor",
+      "https://shyfter.com/en/sectors/hotels/planning-housekeeping-etages",
+      "https://opally.com/tools/housekeeping-staffing-planner",
+      "https://hospitality.institute/bha506/how-to-calculate-housekeeping-staffing-in-hotels/",
+      "https://jobdescription.org/jobs/hospitality/housekeeping-inspector"
+    ]
+  },
+  "front_of_house": {
+    "label": "Front of house / reception",
+    "bands": [
+      {
+        "min": 0,
+        "max": 0,
+        "shifts": [
+          {
+            "name": "Reception early",
+            "start": "07:30",
+            "end": "15:30",
+            "count": 1
+          },
+          {
+            "name": "Reception late",
+            "start": "14:30",
+            "end": "22:30",
+            "count": 0
+          },
+          {
+            "name": "Changeover-day arrivals overlap (group check-in window)",
+            "start": "12:00",
+            "end": "18:00",
+            "count": 0
+          }
+        ]
+      },
+      {
+        "min": 1,
+        "max": 15,
+        "shifts": [
+          {
+            "name": "Reception early",
+            "start": "07:30",
+            "end": "15:30",
+            "count": 1
+          },
+          {
+            "name": "Reception late",
+            "start": "14:30",
+            "end": "22:30",
+            "count": 1
+          },
+          {
+            "name": "Changeover-day arrivals overlap (group check-in window)",
+            "start": "12:00",
+            "end": "18:00",
+            "count": 0
+          }
+        ]
+      },
+      {
+        "min": 16,
+        "max": 35,
+        "shifts": [
+          {
+            "name": "Reception early",
+            "start": "07:30",
+            "end": "15:30",
+            "count": 1
+          },
+          {
+            "name": "Reception late",
+            "start": "14:30",
+            "end": "22:30",
+            "count": 1
+          },
+          {
+            "name": "Changeover-day arrivals overlap (group check-in window)",
+            "start": "12:00",
+            "end": "18:00",
+            "count": 0
+          }
+        ]
+      },
+      {
+        "min": 36,
+        "max": 60,
+        "shifts": [
+          {
+            "name": "Reception early",
+            "start": "07:30",
+            "end": "15:30",
+            "count": 1
+          },
+          {
+            "name": "Reception late",
+            "start": "14:30",
+            "end": "22:30",
+            "count": 1
+          },
+          {
+            "name": "Changeover-day arrivals overlap (group check-in window)",
+            "start": "12:00",
+            "end": "18:00",
+            "count": 1
+          }
+        ]
+      },
+      {
+        "min": 61,
+        "max": 100,
+        "shifts": [
+          {
+            "name": "Reception early",
+            "start": "07:30",
+            "end": "15:30",
+            "count": 2
+          },
+          {
+            "name": "Reception late",
+            "start": "14:30",
+            "end": "22:30",
+            "count": 1
+          },
+          {
+            "name": "Changeover-day arrivals overlap (group check-in window)",
+            "start": "12:00",
+            "end": "18:00",
+            "count": 2
+          }
+        ]
+      },
+      {
+        "min": 101,
+        "max": 130,
+        "shifts": [
+          {
+            "name": "Reception early",
+            "start": "07:30",
+            "end": "15:30",
+            "count": 2
+          },
+          {
+            "name": "Reception late",
+            "start": "14:30",
+            "end": "22:30",
+            "count": 2
+          },
+          {
+            "name": "Changeover-day arrivals overlap (group check-in window)",
+            "start": "12:00",
+            "end": "18:00",
+            "count": 3
+          }
+        ]
+      }
+    ],
+    "basis": "The front office example assumes about 5 minutes per check-in/out, with staff sized to the peak window rather than to room count. A group of N arriving within about 3 hours needs ceil(N x 5 / 180) people at the desk: 15 guests = 1, 35 = 1, 60 = 2, 100 = 3, 130 = 4 (early/late staff plus the overlap). Pre-registering from a rooming list reduces this. At 0 guests: 1 weekday office-hours person for phones and bookings. Overnight cover is the sleep-in duty manager (see Management), not a night receptionist.",
+    "notes": "Keeping the desk open until 22:30 and not running a 24h desk is a judgement call for a retreat setting.",
+    "sources": [
+      "https://www.hospitalitycourses.co.za/blog/calculate-front-office-staff-hotel",
+      "https://www.gov.uk/government/publications/fire-safety-risk-assessment-sleeping-accommodation"
+    ]
+  },
+  "maintenance": {
+    "label": "Maintenance",
+    "bands": [
+      {
+        "min": 0,
+        "max": 0,
+        "shifts": [
+          {
+            "name": "Maintenance technician (weekday day)",
+            "start": "08:00",
+            "end": "16:30",
+            "count": 1
+          },
+          {
+            "name": "Changeover / weekend handyperson",
+            "start": "10:00",
+            "end": "16:00",
+            "count": 0
+          }
+        ]
+      },
+      {
+        "min": 1,
+        "max": 15,
+        "shifts": [
+          {
+            "name": "Maintenance technician (weekday day)",
+            "start": "08:00",
+            "end": "16:30",
+            "count": 1
+          },
+          {
+            "name": "Changeover / weekend handyperson",
+            "start": "10:00",
+            "end": "16:00",
+            "count": 0
+          }
+        ]
+      },
+      {
+        "min": 16,
+        "max": 35,
+        "shifts": [
+          {
+            "name": "Maintenance technician (weekday day)",
+            "start": "08:00",
+            "end": "16:30",
+            "count": 1
+          },
+          {
+            "name": "Changeover / weekend handyperson",
+            "start": "10:00",
+            "end": "16:00",
+            "count": 0
+          }
+        ]
+      },
+      {
+        "min": 36,
+        "max": 60,
+        "shifts": [
+          {
+            "name": "Maintenance technician (weekday day)",
+            "start": "08:00",
+            "end": "16:30",
+            "count": 1
+          },
+          {
+            "name": "Changeover / weekend handyperson",
+            "start": "10:00",
+            "end": "16:00",
+            "count": 0
+          }
+        ]
+      },
+      {
+        "min": 61,
+        "max": 100,
+        "shifts": [
+          {
+            "name": "Maintenance technician (weekday day)",
+            "start": "08:00",
+            "end": "16:30",
+            "count": 1
+          },
+          {
+            "name": "Changeover / weekend handyperson",
+            "start": "10:00",
+            "end": "16:00",
+            "count": 1
+          }
+        ]
+      },
+      {
+        "min": 101,
+        "max": 130,
+        "shifts": [
+          {
+            "name": "Maintenance technician (weekday day)",
+            "start": "08:00",
+            "end": "16:30",
+            "count": 1
+          },
+          {
+            "name": "Changeover / weekend handyperson",
+            "start": "10:00",
+            "end": "16:00",
+            "count": 1
+          }
+        ]
+      }
+    ],
+    "basis": "Benchmarks are 1.4-1.8 maintenance FTE per 100 rooms for full-service hotels and 0.5-1.3 for select/limited-service, i.e. about 0.6-0.8 FTE for 42 rooms. Rounded up to 1 full-time technician because of the commercial kitchen, 150-seat dining room and halls. Workload depends on building age and systems more than on guests, so this is largely fixed. Out-of-hours: on-call rota. At 61+ guests, add part-time cover on changeover/weekend days (judgement call). Statutory servicing (gas, fire alarm, legionella, PAT) is usually contracted out.",
+    "notes": "",
+    "sources": [
+      "https://oxmaint.com/industries/hospitality/hotel-engineering-department-structure-staffing-ratios",
+      "https://tumihospitality.com/how-to-staff-a-hotel/"
+    ]
+  },
+  "estate_grounds": {
+    "label": "Estate and grounds",
+    "bands": [
+      {
+        "min": 0,
+        "max": 0,
+        "shifts": [
+          {
+            "name": "Gardener / groundsperson",
+            "start": "08:00",
+            "end": "16:00",
+            "count": 1
+          },
+          {
+            "name": "Seasonal grounds assistant (Apr-Oct)",
+            "start": "08:00",
+            "end": "16:00",
+            "count": 0
+          }
+        ]
+      },
+      {
+        "min": 1,
+        "max": 15,
+        "shifts": [
+          {
+            "name": "Gardener / groundsperson",
+            "start": "08:00",
+            "end": "16:00",
+            "count": 1
+          },
+          {
+            "name": "Seasonal grounds assistant (Apr-Oct)",
+            "start": "08:00",
+            "end": "16:00",
+            "count": 0
+          }
+        ]
+      },
+      {
+        "min": 16,
+        "max": 35,
+        "shifts": [
+          {
+            "name": "Gardener / groundsperson",
+            "start": "08:00",
+            "end": "16:00",
+            "count": 1
+          },
+          {
+            "name": "Seasonal grounds assistant (Apr-Oct)",
+            "start": "08:00",
+            "end": "16:00",
+            "count": 0
+          }
+        ]
+      },
+      {
+        "min": 36,
+        "max": 60,
+        "shifts": [
+          {
+            "name": "Gardener / groundsperson",
+            "start": "08:00",
+            "end": "16:00",
+            "count": 1
+          },
+          {
+            "name": "Seasonal grounds assistant (Apr-Oct)",
+            "start": "08:00",
+            "end": "16:00",
+            "count": 0
+          }
+        ]
+      },
+      {
+        "min": 61,
+        "max": 100,
+        "shifts": [
+          {
+            "name": "Gardener / groundsperson",
+            "start": "08:00",
+            "end": "16:00",
+            "count": 1
+          },
+          {
+            "name": "Seasonal grounds assistant (Apr-Oct)",
+            "start": "08:00",
+            "end": "16:00",
+            "count": 1
+          }
+        ]
+      },
+      {
+        "min": 101,
+        "max": 130,
+        "shifts": [
+          {
+            "name": "Gardener / groundsperson",
+            "start": "08:00",
+            "end": "16:00",
+            "count": 1
+          },
+          {
+            "name": "Seasonal grounds assistant (Apr-Oct)",
+            "start": "08:00",
+            "end": "16:00",
+            "count": 1
+          }
+        ]
+      }
+    ],
+    "basis": "Acreage-driven, not guest-driven: 1 groundsperson per 15 acres (high standard), 18 (standard) or 20 (acceptable) for basic grounds care. Assumes roughly 15-20 acres, so 1 FTE. Add a seasonal assistant in the growing season, and at high occupancy for paths, car park and event set-up (judgement call). Adjust for actual acreage and formal gardens.",
+    "notes": "",
+    "sources": [
+      "https://nces.ed.gov/pubs2003/maintenance/chapter5_2.asp"
+    ]
+  },
+  "programmes_events": {
+    "label": "Programmes and events (retreat hosts / coordinators)",
+    "bands": [
+      {
+        "min": 0,
+        "max": 0,
+        "shifts": [
+          {
+            "name": "Programme coordinator (office: bookings, group liaison)",
+            "start": "09:00",
+            "end": "17:00",
+            "count": 1
+          },
+          {
+            "name": "Retreat host, day (room set-up, AV, session changeovers)",
+            "start": "08:30",
+            "end": "17:00",
+            "count": 0
+          },
+          {
+            "name": "Retreat host, evening sessions",
+            "start": "16:00",
+            "end": "21:30",
+            "count": 0
+          }
+        ]
+      },
+      {
+        "min": 1,
+        "max": 15,
+        "shifts": [
+          {
+            "name": "Programme coordinator (office: bookings, group liaison)",
+            "start": "09:00",
+            "end": "17:00",
+            "count": 1
+          },
+          {
+            "name": "Retreat host, day (room set-up, AV, session changeovers)",
+            "start": "08:30",
+            "end": "17:00",
+            "count": 1
+          },
+          {
+            "name": "Retreat host, evening sessions",
+            "start": "16:00",
+            "end": "21:30",
+            "count": 0
+          }
+        ]
+      },
+      {
+        "min": 16,
+        "max": 35,
+        "shifts": [
+          {
+            "name": "Programme coordinator (office: bookings, group liaison)",
+            "start": "09:00",
+            "end": "17:00",
+            "count": 1
+          },
+          {
+            "name": "Retreat host, day (room set-up, AV, session changeovers)",
+            "start": "08:30",
+            "end": "17:00",
+            "count": 1
+          },
+          {
+            "name": "Retreat host, evening sessions",
+            "start": "16:00",
+            "end": "21:30",
+            "count": 1
+          }
+        ]
+      },
+      {
+        "min": 36,
+        "max": 60,
+        "shifts": [
+          {
+            "name": "Programme coordinator (office: bookings, group liaison)",
+            "start": "09:00",
+            "end": "17:00",
+            "count": 1
+          },
+          {
+            "name": "Retreat host, day (room set-up, AV, session changeovers)",
+            "start": "08:30",
+            "end": "17:00",
+            "count": 1
+          },
+          {
+            "name": "Retreat host, evening sessions",
+            "start": "16:00",
+            "end": "21:30",
+            "count": 1
+          }
+        ]
+      },
+      {
+        "min": 61,
+        "max": 100,
+        "shifts": [
+          {
+            "name": "Programme coordinator (office: bookings, group liaison)",
+            "start": "09:00",
+            "end": "17:00",
+            "count": 1
+          },
+          {
+            "name": "Retreat host, day (room set-up, AV, session changeovers)",
+            "start": "08:30",
+            "end": "17:00",
+            "count": 2
+          },
+          {
+            "name": "Retreat host, evening sessions",
+            "start": "16:00",
+            "end": "21:30",
+            "count": 1
+          }
+        ]
+      },
+      {
+        "min": 101,
+        "max": 130,
+        "shifts": [
+          {
+            "name": "Programme coordinator (office: bookings, group liaison)",
+            "start": "09:00",
+            "end": "17:00",
+            "count": 1
+          },
+          {
+            "name": "Retreat host, day (room set-up, AV, session changeovers)",
+            "start": "08:30",
+            "end": "17:00",
+            "count": 2
+          },
+          {
+            "name": "Retreat host, evening sessions",
+            "start": "16:00",
+            "end": "21:30",
+            "count": 2
+          }
+        ]
+      }
+    ],
+    "basis": "Visiting groups usually bring their own teachers, so the centre supplies hosts rather than instructors. Judgement rule: 1 host per group on site during active sessions, plus 1 per extra ~50 guests or extra concurrent group. For in-house teaching, use the retreat instructor norms: 1:10-15 for a standard group retreat, 1:4-8 for premium. For comparison, corporate retreats run 3-5 support staff for 20-30 guests (all roles).",
+    "notes": "No published host-to-guest benchmark was found for UK retreat centres, so the host counts are a judgement call.",
+    "sources": [
+      "https://www.hospitalitycalculators.com/tool/wellness/instructor-to-guest-ratio",
+      "https://premierstaff.com/blog/how-to-plan-corporate-retreat-staffing/"
+    ]
+  },
+  "purchasing_stores": {
+    "label": "Purchasing and stores",
+    "bands": [
+      {
+        "min": 0,
+        "max": 0,
+        "shifts": [
+          {
+            "name": "Purchaser / storekeeper (Mon-Fri, receives deliveries)",
+            "start": "07:30",
+            "end": "15:30",
+            "count": 1
+          }
+        ]
+      },
+      {
+        "min": 1,
+        "max": 15,
+        "shifts": [
+          {
+            "name": "Purchaser / storekeeper (Mon-Fri, receives deliveries)",
+            "start": "07:30",
+            "end": "15:30",
+            "count": 1
+          }
+        ]
+      },
+      {
+        "min": 16,
+        "max": 35,
+        "shifts": [
+          {
+            "name": "Purchaser / storekeeper (Mon-Fri, receives deliveries)",
+            "start": "07:30",
+            "end": "15:30",
+            "count": 1
+          }
+        ]
+      },
+      {
+        "min": 36,
+        "max": 60,
+        "shifts": [
+          {
+            "name": "Purchaser / storekeeper (Mon-Fri, receives deliveries)",
+            "start": "07:30",
+            "end": "15:30",
+            "count": 1
+          }
+        ]
+      },
+      {
+        "min": 61,
+        "max": 100,
+        "shifts": [
+          {
+            "name": "Purchaser / storekeeper (Mon-Fri, receives deliveries)",
+            "start": "07:30",
+            "end": "15:30",
+            "count": 1
+          }
+        ]
+      },
+      {
+        "min": 101,
+        "max": 130,
+        "shifts": [
+          {
+            "name": "Purchaser / storekeeper (Mon-Fri, receives deliveries)",
+            "start": "07:30",
+            "end": "15:30",
+            "count": 1
+          }
+        ]
+      }
+    ],
+    "basis": "Fixed weekday hours, not guest-driven. One purchaser/storekeeper handles ordering, goods-in and stock control. At 0-15 guests this can be part-time or merged with the head chef's ordering. Judgement call: no reliable published ratio.",
+    "notes": "Office department with fixed weekday hours.",
+    "sources": [
+      "https://tumihospitality.com/how-to-staff-a-hotel/"
+    ]
+  },
+  "finance_hr": {
+    "label": "Finance and HR",
+    "bands": [
+      {
+        "min": 0,
+        "max": 0,
+        "shifts": [
+          {
+            "name": "Finance / bookkeeper (Mon-Fri)",
+            "start": "09:00",
+            "end": "17:00",
+            "count": 1
+          },
+          {
+            "name": "HR & admin (Mon-Fri; part-time viable)",
+            "start": "09:00",
+            "end": "17:00",
+            "count": 1
+          }
+        ]
+      },
+      {
+        "min": 1,
+        "max": 15,
+        "shifts": [
+          {
+            "name": "Finance / bookkeeper (Mon-Fri)",
+            "start": "09:00",
+            "end": "17:00",
+            "count": 1
+          },
+          {
+            "name": "HR & admin (Mon-Fri; part-time viable)",
+            "start": "09:00",
+            "end": "17:00",
+            "count": 1
+          }
+        ]
+      },
+      {
+        "min": 16,
+        "max": 35,
+        "shifts": [
+          {
+            "name": "Finance / bookkeeper (Mon-Fri)",
+            "start": "09:00",
+            "end": "17:00",
+            "count": 1
+          },
+          {
+            "name": "HR & admin (Mon-Fri; part-time viable)",
+            "start": "09:00",
+            "end": "17:00",
+            "count": 1
+          }
+        ]
+      },
+      {
+        "min": 36,
+        "max": 60,
+        "shifts": [
+          {
+            "name": "Finance / bookkeeper (Mon-Fri)",
+            "start": "09:00",
+            "end": "17:00",
+            "count": 1
+          },
+          {
+            "name": "HR & admin (Mon-Fri; part-time viable)",
+            "start": "09:00",
+            "end": "17:00",
+            "count": 1
+          }
+        ]
+      },
+      {
+        "min": 61,
+        "max": 100,
+        "shifts": [
+          {
+            "name": "Finance / bookkeeper (Mon-Fri)",
+            "start": "09:00",
+            "end": "17:00",
+            "count": 1
+          },
+          {
+            "name": "HR & admin (Mon-Fri; part-time viable)",
+            "start": "09:00",
+            "end": "17:00",
+            "count": 1
+          }
+        ]
+      },
+      {
+        "min": 101,
+        "max": 130,
+        "shifts": [
+          {
+            "name": "Finance / bookkeeper (Mon-Fri)",
+            "start": "09:00",
+            "end": "17:00",
+            "count": 1
+          },
+          {
+            "name": "HR & admin (Mon-Fri; part-time viable)",
+            "start": "09:00",
+            "end": "17:00",
+            "count": 1
+          }
+        ]
+      }
+    ],
+    "basis": "Fixed weekday hours, independent of guest numbers. Payroll is often outsourced at this size. Judgement call: no reliable published ratio.",
+    "notes": "Office department with fixed weekday hours.",
+    "sources": [
+      "https://tumihospitality.com/how-to-staff-a-hotel/"
+    ]
+  },
+  "sales": {
+    "label": "Sales",
+    "bands": [
+      {
+        "min": 0,
+        "max": 0,
+        "shifts": [
+          {
+            "name": "Sales / group bookings manager (Mon-Fri)",
+            "start": "09:00",
+            "end": "17:30",
+            "count": 1
+          }
+        ]
+      },
+      {
+        "min": 1,
+        "max": 15,
+        "shifts": [
+          {
+            "name": "Sales / group bookings manager (Mon-Fri)",
+            "start": "09:00",
+            "end": "17:30",
+            "count": 1
+          }
+        ]
+      },
+      {
+        "min": 16,
+        "max": 35,
+        "shifts": [
+          {
+            "name": "Sales / group bookings manager (Mon-Fri)",
+            "start": "09:00",
+            "end": "17:30",
+            "count": 1
+          }
+        ]
+      },
+      {
+        "min": 36,
+        "max": 60,
+        "shifts": [
+          {
+            "name": "Sales / group bookings manager (Mon-Fri)",
+            "start": "09:00",
+            "end": "17:30",
+            "count": 1
+          }
+        ]
+      },
+      {
+        "min": 61,
+        "max": 100,
+        "shifts": [
+          {
+            "name": "Sales / group bookings manager (Mon-Fri)",
+            "start": "09:00",
+            "end": "17:30",
+            "count": 1
+          }
+        ]
+      },
+      {
+        "min": 101,
+        "max": 130,
+        "shifts": [
+          {
+            "name": "Sales / group bookings manager (Mon-Fri)",
+            "start": "09:00",
+            "end": "17:30",
+            "count": 1
+          }
+        ]
+      }
+    ],
+    "basis": "Fixed weekday hours. Sales work is forward bookings for future groups, so it doesn't track who is on site today. Add a second person only to grow volume. Judgement call.",
+    "notes": "Office department with fixed weekday hours.",
+    "sources": [
+      "https://tumihospitality.com/how-to-staff-a-hotel/"
+    ]
+  },
+  "management": {
+    "label": "Management / duty manager",
+    "bands": [
+      {
+        "min": 0,
+        "max": 0,
+        "shifts": [
+          {
+            "name": "General manager (Mon-Fri)",
+            "start": "09:00",
+            "end": "17:30",
+            "count": 1
+          },
+          {
+            "name": "Duty manager, early",
+            "start": "07:00",
+            "end": "15:00",
+            "count": 0
+          },
+          {
+            "name": "Duty manager, late",
+            "start": "14:30",
+            "end": "22:30",
+            "count": 0
+          },
+          {
+            "name": "Sleep-in duty manager / fire responder (on call, staff room)",
+            "start": "22:30",
+            "end": "07:30",
+            "count": 0
+          }
+        ]
+      },
+      {
+        "min": 1,
+        "max": 15,
+        "shifts": [
+          {
+            "name": "General manager (Mon-Fri)",
+            "start": "09:00",
+            "end": "17:30",
+            "count": 1
+          },
+          {
+            "name": "Duty manager, early",
+            "start": "07:00",
+            "end": "15:00",
+            "count": 0
+          },
+          {
+            "name": "Duty manager, late",
+            "start": "14:30",
+            "end": "22:30",
+            "count": 1
+          },
+          {
+            "name": "Sleep-in duty manager / fire responder (on call, staff room)",
+            "start": "22:30",
+            "end": "07:30",
+            "count": 1
+          }
+        ]
+      },
+      {
+        "min": 16,
+        "max": 35,
+        "shifts": [
+          {
+            "name": "General manager (Mon-Fri)",
+            "start": "09:00",
+            "end": "17:30",
+            "count": 1
+          },
+          {
+            "name": "Duty manager, early",
+            "start": "07:00",
+            "end": "15:00",
+            "count": 0
+          },
+          {
+            "name": "Duty manager, late",
+            "start": "14:30",
+            "end": "22:30",
+            "count": 1
+          },
+          {
+            "name": "Sleep-in duty manager / fire responder (on call, staff room)",
+            "start": "22:30",
+            "end": "07:30",
+            "count": 1
+          }
+        ]
+      },
+      {
+        "min": 36,
+        "max": 60,
+        "shifts": [
+          {
+            "name": "General manager (Mon-Fri)",
+            "start": "09:00",
+            "end": "17:30",
+            "count": 1
+          },
+          {
+            "name": "Duty manager, early",
+            "start": "07:00",
+            "end": "15:00",
+            "count": 1
+          },
+          {
+            "name": "Duty manager, late",
+            "start": "14:30",
+            "end": "22:30",
+            "count": 1
+          },
+          {
+            "name": "Sleep-in duty manager / fire responder (on call, staff room)",
+            "start": "22:30",
+            "end": "07:30",
+            "count": 1
+          }
+        ]
+      },
+      {
+        "min": 61,
+        "max": 100,
+        "shifts": [
+          {
+            "name": "General manager (Mon-Fri)",
+            "start": "09:00",
+            "end": "17:30",
+            "count": 1
+          },
+          {
+            "name": "Duty manager, early",
+            "start": "07:00",
+            "end": "15:00",
+            "count": 1
+          },
+          {
+            "name": "Duty manager, late",
+            "start": "14:30",
+            "end": "22:30",
+            "count": 1
+          },
+          {
+            "name": "Sleep-in duty manager / fire responder (on call, staff room)",
+            "start": "22:30",
+            "end": "07:30",
+            "count": 1
+          }
+        ]
+      },
+      {
+        "min": 101,
+        "max": 130,
+        "shifts": [
+          {
+            "name": "General manager (Mon-Fri)",
+            "start": "09:00",
+            "end": "17:30",
+            "count": 1
+          },
+          {
+            "name": "Duty manager, early",
+            "start": "07:00",
+            "end": "15:00",
+            "count": 1
+          },
+          {
+            "name": "Duty manager, late",
+            "start": "14:30",
+            "end": "22:30",
+            "count": 1
+          },
+          {
+            "name": "Sleep-in duty manager / fire responder (on call, staff room)",
+            "start": "22:30",
+            "end": "07:30",
+            "count": 1
+          }
+        ]
+      }
+    ],
+    "basis": "Rule: one named person in charge whenever guests are on site. Below 36 guests the GM or a head of department covers the early slot. Overnight, UK fire safety guidance for sleeping accommodation requires enough trained staff for night-time evacuation, so there is always 1 sleep-in responder when guests are present (using the 42nd room). Above ~100 guests, consider 2 night responders per the fire risk assessment. Shifts follow UK rest-break rules (20 min break for more than 6h worked).",
+    "notes": "The duty-manager counts are a judgement call; the night-cover requirement comes from the fire risk assessment.",
+    "sources": [
+      "https://www.gov.uk/government/publications/fire-safety-risk-assessment-sleeping-accommodation",
+      "https://www.gov.uk/rest-breaks-work",
+      "https://tumihospitality.com/how-to-staff-a-hotel/"
+    ]
+  },
+  "kitchen_SUGGESTION": {
+    "label": "Kitchen (SUGGESTION: extrapolated from owner's 30-35 guest pilot)",
+    "bands": [
+      {
+        "min": 0,
+        "max": 0,
+        "shifts": [
+          {
+            "name": "Morning chef",
+            "start": "07:00",
+            "end": "16:00",
+            "count": 0
+          },
+          {
+            "name": "Late chef",
+            "start": "12:00",
+            "end": "21:00",
+            "count": 0
+          },
+          {
+            "name": "KA/KP early",
+            "start": "07:00",
+            "end": "15:00",
+            "count": 0
+          },
+          {
+            "name": "KA/KP late",
+            "start": "15:00",
+            "end": "22:00",
+            "count": 0
+          },
+          {
+            "name": "Relief / float",
+            "start": "10:00",
+            "end": "19:00",
+            "count": 0
+          },
+          {
+            "name": "Head chef (Mon-Fri, menus/ordering/HACCP)",
+            "start": "08:00",
+            "end": "17:00",
+            "count": 0
+          }
+        ]
+      },
+      {
+        "min": 1,
+        "max": 15,
+        "shifts": [
+          {
+            "name": "Morning chef",
+            "start": "07:00",
+            "end": "16:00",
+            "count": 1
+          },
+          {
+            "name": "Late chef",
+            "start": "12:00",
+            "end": "21:00",
+            "count": 1
+          },
+          {
+            "name": "KA/KP early",
+            "start": "07:00",
+            "end": "15:00",
+            "count": 1
+          },
+          {
+            "name": "KA/KP late",
+            "start": "15:00",
+            "end": "22:00",
+            "count": 1
+          },
+          {
+            "name": "Relief / float",
+            "start": "10:00",
+            "end": "19:00",
+            "count": 0
+          },
+          {
+            "name": "Head chef (Mon-Fri, menus/ordering/HACCP)",
+            "start": "08:00",
+            "end": "17:00",
+            "count": 0
+          }
+        ]
+      },
+      {
+        "min": 16,
+        "max": 35,
+        "shifts": [
+          {
+            "name": "Morning chef",
+            "start": "07:00",
+            "end": "16:00",
+            "count": 1
+          },
+          {
+            "name": "Late chef",
+            "start": "12:00",
+            "end": "21:00",
+            "count": 1
+          },
+          {
+            "name": "KA/KP early",
+            "start": "07:00",
+            "end": "15:00",
+            "count": 1
+          },
+          {
+            "name": "KA/KP late",
+            "start": "15:00",
+            "end": "22:00",
+            "count": 1
+          },
+          {
+            "name": "Relief / float",
+            "start": "10:00",
+            "end": "19:00",
+            "count": 1
+          },
+          {
+            "name": "Head chef (Mon-Fri, menus/ordering/HACCP)",
+            "start": "08:00",
+            "end": "17:00",
+            "count": 0
+          }
+        ]
+      },
+      {
+        "min": 36,
+        "max": 60,
+        "shifts": [
+          {
+            "name": "Morning chef",
+            "start": "07:00",
+            "end": "16:00",
+            "count": 2
+          },
+          {
+            "name": "Late chef",
+            "start": "12:00",
+            "end": "21:00",
+            "count": 2
+          },
+          {
+            "name": "KA/KP early",
+            "start": "07:00",
+            "end": "15:00",
+            "count": 2
+          },
+          {
+            "name": "KA/KP late",
+            "start": "15:00",
+            "end": "22:00",
+            "count": 2
+          },
+          {
+            "name": "Relief / float",
+            "start": "10:00",
+            "end": "19:00",
+            "count": 1
+          },
+          {
+            "name": "Head chef (Mon-Fri, menus/ordering/HACCP)",
+            "start": "08:00",
+            "end": "17:00",
+            "count": 0
+          }
+        ]
+      },
+      {
+        "min": 61,
+        "max": 100,
+        "shifts": [
+          {
+            "name": "Morning chef",
+            "start": "07:00",
+            "end": "16:00",
+            "count": 3
+          },
+          {
+            "name": "Late chef",
+            "start": "12:00",
+            "end": "21:00",
+            "count": 3
+          },
+          {
+            "name": "KA/KP early",
+            "start": "07:00",
+            "end": "15:00",
+            "count": 3
+          },
+          {
+            "name": "KA/KP late",
+            "start": "15:00",
+            "end": "22:00",
+            "count": 3
+          },
+          {
+            "name": "Relief / float",
+            "start": "10:00",
+            "end": "19:00",
+            "count": 1
+          },
+          {
+            "name": "Head chef (Mon-Fri, menus/ordering/HACCP)",
+            "start": "08:00",
+            "end": "17:00",
+            "count": 1
+          }
+        ]
+      },
+      {
+        "min": 101,
+        "max": 130,
+        "shifts": [
+          {
+            "name": "Morning chef",
+            "start": "07:00",
+            "end": "16:00",
+            "count": 4
+          },
+          {
+            "name": "Late chef",
+            "start": "12:00",
+            "end": "21:00",
+            "count": 4
+          },
+          {
+            "name": "KA/KP early",
+            "start": "07:00",
+            "end": "15:00",
+            "count": 4
+          },
+          {
+            "name": "KA/KP late",
+            "start": "15:00",
+            "end": "22:00",
+            "count": 3
+          },
+          {
+            "name": "Relief / float",
+            "start": "10:00",
+            "end": "19:00",
+            "count": 2
+          },
+          {
+            "name": "Head chef (Mon-Fri, menus/ordering/HACCP)",
+            "start": "08:00",
+            "end": "17:00",
+            "count": 1
+          }
+        ]
+      }
+    ],
+    "basis": "SUGGESTION ONLY. The owner's pilot (30-35 guests) is 1 chef and 1 KA/KP per shift plus a float, which scales to about ceil(guests/35) per shift. That lands between published banquet norms (1 chef per 25 guests, 1 KA per 50, 1 KP per 100) and buffet norms (1 cook per 50-100 guests; 1 dishwasher per 80). At 1-15 guests, coverage (two shifts across 07:00-22:00) matters more than volume. The late KA/KP is held at 3 for 101-130 because the FOH plate-wash role takes the crockery. A head chef is added at 61+.",
+    "notes": "",
+    "sources": [
+      "https://www.cucumber-catering.com/insights/event-kitchen-staffing-for-large-receptions-and-multi-day-events/",
+      "https://univents.app/en/free-tools/staffing-calculator",
+      "https://dishwasherhero.com/blog/kitchen-staffing-ratios-guide",
+      "https://feedtheline.org/uncategorized/catering-staff-to-guest-ratio-large-buffet"
+    ]
+  }
+}

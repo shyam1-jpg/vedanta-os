@@ -352,7 +352,7 @@ td.mark-dep { box-shadow: inset 3px 0 0 var(--marigold); }
 
 .rota-guests { display: grid; grid-template-columns: repeat(7, 1fr); gap: 8px; margin-top: 12px; }
 .rota-guests label { font-size: 12px; color: var(--ink-2); }
-.rota-guests input { display: block; width: 100%; margin-top: 4px; padding: 7px 8px; border: 1px solid var(--line); border-radius: 6px; font: inherit; }
+.rota-guests input, .rota-guests select { display: block; width: 100%; margin-top: 4px; padding: 7px 8px; border: 1px solid var(--line); border-radius: 6px; font: inherit; background: white; }
 .rota-grid { display: block; overflow-x: auto; }
 .rota-head { font-size: 12px; font-weight: 600; padding: 8px; background: var(--forest); color: var(--ivory); }
 .rota-head small { display: block; font-weight: 400; color: #D5D0C6; }

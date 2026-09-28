@@ -38,8 +38,18 @@ type Person = {
   unavailableWeekdays: number[];
   earliestByWeekday: Record<string, string>;
 };
-type Band = { label: string; minGuests: number; maxGuests: number | null; shifts: { code: string; label: string; start: string; end: string; count: number; kp: boolean; opener: boolean; roleCodes: string[] }[] };
-type Rule = { department: string; placeholder: boolean; note?: string; bands: Band[] };
+type DayWhen = "always" | "weekday" | "weekend" | "changeover" | "midstay" | "changeover_or_weekend";
+type Band = { label: string; minGuests: number; maxGuests: number | null; example?: boolean; shifts: { code: string; label: string; start: string; end: string; count: number; kp: boolean; opener: boolean; roleCodes: string[]; when?: DayWhen; months?: number[] | null; note?: string }[] };
+type Rule = { department: string; placeholder: boolean; example?: boolean; weekdayOffice?: boolean; basis?: string; sources?: string[]; note?: string; bands: Band[] };
+type House = { groundsAcresMin: number; groundsAcresMax: number };
+const WHEN_LABEL: Record<DayWhen, string> = {
+  always: "Every day",
+  weekday: "Weekdays",
+  weekend: "Weekends",
+  changeover: "Changeover days",
+  midstay: "Mid-retreat days",
+  changeover_or_weekend: "Changeover or weekend",
+};
 type Dept = { code: string; name: string };
 
 const WEEKDAYS = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
@@ -66,6 +76,8 @@ export default function AutoRota() {
   const days = useMemo(() => Array.from({ length: 7 }, (_, i) => addDays(week, i)), [week]);
   const [guests, setGuests] = useState<Record<string, string>>({});
   const [rangeCount, setRangeCount] = useState("32");
+  const [dayType, setDayType] = useState<Record<string, "changeover" | "midstay">>({});
+  const [house, setHouse] = useState<House>({ groundsAcresMin: 15, groundsAcresMax: 20 });
   const [department, setDepartment] = useState("ALL");
   const [shifts, setShifts] = useState<Shift[]>([]);
   const [people, setPeople] = useState<Person[]>([]);
@@ -78,8 +90,9 @@ export default function AutoRota() {
   const [showPeople, setShowPeople] = useState(false);
   const say = (t: string) => { setToast(t); setTimeout(() => setToast(null), 4000); };
 
-  const loadSetup = () => api<{ rules: Rule[]; people: Person[]; departments: Dept[] }>("/v1/rota/setup").then(r => {
+  const loadSetup = () => api<{ rules: Rule[]; people: Person[]; departments: Dept[]; house?: House }>("/v1/rota/setup").then(r => {
     setRules(r.rules); setPeople(r.people); setDepts(r.departments);
+    if (r.house) setHouse({ groundsAcresMin: r.house.groundsAcresMin ?? 15, groundsAcresMax: r.house.groundsAcresMax ?? 20 });
   }).catch(e => say(e instanceof ApiError ? e.problem.detail : "Could not open the rota"));
 
   const loadPlan = (from: string) => {
@@ -107,8 +120,11 @@ export default function AutoRota() {
       const body = {
         from: days[0],
         to: days[6],
-        days: days.filter(d => guests[d] !== undefined && guests[d] !== "").map(d => ({ date: d, guests: Number(guests[d]) })),
-        guests: rangeCount === "" ? undefined : Number(rangeCount),
+        days: days.map(d => ({
+          date: d,
+          guests: guests[d] !== undefined && guests[d] !== "" ? Number(guests[d]) : Number(rangeCount || 0),
+          dayType: dayType[d] ?? "midstay",
+        })),
       };
       const r = await api<{ shifts: Shift[]; warnings: string[] }>("/v1/rota/generate", { method: "POST", body: JSON.stringify(body) });
       setShifts(r.shifts);
@@ -155,7 +171,7 @@ export default function AutoRota() {
         <div>
           <div className="kicker">People</div>
           <h1>Auto rota</h1>
-          <p>Enter guest numbers for a day or a whole week. The house builds a rota for every department from the staffing settings. Kitchen levels follow the 30–35 guest pilot. Other departments are marked PLACEHOLDER until you change them.</p>
+          <p>Enter guest numbers for a day or a whole week, and mark a changeover day when a group arrives or leaves. Kitchen 30–35 follows the pilot. Every other department starts as an example you can edit.</p>
         </div>
       </div>
 
@@ -175,6 +191,10 @@ export default function AutoRota() {
           {days.map((d, i) => (
             <label key={d}>{WEEKDAYS[i]} {fmt(d).split(" ").slice(1).join(" ")}
               <input value={guests[d] ?? ""} placeholder={rangeCount || "0"} onChange={e => setGuests(g => ({ ...g, [d]: e.target.value }))} />
+              <select value={dayType[d] ?? "midstay"} onChange={e => setDayType(t => ({ ...t, [d]: e.target.value as "changeover" | "midstay" }))}>
+                <option value="midstay">Mid-retreat</option>
+                <option value="changeover">Changeover</option>
+              </select>
             </label>
           ))}
         </div>
@@ -197,7 +217,7 @@ export default function AutoRota() {
         </div>
         {(department === "ALL" ? deptCodes : deptCodes.filter(c => c === department)).map(code => (
           <div key={code} className="rota-row">
-            <div className="rota-dept">{deptName(code)}{rules.find(r => r.department === code)?.placeholder ? <em>PLACEHOLDER</em> : null}</div>
+            <div className="rota-dept">{deptName(code)}{rules.find(r => r.department === code)?.example ? <em>Example default: edit to match your team</em> : null}</div>
             {days.map(d => (
               <div key={d} className="rota-cell">
                 {visible.filter(s => s.department === code && s.date === d).map(s => (
@@ -221,23 +241,24 @@ export default function AutoRota() {
       </div>
       {!shifts.length && <p className="m" style={{ marginTop: 16 }}>No rota for this week yet. Put in guest numbers — 32 is the pilot baseline — and choose Build rota.</p>}
 
-      {showSettings && <StaffingEditor rules={rules} canEdit={edit} onSaved={() => { say("Staffing settings saved"); loadSetup(); }} />}
+      {showSettings && <StaffingEditor rules={rules} deptName={deptName} house={house} setHouse={setHouse} canEdit={edit} onSaved={() => { say("Staffing settings saved"); loadSetup(); }} />}
       {showPeople && <PeopleRules people={people} canEdit={edit} onSaved={() => { say("Rules saved"); loadSetup(); }} />}
       {toast && <div className="toast">{toast}</div>}
     </div>
   );
 }
 
-function StaffingEditor({ rules, canEdit, onSaved }: { rules: Rule[]; canEdit: boolean; onSaved: () => void }) {
+function StaffingEditor({ rules, deptName, house, setHouse, canEdit, onSaved }: { rules: Rule[]; deptName: (code: string) => string; house: House; setHouse: (h: House) => void; canEdit: boolean; onSaved: () => void }) {
   const [draft, setDraft] = useState<Rule[]>(rules);
   const [dept, setDept] = useState(rules[0]?.department ?? "KITCHEN");
+  const [openWhy, setOpenWhy] = useState(true);
   useEffect(() => setDraft(rules), [rules]);
   const current = draft.find(r => r.department === dept);
   const save = async () => {
-    await api("/v1/rota/staffing", { method: "PUT", body: JSON.stringify({ departments: draft }) });
+    await api("/v1/rota/staffing", { method: "PUT", body: JSON.stringify({ departments: draft, house }) });
     onSaved();
   };
-  const patchShift = (bandIndex: number, shiftIndex: number, field: "start" | "end" | "count", value: string) => {
+  const patchShift = (bandIndex: number, shiftIndex: number, field: "start" | "end" | "count" | "when", value: string) => {
     setDraft(list => list.map(rule => rule.department !== dept ? rule : {
       ...rule,
       bands: rule.bands.map((band, bi) => bi !== bandIndex ? band : {
@@ -249,20 +270,45 @@ function StaffingEditor({ rules, canEdit, onSaved }: { rules: Rule[]; canEdit: b
   return (
     <section className="panel no-print" style={{ marginTop: 18 }}>
       <h2>Staffing settings</h2>
-      <p className="m">These levels are stored for the house. Kitchen 16–35 is the pilot. Anything marked PLACEHOLDER is a starting guess for the head chef to edit. Food is buffet only and is never billed.</p>
-      <div className="seg" style={{ margin: "10px 0" }}>
-        {draft.map(r => <button key={r.department} className={dept === r.department ? "on" : ""} onClick={() => setDept(r.department)}>{r.department}{r.placeholder ? " · placeholder" : ""}</button>)}
+      <p className="m">These levels are stored for the house. Kitchen 16–35 is the owner&apos;s pilot. Every other department is an example. Food is buffet only and is never billed. Restaurant staff set the buffet, clear it, run the tea and coffee station, and wash that crockery. Below 36 guests the kitchen late KA/KP helps with the washing.</p>
+      <div className="frow" style={{ margin: "10px 0" }}>
+        <label>Grounds acres, from <input style={{ width: 70 }} value={house.groundsAcresMin} onChange={e => setHouse({ ...house, groundsAcresMin: Number(e.target.value) })} /></label>
+        <label>to <input style={{ width: 70 }} value={house.groundsAcresMax} onChange={e => setHouse({ ...house, groundsAcresMax: Number(e.target.value) })} /></label>
+        <span className="m">The example gardener is one weekday post for about {house.groundsAcresMin}–{house.groundsAcresMax} acres. Change the grounds headcount if the land is different.</span>
       </div>
-      {current?.note && <p className="note">{current.note}</p>}
+      <div className="seg" style={{ margin: "10px 0" }}>
+        {draft.map(r => <button key={r.department} className={dept === r.department ? "on" : ""} onClick={() => setDept(r.department)}>{deptName(r.department)}{r.example ? " · example" : ""}</button>)}
+      </div>
+      {current?.example && <p className="note">Example default: edit to match your team</p>}
+      {current?.weekdayOffice && <p className="m">Fixed weekday hours. Guest numbers do not change this department.</p>}
+      {current && (
+        <div>
+          <button className="btn" onClick={() => setOpenWhy(v => !v)}>{openWhy ? "Hide why these numbers" : "Why these numbers"}</button>
+          {openWhy && (
+            <div className="note" style={{ marginTop: 8 }}>
+              {current.basis && <p>{current.basis}</p>}
+              {current.note && <p>{current.note}</p>}
+              {(current.sources ?? []).length > 0 && (
+                <ul>
+                  {current.sources!.map(url => <li key={url}><a href={url} target="_blank" rel="noreferrer">{url.replace(/^https?:\/\//, "")}</a></li>)}
+                </ul>
+              )}
+            </div>
+          )}
+        </div>
+      )}
       {current?.bands.map((band, bi) => (
         <div key={band.label} style={{ marginTop: 12 }}>
-          <h3>{band.label} guests {band.shifts.length === 0 ? "· no shifts" : ""}</h3>
+          <h3>{band.label} guests {band.example ? "· research suggestion" : current.department === "KITCHEN" ? "· owner's pilot" : ""}</h3>
           {band.shifts.map((shift, si) => (
-            <div className="frow" key={shift.code + si} style={{ marginTop: 6 }}>
-              <span style={{ minWidth: 140 }}>{shift.label}{shift.opener ? " · opens" : ""}{shift.kp ? " · KP" : ""}</span>
-              <input value={shift.start} onChange={e => patchShift(bi, si, "start", e.target.value)} style={{ width: 90 }} />
-              <input value={shift.end} onChange={e => patchShift(bi, si, "end", e.target.value)} style={{ width: 90 }} />
-              <input value={String(shift.count)} onChange={e => patchShift(bi, si, "count", e.target.value)} style={{ width: 60 }} title="How many" />
+            <div className="frow" key={shift.code + si} style={{ marginTop: 6, flexWrap: "wrap" }}>
+              <span style={{ minWidth: 220 }} title={shift.note ?? ""}>{shift.label}{shift.opener ? " · opens" : ""}{shift.kp ? " · KA/KP" : ""}</span>
+              <input value={shift.start} onChange={e => patchShift(bi, si, "start", e.target.value)} style={{ width: 90 }} disabled={!canEdit} />
+              <input value={shift.end} onChange={e => patchShift(bi, si, "end", e.target.value)} style={{ width: 90 }} disabled={!canEdit} />
+              <input value={String(shift.count)} onChange={e => patchShift(bi, si, "count", e.target.value)} style={{ width: 60 }} title="How many people" disabled={!canEdit} />
+              <select className="btn" value={shift.when ?? "always"} onChange={e => patchShift(bi, si, "when", e.target.value)} disabled={!canEdit}>
+                {(Object.keys(WHEN_LABEL) as DayWhen[]).map(key => <option key={key} value={key}>{WHEN_LABEL[key]}</option>)}
+              </select>
             </div>
           ))}
         </div>
@@ -284,7 +330,7 @@ function PeopleRules({ people, canEdit, onSaved }: { people: Person[]; canEdit: 
   return (
     <section className="panel no-print" style={{ marginTop: 18 }}>
       <h2>People’s rules</h2>
-      <p className="m">KP shifts can only be filled by kitchen porters. Head chef, sous chef and chefs de partie are never KP. Head chef or sous chef opens at 07:00. Hours over 40 in a week are marked as lieu. A 21:00 finish is not followed by a 07:00 start. Apply a template, then adjust.</p>
+      <p className="m">KA/KP shifts are for kitchen porters and kitchen assistants. Head chef, sous chef and chefs de partie are never on those shifts. Head chef or sous chef opens at 07:00. Hours over 40 in a week are marked as lieu. A 21:00 finish is not followed by a 07:00 start.</p>
       {kitchen.map(p => (
         <div key={p.userId} className="rota-person">
           <strong>{p.name}</strong>

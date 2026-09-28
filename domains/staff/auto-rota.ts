@@ -4,6 +4,9 @@
  */
 import { addDaysIso, weekStartMonday } from "./payroll.ts";
 
+/** When a shift is used. Office posts are weekdays. Housekeeping and reception also vary by day type. */
+export type DayWhen = "always" | "weekday" | "weekend" | "changeover" | "midstay" | "changeover_or_weekend";
+
 export type ShiftRule = {
   code: string;
   label: string;
@@ -15,18 +18,29 @@ export type ShiftRule = {
   opener: boolean;
   breakMinutes?: number;
   note?: string;
+  when?: DayWhen;
+  /** Calendar months 1–12. Empty means the whole year. */
+  months?: number[] | null;
 };
 
 export type GuestBand = {
   label: string;
   minGuests: number;
   maxGuests: number | null;
+  /** Research suggestion, not the owner's pilot. */
+  example?: boolean;
   shifts: ShiftRule[];
 };
 
 export type DepartmentStaffing = {
   department: string;
   placeholder: boolean;
+  /** Non-kitchen defaults. The screen says "Example default: edit to match your team". */
+  example?: boolean;
+  /** Purchasing, finance/HR and sales: the same weekday hours whatever the guest count. */
+  weekdayOffice?: boolean;
+  basis?: string;
+  sources?: string[];
   note?: string;
   bands: GuestBand[];
 };
@@ -39,6 +53,8 @@ export type HouseRules = {
   defaultBreakMinutes: number;
   maxConsecutiveDays: number;
   maxDaysPerWeek: number | null;
+  groundsAcresMin: number;
+  groundsAcresMax: number;
 };
 
 export const DEFAULT_HOUSE_RULES: HouseRules = {
@@ -49,6 +65,8 @@ export const DEFAULT_HOUSE_RULES: HouseRules = {
   defaultBreakMinutes: 30,
   maxConsecutiveDays: 6,
   maxDaysPerWeek: 5,
+  groundsAcresMin: 15,
+  groundsAcresMax: 20,
 };
 
 export type RotaPerson = {
@@ -123,13 +141,40 @@ export function bandFor(bands: GuestBand[], guests: number): GuestBand | null {
   return matches[0] ?? null;
 }
 
-export function guestDays(input: { from: string; to: string; guests?: number; days?: { date: string; guests: number }[] }): { date: string; guests: number }[] {
-  const override = new Map((input.days ?? []).map(d => [d.date, Number(d.guests)]));
-  const out: { date: string; guests: number }[] = [];
+export type DayType = "changeover" | "midstay";
+
+export function guestDays(input: {
+  from: string;
+  to: string;
+  guests?: number;
+  dayType?: DayType;
+  days?: { date: string; guests: number; dayType?: DayType }[];
+}): { date: string; guests: number; dayType: DayType }[] {
+  const override = new Map((input.days ?? []).map(d => [d.date, d]));
+  const out: { date: string; guests: number; dayType: DayType }[] = [];
   for (let date = input.from; date <= input.to; date = addDaysIso(date, 1)) {
-    out.push({ date, guests: override.has(date) ? override.get(date)! : Number(input.guests ?? 0) });
+    const day = override.get(date);
+    out.push({
+      date,
+      guests: day ? Number(day.guests) : Number(input.guests ?? 0),
+      dayType: day?.dayType ?? input.dayType ?? "midstay",
+    });
   }
   return out;
+}
+
+export function shiftApplies(shift: ShiftRule, day: { date: string; dayType?: DayType }): boolean {
+  const month = Number(day.date.slice(5, 7));
+  if (shift.months && shift.months.length && !shift.months.includes(month)) return false;
+  const when = shift.when ?? "always";
+  const weekday = isoWeekday(day.date) <= 5;
+  const changeover = day.dayType === "changeover";
+  if (when === "weekday") return weekday;
+  if (when === "weekend") return !weekday;
+  if (when === "changeover") return changeover;
+  if (when === "midstay") return !changeover;
+  if (when === "changeover_or_weekend") return changeover || !weekday;
+  return true;
 }
 
 export function resolvePerson(base: {
@@ -188,16 +233,14 @@ export function resolvePerson(base: {
 }
 
 export function generateRota(input: {
-  days: { date: string; guests: number }[];
+  days: { date: string; guests: number; dayType?: DayType }[];
   rules: DepartmentStaffing[];
   people: RotaPerson[];
   house?: HouseRules;
 }): { shifts: PlannedShift[]; warnings: string[] } {
   const house = input.house ?? DEFAULT_HOUSE_RULES;
   const warnings: string[] = [];
-  for (const rule of input.rules) {
-    if (rule.placeholder) warnings.push(`${rule.department} staffing is a PLACEHOLDER. Confirm the levels before publishing.`);
-  }
+  const warned = new Set<string>();
   const weekHours = new Map<string, number>();
   const monthHours = new Map<string, number>();
   const worked = new Map<string, Set<string>>();
@@ -219,7 +262,12 @@ export function generateRota(input: {
         warnings.push(`No guest band for ${rule.department} on ${day.date} (${day.guests} guests).`);
         continue;
       }
+      if (band.example && !warned.has(`${rule.department}:band`)) {
+        warnings.push(`${rule.department} ${band.label} is a research suggestion. Edit it to match your team.`);
+        warned.add(`${rule.department}:band`);
+      }
       for (const template of band.shifts) {
+        if (!shiftApplies(template, day)) continue;
         const count = Math.max(0, template.count || 0);
         for (let i = 0; i < count; i++) {
           const breakMinutes = template.breakMinutes ?? house.defaultBreakMinutes;
@@ -254,6 +302,10 @@ export function generateRota(input: {
             if (!prev || prev.date < day.date || (prev.date === day.date && clockMinutes(template.end) > clockMinutes(prev.end))) {
               lastEnd.set(chosen.userId, { date: day.date, end: template.end });
             }
+          }
+          if (rule.example && !warned.has(rule.department)) {
+            warnings.push(`${rule.department}: Example default: edit to match your team.`);
+            warned.add(rule.department);
           }
           shifts.push({
             date: day.date,
@@ -294,7 +346,7 @@ function reject(
   assigned: Set<string>,
 ): string | null {
   if (person.department !== department) return "Different department";
-  if (shift.kp && person.role !== "KITCHEN_PORTER") return "KP can only be done by a kitchen porter";
+  if (shift.kp && person.role !== "KITCHEN_PORTER" && person.role !== "KITCHEN_ASSISTANT") return "KA/KP shifts are for kitchen porters and kitchen assistants";
   if (shift.kp && (person.neverKp || !person.canDoKp)) return "This person does not do KP";
   if (shift.opener && !person.opensKitchen) return "Head chef or sous chef must open at 07:00";
   if (shift.roleCodes.length && !shift.roleCodes.includes(person.role)) return "This role does not cover the shift";
@@ -339,7 +391,7 @@ function score(person: RotaPerson, shift: ShiftRule, weekHours: number, worked: 
 function gapReason(shift: ShiftRule, department: string, people: RotaPerson[], rejects: Map<string, string>): string {
   const inDept = people.filter(p => p.department === department);
   if (!inDept.length) return "No one in this department is on the rota yet";
-  if (shift.kp && !inDept.some(p => p.role === "KITCHEN_PORTER" && !p.neverKp && p.canDoKp)) return "KP can only be done by a kitchen porter";
+  if (shift.kp && !inDept.some(p => (p.role === "KITCHEN_PORTER" || p.role === "KITCHEN_ASSISTANT") && !p.neverKp && p.canDoKp)) return "KA/KP shifts are for kitchen porters and kitchen assistants";
   if (shift.opener && !inDept.some(p => p.opensKitchen)) return "Head chef or sous chef must open at 07:00";
   const counts = new Map<string, number>();
   for (const person of inDept) {

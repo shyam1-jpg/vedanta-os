@@ -23,7 +23,7 @@ Checked on a local demo database with the synthetic seed, signed in through the 
 | House admin | Guests | works | Search, add and dietary record save. Diet save uses PUT, which the browser was not allowed to send. |
 | House admin | Guest 360 | works | Profile, stays, communications and complaints load for a guest. |
 | House admin | HR & Rota | fixed | Clock in and clock out failed when the button sent an empty JSON body. That is fixed. A shift can be added by hand. Gaps are listed. Approving or declining a holiday refreshes the list. Someone else's training record is no longer readable. |
-| House admin | Auto rota | works | New. Guest numbers for a day or a week build a rota for every staffed department. Kitchen 16–35 follows the pilot. Other departments are labelled PLACEHOLDER. Gaps stay visible. Draft save, CSV and print work. |
+| House admin | Auto rota | works | Guest numbers for a day or a week, plus a changeover or mid-retreat day type, build a rota for every department. Kitchen 30–35 matches the pilot (chefs 07:00–16:00 and 12:00–21:00, KA/KP 07:00–15:00 and 15:00–22:00, plus relief). Other kitchen bands and every other department are example defaults, labelled "Example default: edit to match your team", with the research basis shown. Purchasing, finance/HR and sales stay on weekday hours. Grounds acreage is an editable setting (default 15–20 acres). Gaps stay visible. Draft save, CSV and print work. |
 | House admin | Labour forecast | fixed | The week now starts on Monday even when today is Sunday, and dates stay on the local calendar. A guest still counts on their departure day. This screen is guidance. It does not build the rota. |
 | House admin | Staff corner | works | People, organogram, leave, duty, hours, tip split, contracts and the old "send an SOP" box. The SOP tab now points at the SOP library. |
 | House admin | Payroll | works | Payroll for a department loads. Clock records can be added. |
@@ -48,7 +48,7 @@ Checked on a local demo database with the synthetic seed, signed in through the 
 | Pocket | House log, tasks, front desk, night, manual | works | The same boards as the house admin, on the staff audience. |
 | Pocket | SOP | works | Assigned procedures list, and "mark as read" no longer fails on an empty body. |
 | Pocket | My rota | not built | The generated rota is in the house admin. The pocket does not show it yet. |
-| Auto rota | Arrival day, departure day and free-day patterns | not built | The generator uses the guest-count bands. It does not yet shorten a shift because it is an arrival or a departure, and it does not add a free-day deep clean. |
-| Auto rota | Purchasing, finance, management, sales | not built | Those departments have no staffing bands until someone adds them in Staffing settings. |
+| Auto rota | Changeover and mid-retreat day | works | Housekeeping and reception (and maintenance weekend cover) use the day type. The generator does not yet shorten a shift for a meal-time arrival or departure, and it does not add a free-day deep clean. |
+| Auto rota | Purchasing, finance, sales, management | works | Example weekday bands are seeded. Purchasing, finance/HR and sales are fixed weekday hours, not guest-driven. Management includes duty and sleep-in. A manager can edit every count. |
 | Kitchen | Kiteline published rota | not built | The outside rota sheet is unchanged. This rota is the house draft. |
 | Sign-in | Microsoft | not built | Not exercised here. Production sign-in is still Microsoft. The development door stays closed on a hosted database. |
