@@ -1,0 +1,436 @@
+<!doctype html>
+<html lang="en-GB">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="robots" content="noindex, nofollow">
+  <title>Thank you · The Vedanta Way</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:ital,wght@0,500;0,600;1,400&family=Outfit:wght@400;500&display=swap" rel="stylesheet">
+  <style>
+    :root {
+      --forest: #1F3A32; --gold: #C4A574; --ivory: #F7F1E6; --cream: #EFE6D4;
+      --ink: #1A1712; --ink-2: #6A6258; --line: #D9CFC0;
+      --serif: "Cormorant Garamond", Georgia, serif; --sans: "Outfit", system-ui, sans-serif;
+    }
+    * { box-sizing: border-box; }
+    html, body { margin: 0; font-family: var(--sans); background: var(--ivory); color: var(--ink); }
+    h1, h2, h3 { font-family: var(--serif); font-weight: 500; margin: 0; }
+    a { color: inherit; }
+    button, input, textarea { font: inherit; }
+    :focus-visible { outline: 2px solid var(--gold); outline-offset: 2px; }
+    .top {
+      position: sticky; top: 0; z-index: 4; display: flex; justify-content: space-between; align-items: center;
+      padding: 16px 36px; background: var(--forest); color: var(--ivory);
+    }
+    .top .mark { letter-spacing: .28em; text-transform: uppercase; color: var(--gold); font-size: 11px; }
+    .hero { background: var(--forest); color: var(--ivory); padding: 56px 36px 72px; }
+    .hero .kicker { letter-spacing: .32em; text-transform: uppercase; color: var(--gold); font-size: 11px; }
+    .hero h1 { font-size: clamp(48px, 8vw, 84px); line-height: .92; margin: 14px 0 12px; }
+    .hero .tag { font-family: var(--serif); font-style: italic; font-size: 24px; color: #D5D0C6; margin: 0 0 18px; }
+    .hero p { max-width: 560px; line-height: 1.55; color: #E4DDD0; }
+    .wrap { max-width: 880px; margin: 0 auto; padding: 0 36px 80px; }
+    .band { margin-top: -36px; }
+    .facts { display: grid; grid-template-columns: repeat(3, 1fr); gap: 18px; margin: 0 0 28px; }
+    .facts div { background: #fff; border: 1px solid var(--line); padding: 22px 20px; }
+    .facts b { display: block; font-family: var(--serif); font-size: 22px; color: var(--forest); margin-bottom: 6px; }
+    .facts span { color: var(--ink-2); font-size: 13px; line-height: 1.45; }
+    .steps { display: flex; gap: 0; margin: 0 0 16px; flex-wrap: wrap; }
+    .steps span { flex: 1; min-width: 88px; padding: 8px 0; text-align: center; font-size: 12px; color: var(--ink-2); border-bottom: 3px solid var(--line); }
+    .steps span.done { border-color: var(--forest); color: var(--ink); }
+    .card { background: #fff; border: 1px solid var(--line); padding: 22px; }
+    h2 { font-size: 36px; color: var(--forest); margin-bottom: 8px; }
+    .lead, .m { color: var(--ink-2); font-size: 14px; line-height: 1.5; }
+    .lead { margin: 0 0 8px; }
+    .group-label { margin: 18px 0 8px; color: var(--ink-2); font-size: 12px; letter-spacing: .16em; text-transform: uppercase; }
+    .who { display: grid; gap: 10px; }
+    .who.cols { grid-template-columns: 1fr 1fr; }
+    .choice, .chip {
+      text-align: left; background: #fff; border: 1px solid var(--line); color: inherit; cursor: pointer;
+    }
+    .choice { padding: 16px 18px; width: 100%; }
+    .choice:hover, .choice.on, .chip:hover, .chip.on { border-color: var(--gold); background: var(--cream); }
+    .choice .k { letter-spacing: .16em; text-transform: uppercase; color: var(--gold); font-size: 10px; }
+    .choice h3 { font-size: 26px; color: var(--forest); margin-top: 6px; }
+    label { display: block; font-size: 12px; color: var(--ink-2); margin-top: 14px; }
+    input, textarea { width: 100%; margin-top: 4px; padding: 10px; border: 1px solid var(--line); background: var(--ivory); color: inherit; }
+    textarea { resize: vertical; }
+    .banner { background: var(--cream); border: 1px solid var(--line); padding: 12px 14px; margin: 16px 0 4px; line-height: 1.45; }
+    .banner strong { letter-spacing: .12em; font-size: 12px; color: var(--forest); }
+    .chips, .amounts { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 8px; }
+    .chip, .amounts button {
+      background: #fff; border: 1px solid var(--line); padding: 12px 14px; cursor: pointer; color: inherit; min-height: 44px;
+    }
+    .amounts button.on { border-color: var(--gold); background: var(--cream); }
+    .row-actions { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
+    .btn { margin-top: 16px; background: var(--forest); color: var(--ivory); border: 0; padding: 12px 18px; cursor: pointer; min-height: 44px; }
+    .btn.sec { background: transparent; color: var(--forest); border: 1px solid var(--line); }
+    .btn:disabled { opacity: .6; cursor: wait; }
+    .note { background: var(--cream); padding: 10px 12px; margin-top: 14px; }
+    .summary { margin-top: 16px; }
+    .summary div { display: flex; justify-content: space-between; gap: 16px; padding: 10px 0; border-bottom: 1px solid var(--line); font-size: 15px; }
+    .summary span { color: var(--ink-2); }
+    .summary b { font-weight: 500; text-align: right; }
+    .hp { position: absolute; left: -10000px; width: 1px; height: 1px; overflow: hidden; }
+    .foot { padding: 36px; background: var(--forest); color: #D5D0C6; font-size: 14px; line-height: 1.6; }
+    .foot a { color: var(--gold); }
+    @media (max-width: 860px) {
+      .top, .hero, .wrap, .foot { padding-left: 20px; padding-right: 20px; }
+      .hero { padding-top: 36px; padding-bottom: 56px; }
+      .facts, .who.cols { grid-template-columns: 1fr; }
+      .summary div { flex-direction: column; gap: 4px; }
+      .summary b { text-align: left; }
+    }
+  </style>
+</head>
+<body>
+  <header class="top">
+    <div class="mark" id="mark">Retreat Center · The Vedanta Way</div>
+  </header>
+  <section class="hero">
+    <div class="kicker">A note for the house</div>
+    <h1>Thank you</h1>
+    <p class="tag">For the people who looked after you</p>
+    <p id="notice">Tips are not collected online yet. Any amount is a PLACEHOLDER for the house, not a payment.</p>
+  </section>
+  <div class="band">
+    <div class="wrap">
+      <div class="facts">
+        <div><b>A message</b><span>Say thank you in your own words. A note is optional.</span></div>
+        <div><b>A gesture</b><span>Tea, a small treat, or flowers — a note for the house, not an order.</span></div>
+        <div><b>A placeholder tip</b><span>Choose an amount if you wish. Nothing is paid on this page.</span></div>
+      </div>
+      <div class="steps" aria-label="Thanks steps">
+        <span data-step="who" class="done">Who</span>
+        <span data-step="note">Your note</span>
+        <span data-step="done">Thank you</span>
+      </div>
+      <form id="form" class="card" novalidate>
+        <section id="step-who">
+          <h2>Who is this for?</h2>
+          <p class="lead">Choose one person, a department, or the whole team. Names here are placeholders.</p>
+          <div id="recipients"></div>
+          <div class="note" id="who-error" hidden></div>
+          <button class="btn" id="continue" type="button">Continue</button>
+        </section>
+        <section id="step-note" hidden>
+          <h2>Your note</h2>
+          <p class="lead" id="for-line"></p>
+          <label for="message">Message <span class="m">(optional)</span></label>
+          <textarea id="message" name="message" rows="4" maxlength="500" placeholder="What would you like them to know?"></textarea>
+          <p class="m" id="count">0 / 500</p>
+          <label for="guest-name">Your name <span class="m">(optional — leave blank to stay anonymous)</span></label>
+          <input id="guest-name" name="guest_name" maxlength="80" autocomplete="name" placeholder="Anonymous">
+          <p class="group-label" id="gesture-label">A small gesture</p>
+          <div class="chips" id="gestures" role="group" aria-labelledby="gesture-label"></div>
+          <div class="banner" id="amount-banner">
+            <strong>PLACEHOLDER</strong> — tips are not collected online yet. Nothing is charged, and there is no card form.
+          </div>
+          <p class="group-label" id="amount-label">Amount</p>
+          <div class="amounts" id="amounts" role="group" aria-labelledby="amount-label"></div>
+          <div id="custom-wrap" hidden>
+            <label for="custom-amount">Custom amount in pounds</label>
+            <input id="custom-amount" inputmode="decimal" autocomplete="off" placeholder="e.g. 15" maxlength="8">
+          </div>
+          <div class="hp" aria-hidden="true">
+            <label for="company">Company</label>
+            <input id="company" name="company" tabindex="-1" autocomplete="off">
+          </div>
+          <div class="note" id="note-error" role="alert" hidden></div>
+          <div class="row-actions">
+            <button class="btn" id="send" type="submit">Send thanks</button>
+            <button class="btn sec" id="back" type="button">Back</button>
+          </div>
+        </section>
+        <section id="step-done" hidden>
+          <h2>Thank you</h2>
+          <p class="lead" id="done-lead"></p>
+          <p class="m" id="done-notice"></p>
+          <div class="summary">
+            <div><span>For</span><b id="done-for"></b></div>
+            <div><span>From</span><b id="done-from"></b></div>
+            <div><span>Message</span><b id="done-message"></b></div>
+            <div><span>Gesture</span><b id="done-gesture"></b></div>
+            <div><span>Amount</span><b id="done-amount"></b></div>
+          </div>
+          <button class="btn sec" id="again" type="button">Send another</button>
+        </section>
+      </form>
+    </div>
+  </div>
+  <footer class="foot">
+    <span id="foot-name">The Vedanta Way</span> · <span id="foot-company">The Vedanta Way Ltd</span><br>
+    <span id="foot-address">Lincoln Rd, Branston, Lincolnshire, LN4 1PD</span><br>
+    <a id="foot-web" href="https://www.thevedanta.org/">www.thevedanta.org</a>
+  </footer>
+  <script>window.GRATITUDE_API = "";</script>
+  <script id="gratitude-fallback" type="application/json">
+    {
+      "notice": "Tips are not collected online yet. Any amount is a PLACEHOLDER for the house, not a payment.",
+      "payments": "placeholder",
+      "presets": [5, 10, 20],
+      "amount_min": 1,
+      "amount_max": 500,
+      "limits": { "message": 500, "name": 80 },
+      "gestures": [
+        { "id": "tea", "label": "Tea for the team" },
+        { "id": "treat", "label": "A small treat" },
+        { "id": "flowers", "label": "Flowers" }
+      ],
+      "recipients": [
+        { "id": "team", "kind": "team", "label": "The whole team", "group": "House" },
+        { "id": "kitchen", "kind": "department", "label": "Kitchen", "group": "Departments" },
+        { "id": "housekeeping", "kind": "department", "label": "Housekeeping", "group": "Departments" },
+        { "id": "reception", "kind": "department", "label": "Reception", "group": "Departments" },
+        { "id": "member-a", "kind": "person", "label": "Team member A", "group": "People" },
+        { "id": "chef-b", "kind": "person", "label": "Chef B", "group": "People" }
+      ]
+    }
+  </script>
+  <script>
+    const fallback = JSON.parse(document.getElementById("gratitude-fallback").textContent);
+    let catalogue = fallback;
+    let step = "who";
+    let recipientId = "";
+    let gestureId = "";
+    let amountChoice = "";
+    let busy = false;
+
+    function api(path) {
+      const base = String(window.GRATITUDE_API || "").replace(/\/$/, "");
+      return base + path;
+    }
+
+    function setStep(next) {
+      step = next;
+      document.getElementById("step-who").hidden = next !== "who";
+      document.getElementById("step-note").hidden = next !== "note";
+      document.getElementById("step-done").hidden = next !== "done";
+      const order = { who: 0, note: 1, done: 2 };
+      for (const el of document.querySelectorAll(".steps [data-step]")) {
+        el.classList.toggle("done", order[el.dataset.step] <= order[next]);
+      }
+      const focus = next === "who" ? document.getElementById("continue")
+        : next === "note" ? document.getElementById("message")
+        : document.getElementById("step-done").querySelector("h2");
+      if (next === "done") focus.setAttribute("tabindex", "-1");
+      focus.focus();
+    }
+
+    function showError(id, text) {
+      const el = document.getElementById(id);
+      el.hidden = !text;
+      el.textContent = text || "";
+    }
+
+    function renderRecipients() {
+      const host = document.getElementById("recipients");
+      host.replaceChildren();
+      const groups = [];
+      for (const recipient of catalogue.recipients) {
+        if (!groups.includes(recipient.group)) groups.push(recipient.group);
+      }
+      for (const group of groups) {
+        const label = document.createElement("div");
+        label.className = "group-label";
+        label.textContent = group;
+        host.appendChild(label);
+        const grid = document.createElement("div");
+        grid.className = "who" + (group === "House" ? "" : " cols");
+        for (const recipient of catalogue.recipients.filter(item => item.group === group)) {
+          const button = document.createElement("button");
+          button.type = "button";
+          button.className = "choice" + (recipient.id === recipientId ? " on" : "");
+          button.setAttribute("aria-pressed", recipient.id === recipientId ? "true" : "false");
+          const kind = document.createElement("div");
+          kind.className = "k";
+          kind.textContent = recipient.kind === "team" ? "Everyone" : recipient.kind === "department" ? "Department" : "Person";
+          const name = document.createElement("h3");
+          name.textContent = recipient.label;
+          button.append(kind, name);
+          button.addEventListener("click", () => {
+            recipientId = recipient.id;
+            showError("who-error", "");
+            renderRecipients();
+          });
+          grid.appendChild(button);
+        }
+        host.appendChild(grid);
+      }
+    }
+
+    function renderChoiceGroup(hostId, options, current, onPick) {
+      const host = document.getElementById(hostId);
+      host.replaceChildren();
+      for (const option of options) {
+        const button = document.createElement("button");
+        button.type = "button";
+        button.className = "chip" + (option.id === current ? " on" : "");
+        button.setAttribute("aria-pressed", option.id === current ? "true" : "false");
+        button.textContent = option.label;
+        button.addEventListener("click", () => onPick(option.id));
+        host.appendChild(button);
+      }
+    }
+
+    function renderGestures() {
+      renderChoiceGroup("gestures", [...catalogue.gestures, { id: "", label: "No gesture" }], gestureId, (id) => {
+        gestureId = id;
+        renderGestures();
+      });
+    }
+
+    function renderAmounts() {
+      const presets = (catalogue.presets || [5, 10, 20]).map(amount => ({
+        id: Number(amount).toFixed(2),
+        label: "£" + amount,
+      }));
+      renderChoiceGroup("amounts", [...presets, { id: "custom", label: "Custom" }, { id: "", label: "No amount" }], amountChoice, (id) => {
+        amountChoice = id;
+        document.getElementById("custom-wrap").hidden = id !== "custom";
+        renderAmounts();
+        if (id === "custom") document.getElementById("custom-amount").focus();
+      });
+    }
+
+    function selectedRecipient() {
+      return catalogue.recipients.find(item => item.id === recipientId) || null;
+    }
+
+    document.getElementById("continue").addEventListener("click", () => {
+      if (!selectedRecipient()) {
+        showError("who-error", "Choose who this thanks is for.");
+        return;
+      }
+      document.getElementById("for-line").textContent = "For " + selectedRecipient().label + ".";
+      setStep("note");
+    });
+
+    document.getElementById("back").addEventListener("click", () => {
+      showError("note-error", "");
+      setStep("who");
+    });
+
+    document.getElementById("message").addEventListener("input", (event) => {
+      const max = catalogue.limits?.message || 500;
+      document.getElementById("count").textContent = event.target.value.length + " / " + max;
+    });
+
+    document.getElementById("form").addEventListener("submit", async (event) => {
+      event.preventDefault();
+      if (step !== "note" || busy) return;
+      showError("note-error", "");
+      if (!selectedRecipient()) {
+        setStep("who");
+        showError("who-error", "Choose who this thanks is for.");
+        return;
+      }
+      let amount = amountChoice;
+      if (amountChoice === "custom") {
+        amount = document.getElementById("custom-amount").value.trim();
+        if (!amount) {
+          showError("note-error", "Enter a custom amount, or choose no amount.");
+          return;
+        }
+      }
+      busy = true;
+      document.getElementById("send").disabled = true;
+      document.getElementById("send").textContent = "Sending…";
+      try {
+        const response = await fetch(api("/guest/gratitude"), {
+          method: "POST",
+          headers: { "content-type": "application/json", accept: "application/json" },
+          body: JSON.stringify({
+            recipient_id: recipientId,
+            message: document.getElementById("message").value,
+            guest_name: document.getElementById("guest-name").value,
+            gesture: gestureId,
+            amount,
+            company: document.getElementById("company").value,
+          }),
+        });
+        const body = await response.json().catch(() => ({}));
+        if (!response.ok) {
+          showError("note-error", body.detail || "The note could not be sent.");
+          return;
+        }
+        document.getElementById("done-for").textContent = body.recipient?.label || selectedRecipient().label;
+        document.getElementById("done-from").textContent = body.anonymous ? "Anonymous" : (body.guest_name || "Anonymous");
+        document.getElementById("done-message").textContent = body.message || "No message";
+        document.getElementById("done-gesture").textContent = body.gesture?.label || "No gesture";
+        document.getElementById("done-amount").textContent = body.amount ? "£" + body.amount + " PLACEHOLDER" : "No amount";
+        document.getElementById("done-notice").textContent = body.notice || catalogue.notice;
+        document.getElementById("done-lead").textContent = body.stored
+          ? "The house has your note. Nothing was charged. A manager will decide how it is shared — nothing is allocated automatically."
+          : "Nothing was charged. The house is not keeping these notes yet.";
+        setStep("done");
+      } catch {
+        showError("note-error", "The house could not be reached. Nothing was sent.");
+      } finally {
+        busy = false;
+        document.getElementById("send").disabled = false;
+        document.getElementById("send").textContent = "Send thanks";
+      }
+    });
+
+    document.getElementById("again").addEventListener("click", () => {
+      recipientId = "";
+      gestureId = "";
+      amountChoice = "";
+      document.getElementById("form").reset();
+      document.getElementById("custom-wrap").hidden = true;
+      document.getElementById("count").textContent = "0 / " + (catalogue.limits?.message || 500);
+      showError("who-error", "");
+      showError("note-error", "");
+      renderRecipients();
+      renderGestures();
+      renderAmounts();
+      setStep("who");
+    });
+
+    async function loadCatalogue() {
+      try {
+        const response = await fetch(api("/guest/gratitude"), { headers: { accept: "application/json" } });
+        if (!response.ok) return;
+        const data = await response.json();
+        if (!Array.isArray(data.recipients) || !data.recipients.length) return;
+        catalogue = data;
+        if (data.notice) document.getElementById("notice").textContent = data.notice;
+        const message = document.getElementById("message");
+        const name = document.getElementById("guest-name");
+        if (data.limits?.message) message.maxLength = data.limits.message;
+        if (data.limits?.name) name.maxLength = data.limits.name;
+        renderRecipients();
+        renderGestures();
+        renderAmounts();
+      } catch { /* the page still works from the built-in catalogue until submit */ }
+    }
+
+    async function loadProperty() {
+      try {
+        const response = await fetch(api("/guest/property"), { headers: { accept: "application/json" } });
+        if (!response.ok) return;
+        const property = await response.json();
+        if (property.name) document.getElementById("foot-name").textContent = property.name;
+        if (property.company) document.getElementById("foot-company").textContent = property.company;
+        if (property.address) document.getElementById("foot-address").textContent = property.address;
+        if (property.kicker || property.name) {
+          document.getElementById("mark").textContent = (property.kicker || "Retreat Center") + " · " + (property.name || "The Vedanta Way");
+        }
+        if (property.website) {
+          const link = document.getElementById("foot-web");
+          link.href = property.website;
+          link.textContent = String(property.website).replace(/^https?:\/\//, "");
+        }
+      } catch { /* keep the printed house details */ }
+    }
+
+    renderRecipients();
+    renderGestures();
+    renderAmounts();
+    loadCatalogue();
+    loadProperty();
+  </script>
+</body>
+</html>
