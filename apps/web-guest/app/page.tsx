@@ -14,7 +14,7 @@ async function api<T>(path: string, init: RequestInit = {}): Promise<T> {
   return body as T;
 }
 
-type Prop = { name: string; kicker: string; tagline: string; about: string; website: string; company: string; address: string; check_in_from: string; check_out_by: string; rooms: number };
+type Prop = { name: string; kicker: string | null; tagline: string; about: string; website: string; company: string; address: string; check_in_from: string; check_out_by: string; rooms: number };
 type Prog = { id: string; name: string; kind: string; basis: string | null; arrival: string; arrival_time: string | null; departure: string; departure_time: string | null; nights: number; places: number | null; spa: boolean; meals: boolean; package: string | null; price: string | null; about: string | null };
 type Room = { number: string; section: string | null };
 type RoomType = { code: string; name: string; sleeps: number; accessible: boolean; beds: string; features: string[]; total: number; available: number };
@@ -170,7 +170,7 @@ export default function Book() {
   return (
     <>
       <header className="top">
-        <div className="mark">Retreat Center · The Vedanta Way</div>
+        <div className="mark">{prop?.name ?? "The Vedanta Way"}</div>
         <div className="who">
           {me
             ? <>{me.name} · My Stay · <button onClick={signOut}>Sign out</button></>
@@ -182,7 +182,7 @@ export default function Book() {
       </header>
 
       <section className="hero">
-        <div className="kicker">{prop?.kicker ?? "Retreat Center"}</div>
+        {prop?.kicker ? <div className="kicker">{prop.kicker}</div> : null}
         <h1>{prop?.name ?? "The Vedanta Way"}</h1>
         <p className="tag">Luxury retreat centre</p>
         <p>{prop?.about}</p>

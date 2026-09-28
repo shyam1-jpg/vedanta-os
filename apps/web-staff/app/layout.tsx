@@ -1,6 +1,7 @@
 import "./globals.css";
-import type { Metadata } from "next";
-export const metadata: Metadata = { title: "The Vedanta Way · Pocket" };
+import { FRAGMENT_STRIP_SCRIPT } from "../lib/handoff";
+import { publicPageMetadata } from "../lib/publicMetadata";
+export const metadata = { ...publicPageMetadata("Pocket · The Vedanta Way"), referrer: "strict-origin" as const };
 export default function RootLayout({ children }: { children: React.ReactNode }) {
-  return <html lang="en-GB"><body>{children}</body></html>;
+  return <html lang="en-GB"><head><script dangerouslySetInnerHTML={{ __html: FRAGMENT_STRIP_SCRIPT }} /></head><body>{children}</body></html>;
 }

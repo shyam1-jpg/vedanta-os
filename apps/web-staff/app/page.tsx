@@ -1,11 +1,40 @@
 "use client";
-import { useEffect, useState } from "react";
+import { useLayoutEffect, useState } from "react";
+import { consumeSessionFragment, pocketSignInOffer, type HandoffResult, type SignInOffer } from "../lib/handoff";
 
 const API = process.env.NEXT_PUBLIC_API_URL ?? "";
 const tok = {
   get: () => (typeof window === "undefined" ? null : sessionStorage.getItem("vedanta.staff.token")),
   set: (t: string | null) => { if (t) sessionStorage.setItem("vedanta.staff.token", t); else sessionStorage.removeItem("vedanta.staff.token"); },
 };
+/** One capture per page load. Strict mode re-runs the effect after the fragment is already gone. */
+let fragmentCapture: HandoffResult | null = null;
+let earlyNote: string | null | undefined;
+let earlyFromLink: boolean | undefined;
+function takeEarlyHandoff(): { note: string | null; fromLink: boolean } {
+  if (earlyNote === undefined) {
+    earlyNote = sessionStorage.getItem("vedanta.staff.handoff-note");
+    if (earlyNote) sessionStorage.removeItem("vedanta.staff.handoff-note");
+    earlyFromLink = sessionStorage.getItem("vedanta.staff.handoff-from-link") === "1";
+    if (earlyFromLink) sessionStorage.removeItem("vedanta.staff.handoff-from-link");
+  }
+  return { note: earlyNote, fromLink: !!earlyFromLink };
+}
+function captureFragment(): HandoffResult {
+  if (fragmentCapture) return fragmentCapture;
+  const handoff = consumeSessionFragment({
+    hash: window.location.hash,
+    search: window.location.search,
+    pathname: window.location.pathname,
+  });
+  if (handoff.action !== "none" || window.location.hash) {
+    const next = new URL(handoff.url, window.location.origin);
+    history.replaceState(null, "", next.origin + next.pathname + next.search);
+  }
+  if (handoff.action === "store") tok.set(handoff.token);
+  fragmentCapture = handoff;
+  return handoff;
+}
 async function api<T>(path: string, init: RequestInit = {}): Promise<T> {
   const headers: Record<string, string> = { "content-type": "application/json", ...(init.headers as Record<string, string> ?? {}) };
   const t = tok.get(); if (t) headers.authorization = `Bearer ${t}`;
@@ -15,12 +44,12 @@ async function api<T>(path: string, init: RequestInit = {}): Promise<T> {
   return body as T;
 }
 
-type Me = { name: string; email: string; role: string; role_name?: string; property_name?: string | null; property_kicker?: string | null };
-type Prop = { name: string; kicker: string };
+type Me = { name: string; email: string; role: string; role_name?: string; surface?: string; property_name?: string | null; property_kicker?: string | null };
+type Prop = { name: string; kicker: string | null };
 
 export default function Pocket() {
   const [me, setMe] = useState<Me | null>(null);
-  const [prop, setProp] = useState<Prop>({ name: "The Vedanta Way", kicker: "Retreat Center" });
+  const [prop, setProp] = useState<Prop>({ name: "The Vedanta Way", kicker: "" });
   const [email, setEmail] = useState("");
   const [err, setErr] = useState<string | null>(null);
   const [tab, setTab] = useState<"clock" | "leave" | "duty" | "sop" | "log" | "desk" | "night" | "manual" | "tasks">("clock");
@@ -51,9 +80,18 @@ export default function Pocket() {
     counts: { open: number; overdue: number };
   } | null>(null);
   const [taskTitle, setTaskTitle] = useState("");
+  const [offer, setOffer] = useState<SignInOffer>("pending");
+  const [booting, setBooting] = useState(true);
 
   const load = async () => {
-    const u = await api<Me>("/me"); setMe(u);
+    const u = await api<Me>("/me");
+    if (u.surface !== "STAFF") {
+      tok.set(null);
+      const denied = new Error("This sign-in opens the house desk, not Pocket. Ask your manager for a Pocket link.");
+      denied.name = "StaffAudienceError";
+      throw denied;
+    }
+    setMe(u);
     setClock(await api("/staff/clock"));
     setLeave(await api("/staff/leave"));
     setSops((await api<{ items: typeof sops }>("/staff/sop")).items);
@@ -64,9 +102,32 @@ export default function Pocket() {
     try { setManuals((await api<{ items: typeof manuals }>("/v1/manuals")).items); } catch { setManuals([]); }
     try { setTasks(await api("/v1/ops/tasks")); } catch { setTasks(null); }
   };
-  useEffect(() => {
-    api<Prop>("/guest/property").then(p => setProp({ name: p.name, kicker: p.kicker })).catch(() => {});
-    if (tok.get()) load().catch(() => tok.set(null));
+  function signInFailureMessage(e: unknown, fromLink: boolean): string {
+    if (e instanceof Error && e.name === "StaffAudienceError") return e.message;
+    if (fromLink) return "This sign-in link is not valid or has expired. Ask your manager for a new one.";
+    return "Your sign-in has ended. Sign in again.";
+  }
+
+  useLayoutEffect(() => {
+    const early = takeEarlyHandoff();
+    const handoff = captureFragment();
+    let cancelled = false;
+    api<Prop>("/guest/property").then(p => { if (!cancelled) setProp({ name: p.name || "The Vedanta Way", kicker: p.kicker || "" }); }).catch(() => {});
+    const providers = api<{ microsoft: boolean; dev: boolean; email?: boolean }>("/auth/providers").then(p => {
+      if (!cancelled) setOffer(pocketSignInOffer({ email: p.email ?? !!p.dev, microsoft: !!p.microsoft }));
+    }).catch(() => { if (!cancelled) setErr(cur => cur ?? "Cannot reach the house. Try again in a moment."); });
+    const session = (async () => {
+      if (early.note || handoff.action === "reject") { setErr(early.note || (handoff.action === "reject" ? handoff.message : "")); return; }
+      const fromLink = early.fromLink || handoff.action === "store";
+      if (!tok.get()) {
+        if (handoff.action === "none" && handoff.error) setErr(handoff.error);
+        return;
+      }
+      try { await load(); if (!cancelled) setErr(null); }
+      catch (e) { tok.set(null); setMe(null); if (!cancelled) setErr(signInFailureMessage(e, fromLink)); }
+    })();
+    Promise.all([providers, session]).finally(() => { if (!cancelled) setBooting(false); });
+    return () => { cancelled = true; };
   }, []);
 
   const enter = async () => {
@@ -95,14 +156,19 @@ export default function Pocket() {
 
   if (!me) return (
     <>
-      <div className="hero"><div className="kicker">{prop.kicker}</div><h1>{prop.name}</h1><p>Luxury retreat centre</p></div>
+      <div className="hero">{prop.kicker ? <div className="kicker">{prop.kicker}</div> : null}<h1>{prop.name}</h1><p>Luxury retreat centre</p></div>
       <div className="wrap">
         <div className="card">
-          <label>Staff email</label>
-          <p className="m">There is no password.</p>
-          <input value={email} onChange={e => setEmail(e.target.value)} placeholder="you@thevedanta.org" />
-          <button className="btn" onClick={enter}>Enter the pocket</button>
-          {err && <div className="note">{err}</div>}
+          {booting ? <p className="m">Opening Pocket…</p> : offer === "email" ? <>
+            <label>Staff email</label>
+            <p className="m">There is no password.</p>
+            <input value={email} onChange={e => setEmail(e.target.value)} placeholder="you@thevedanta.org" autoComplete="email" />
+            <button className="btn" onClick={enter}>Enter the pocket</button>
+          </> : offer === "microsoft" ? <>
+            <p>Use your Vedanta Microsoft 365 account.</p>
+            <a className="btn" href={`${API}/auth/microsoft?surface=staff`}><svg width="18" height="18" viewBox="0 0 21 21" aria-hidden="true"><rect x="1" y="1" width="9" height="9" fill="#f25022"/><rect x="11" y="1" width="9" height="9" fill="#7fba00"/><rect x="1" y="11" width="9" height="9" fill="#00a4ef"/><rect x="11" y="11" width="9" height="9" fill="#ffb900"/></svg>Sign in with Microsoft 365</a>
+          </> : offer === "manager" ? <p>Email sign-in is turned off. Ask your manager for a sign-in link.</p> : null}
+          {err && <div className="note" role="alert">{err}</div>}
         </div>
       </div>
     </>
