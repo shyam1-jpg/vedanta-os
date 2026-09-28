@@ -5,6 +5,7 @@ import CompliancePocket from "@/components/CompliancePocket";
 import LostPocket from "@/components/LostPocket";
 import SupplierPocket from "@/components/SupplierPocket";
 import MyTraining from "@/components/MyTraining";
+import ReturningGuests from "@/components/ReturningGuests";
 
 type Me = { name: string; email: string; role: string; role_name?: string; permissions?: string[]; property_name?: string | null; property_kicker?: string | null };
 type Prop = { name: string; kicker: string };
@@ -508,7 +509,7 @@ export default function Pocket() {
           </div>
         )}
         {tab === "fault" && <FaultPocket me={me} canWork={(me.permissions ?? []).includes("maintenance.work")} onError={setErr} />}
-        {tab === "stock" && (me.permissions ?? []).includes("kitchen.stock") && <StockPocket onError={setErr} />}
+        {tab === "stock" && (me.permissions ?? []).includes("kitchen.stock") && <><ReturningGuests surface="kitchen" /><StockPocket onError={setErr} /></>}
         {tab === "compliance" && (me.permissions ?? []).includes("compliance.calendar") && <CompliancePocket onError={setErr} />}
         {tab === "lost" && (me.permissions ?? []).includes("lostfound.log") && <LostPocket onError={setErr} />}
         {tab === "suppliers" && (me.permissions ?? []).includes("supplier.register") && <SupplierPocket onError={setErr} />}
@@ -523,6 +524,7 @@ export default function Pocket() {
         )}
         {tab === "desk" && (
           <div>
+            <ReturningGuests surface="front" />
             <div className="card">
               <h2>Today · {desk?.today.weekday} · {desk?.today.title}</h2>
               <p>{desk?.today.method}</p>

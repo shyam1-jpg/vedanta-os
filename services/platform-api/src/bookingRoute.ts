@@ -6,6 +6,7 @@ import type { FastifyInstance } from "fastify";
 import { pool } from "./db.ts";
 import { allow, problem, requireActor } from "./auth.ts";
 import { openText, sealList, sealText } from "./fieldCrypto.ts";
+import { linkReturningGuest } from "./guestHistory.ts";
 import {
   acceptWarning,
   bookingEmails,
@@ -190,7 +191,7 @@ export async function refreshGuestBookingForGroup(db: Db, tenantId: string, prop
 }
 
 export async function carryOntoBooking(db: Db, args: {
-  tenantId: string; propertyId: string; bookingId: string; stay: StayCapture; actorUserId?: string | null;
+  tenantId: string; propertyId: string; bookingId: string; stay: StayCapture; actorUserId?: string | null; keepAllergens?: boolean;
 }): Promise<{ people: { id: string; label: string }[] }> {
   const summary = dietarySummary(args.stay);
   const guestNotes = [args.stay.notes, args.stay.arrival_time_note ? `Arrival: ${args.stay.arrival_time_note}` : null].filter(Boolean).join("\n");
@@ -233,15 +234,25 @@ export async function carryOntoBooking(db: Db, args: {
        where ga.group_id=$1 and lower(p.given_name)=lower($2) and lower(p.family_name)=lower($3)`,
       [args.bookingId, person.given_name, person.family_name],
     )).rows[0];
-    let personId: string | undefined = existing?.id;
-    if (!personId) {
-      personId = (await db.query(
-        `insert into person (tenant_id, given_name, family_name, email) values ($1,$2,$3,$4) returning id`,
-        [args.tenantId, person.given_name, person.family_name, index === 0 ? args.stay.email : null],
-      )).rows[0].id;
-    } else if (index === 0) {
-      await db.query(`update person set email=coalesce(email, $2) where id=$1`, [personId, args.stay.email]);
-    }
+    const personId = await linkReturningGuest(db, {
+      tenantId: args.tenantId,
+      propertyId: args.propertyId,
+      existingId: existing?.id,
+      givenName: person.given_name,
+      familyName: person.family_name,
+      email: index === 0 ? args.stay.email : null,
+      groupId: args.bookingId,
+      actorUserId: args.actorUserId,
+      arrival: args.stay.arrival,
+      departure: args.stay.departure,
+      roomPreference: args.stay.room_preference,
+      accessibility: person.accessibility || args.stay.accessibility_notes,
+      specialRequests: index === 0 ? args.stay.notes : null,
+      keepAllergens: index === 0 && !!args.keepAllergens,
+      diet: person.diet,
+      allergens: person.allergens,
+      dietNotes: person.other,
+    });
     await db.query(
       `insert into group_attendee (tenant_id, group_id, person_id, room_preference)
        values ($1,$2,$3,$4)

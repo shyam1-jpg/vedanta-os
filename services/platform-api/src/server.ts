@@ -26,6 +26,7 @@ import complianceRoutes from "./compliance.ts";
 import lostFoundRoutes from "./lostFound.ts";
 import supplierRoutes from "./suppliers.ts";
 import trainingRoutes from "./training.ts";
+import guestHistoryRoutes from "./guestHistory.ts";
 import service from "./service.ts";
 import manuals from "./manuals.ts";
 import tasks from "./tasks.ts";
@@ -141,7 +142,7 @@ app.setErrorHandler((err: any, req, reply) => {
 });
 
 app.get("/health", async () => { await pool.query("select 1"); return { ok: true }; });
-await app.register(authRoutes); await app.register(microsoft); await app.register(groups, { prefix: "/v1" }); await app.register(occupancy, { prefix: "/v1" }); await app.register(users, { prefix: "/v1" }); await app.register(guests, { prefix: "/v1" }); await app.register(housekeeping, { prefix: "/v1" }); await app.register(reports, { prefix: "/v1" }); await app.register(packages, { prefix: "/v1" }); await app.register(forms); await app.register(integrations); await app.register(email); await app.register(maintenance, { prefix: "/v1" }); await app.register(autoplace, { prefix: "/v1" }); await app.register(estate, { prefix: "/v1" }); await app.register(workforce); await app.register(guestPortal); await app.register(bookingRoute); await app.register(ops); await app.register(kitchenStock); await app.register(feedbackRoutes); await app.register(complianceRoutes); await app.register(lostFoundRoutes); await app.register(supplierRoutes); await app.register(trainingRoutes); await app.register(service); await app.register(manuals); await app.register(tasks); await app.register(quality, { prefix: "/v1" }); await app.register(sessions); await app.register(folioRoutes); await app.register(programmeRoutes); await app.register(autoCommsRoutes); await app.register(aiDutyManagerRoutes); await app.register(hrRoutes); await app.register(purchasingRoutes); await app.register(financeRoutes); await app.register(emergencyRoutes); await app.register(stripeRoutes);
+await app.register(authRoutes); await app.register(microsoft); await app.register(groups, { prefix: "/v1" }); await app.register(occupancy, { prefix: "/v1" }); await app.register(users, { prefix: "/v1" }); await app.register(guests, { prefix: "/v1" }); await app.register(housekeeping, { prefix: "/v1" }); await app.register(reports, { prefix: "/v1" }); await app.register(packages, { prefix: "/v1" }); await app.register(forms); await app.register(integrations); await app.register(email); await app.register(maintenance, { prefix: "/v1" }); await app.register(autoplace, { prefix: "/v1" }); await app.register(estate, { prefix: "/v1" }); await app.register(workforce); await app.register(guestPortal); await app.register(bookingRoute); await app.register(ops); await app.register(kitchenStock); await app.register(feedbackRoutes); await app.register(complianceRoutes); await app.register(lostFoundRoutes); await app.register(supplierRoutes); await app.register(trainingRoutes); await app.register(guestHistoryRoutes); await app.register(service); await app.register(manuals); await app.register(tasks); await app.register(quality, { prefix: "/v1" }); await app.register(sessions); await app.register(folioRoutes); await app.register(programmeRoutes); await app.register(autoCommsRoutes); await app.register(aiDutyManagerRoutes); await app.register(hrRoutes); await app.register(purchasingRoutes); await app.register(financeRoutes); await app.register(emergencyRoutes); await app.register(stripeRoutes);
 app.listen({ port: Number(process.env.PORT ?? 4000), host: "0.0.0.0" }).then(async () => {
   // Process due auto-communications every 15 minutes
   try {
@@ -151,6 +152,7 @@ app.listen({ port: Number(process.env.PORT ?? 4000), host: "0.0.0.0" }).then(asy
     const { remindLostFound } = await import("./lostFound.ts");
     const { sendDueDeliveries } = await import("./suppliers.ts");
     const { sendDueTraining } = await import("./training.ts");
+    const { purgeGuestHistory } = await import("./guestHistory.ts");
     const { pool } = await import("./db.ts");
     const runComms = async () => {
       const props = (await pool.query("SELECT id FROM property")).rows;
@@ -162,6 +164,7 @@ app.listen({ port: Number(process.env.PORT ?? 4000), host: "0.0.0.0" }).then(asy
         try { await remindLostFound(p.id); } catch {}
         try { await sendDueDeliveries(p.id); } catch {}
         try { await sendDueTraining(p.id); } catch {}
+        try { await purgeGuestHistory(p.id); } catch {}
       }
     };
     runComms(); // run on boot

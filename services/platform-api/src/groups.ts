@@ -4,6 +4,7 @@ import { requireActor, allow, problem, type Actor } from "./auth.ts";
 import { openText, sealText } from "./fieldCrypto.ts";
 import { buildProgrammeSheet } from "../../../domains/retreat/sheet.ts";
 import { refreshGuestBookingForGroup, withdrawGuestBooking } from "./bookingRoute.ts";
+import { suggestContact } from "./guestHistory.ts";
 
 type Slot = "AM" | "PM";
 export type GroupRow = { id: string; name: string; organisation: string | null; arrival_date: string; arrival_slot: Slot; departure_date: string; departure_slot: Slot; status: string; expected_rooms: number | null; version: number };
@@ -90,6 +91,14 @@ export default async function routes(f: FastifyInstance) {
         [a.tenantId, a.propertyId, b.name, b.organisation, b.contact_email ?? null, b.contact_phone ?? null, b.arrival, b.arrival_slot, parseTime(b.arrival_time), b.departure, b.departure_slot, parseTime(b.departure_time),
          b.retreat_type ?? "residential", b.use_basis ?? "SHARED", b.expected_guests ?? null, wanted, b.package_name ?? null, b.price_notes ?? null, !!b.spa_access, b.notes ?? null, b.meals_from ?? null, b.meals_to ?? null, sealText(typeof b.dietary_notes === "string" ? b.dietary_notes : null), PALETTE[Number(n.rows[0].count) % PALETTE.length], typeof b.public_title === "string" && b.public_title.trim() ? b.public_title.trim() : null]);
       await audit(c, a, "booking_group", r.rows[0].id, "group.create", { to: "ENQUIRY", version: 1 });
+      const suggested = await suggestContact(c, {
+        tenantId: a.tenantId, propertyId: a.propertyId,
+        email: typeof b.contact_email === "string" ? b.contact_email : null,
+        phone: typeof b.contact_phone === "string" ? b.contact_phone : null,
+        name: String(b.organisation || b.name || ""),
+        groupId: r.rows[0].id, actorUserId: a.userId,
+      });
+      if (suggested.autoPersonId) await c.query(`update booking_group set organiser_person_id=coalesce(organiser_person_id, $2) where id=$1`, [r.rows[0].id, suggested.autoPersonId]);
       reply.code(201); return { ...presentGroup(r.rows[0]), rooms_allocated: 0 };
     });
   });

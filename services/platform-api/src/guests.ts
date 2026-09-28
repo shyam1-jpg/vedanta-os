@@ -7,6 +7,7 @@ import { openList, openText, sealList, sealText } from "./fieldCrypto.ts";
 import { UK_ALLERGENS } from "../../../domains/guest/diet.ts";
 import { eachStayDate, mealsOn } from "../../../domains/guest/booking.ts";
 import { openAllergenDetail } from "./bookingRoute.ts";
+import { recordDietHistory } from "./guestHistory.ts";
 
 export const ALLERGENS: string[] = [...UK_ALLERGENS];
 const SEVERITY = ["PREFERENCE", "INTOLERANCE", "ALLERGY", "ANAPHYLAXIS"];
@@ -20,7 +21,7 @@ export default async function routes(f: FastifyInstance) {
     const a = await requireActor(req, reply); if (!a || !allow(a, "guest.read", reply)) return;
     const q = (req.query.q ?? "").trim();
     const r = await pool.query(`select ${COLS} from person p left join diet_profile d on d.person_id=p.id
-      where p.tenant_id=$1 and ($2 = '' or (p.given_name || ' ' || p.family_name) ilike '%' || $2 || '%' or p.email ilike '%' || $2 || '%' or p.organisation ilike '%' || $2 || '%')
+      where p.tenant_id=$1 and ($2 = '' or (p.given_name || ' ' || p.family_name) ilike '%' || $2 || '%' or p.email ilike '%' || $2 || '%' or p.phone ilike '%' || $2 || '%' or p.organisation ilike '%' || $2 || '%')
         and ($3::boolean is not true or coalesce(array_length(d.allergens,1),0) > 0)
       order by p.family_name, p.given_name limit $4`, [a.tenantId, q, req.query.allergens === "1", Number(req.query.limit ?? 100)]);
     return {
@@ -94,6 +95,10 @@ export default async function routes(f: FastifyInstance) {
         values ($1,$2,$3,$4,$5,$6,$7,$8, now(), 1)
         on conflict (person_id) do update set diet=excluded.diet, allergens=excluded.allergens, severity=excluded.severity, notes=excluded.notes, allergen_detail=excluded.allergen_detail, declared_by_user_id=excluded.declared_by_user_id, declared_at=now(), version=diet_profile.version+1`,
         [a.tenantId, p.id, sealList(b.diet ?? []), sealList(allergens), b.severity ?? null, sealText(b.notes ?? null), sealText(JSON.stringify(detail)), a.userId]);
+      await recordDietHistory(c, {
+        tenantId: a.tenantId, propertyId: a.propertyId, personId: p.id,
+        diet: b.diet ?? [], allergens: detail.map(item => ({ code: item.code, severity: item.severity || "PREFERENCE" })), notes: b.notes ?? null,
+      });
       await audit(c, a, "person", p.id, "diet.declare", { payload: { from: prev ? "[sealed]" : null, to: { diet: "[sealed]", allergens: "[sealed]", severity: b.severity ?? null } } });
       return { ok: true };
     });

@@ -129,6 +129,10 @@ export async function sealStoredSensitive(client: Queryable): Promise<void> {
   await sealTextColumns(client, "absence_request", "id", ["notes"]);
   await sealTextColumns(client, "staff_document", "id", ["notes"]);
   await sealTextColumns(client, "training_record", "id", ["notes", "certificate_ref"]);
+  await sealTextColumns(client, "guest_profile", "person_id", ["accessibility_notes", "special_requests", "notes"]);
+  await sealTextColumns(client, "guest_staff_note", "id", ["body"]);
+  await sealTextColumns(client, "guest_note_event", "id", ["previous_body"]);
+  await sealTextColumns(client, "diet_history", "id", ["notes", "allergen_detail"]);
 }
 
 async function sealTextColumns(client: Queryable, table: string, idCol: string, cols: string[]): Promise<void> {

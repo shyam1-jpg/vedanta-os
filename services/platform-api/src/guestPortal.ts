@@ -31,6 +31,7 @@ import {
   type Db,
 } from "./bookingRoute.ts";
 import { acceptWarning, captureFromStored, dietarySummary, resendAccessCode, splitName, type OutboundNote, type StayCapture } from "../../../domains/guest/booking.ts";
+import { applyGuestConsent, suggestContact } from "./guestHistory.ts";
 
 const hits = new Map<string, { n: number; t: number }>();
 function rateOk(key: string): boolean {
@@ -364,6 +365,11 @@ export default async function guestPortal(f: FastifyInstance) {
           sealText(dietarySummary(capture)), sealText(capture.accessibility_notes),
           capture.room_preference, capture.arrival_time_note, sealText(capture.travel_notes),
           sealParty(capture.party), capture.arrival_slot, capture.departure_slot])).rows[0];
+      const suggested = await suggestContact(c, {
+        tenantId: prop.tenant_id, propertyId: prop.id, email, phone: null, name, groupId: null, enquiryId: e.id,
+      });
+      await c.query(`update guest_enquiry set keep_allergens=$2, matched_person_id=$3 where id=$1`, [e.id, !!b.keep_allergens, suggested.autoPersonId]);
+      if (suggested.autoPersonId) await applyGuestConsent(c, prop.tenant_id, suggested.autoPersonId, !!b.keep_allergens);
       const notes = await routedNotes(c, prop, e.id, null, capture, "submitted");
       return { id: e.id as string, status: e.status as string, notes };
     });
@@ -590,7 +596,7 @@ export default async function guestPortal(f: FastifyInstance) {
         bookingId = g.id;
       }
       if (!bookingId) throw new Error("booking was not created");
-      await carryOntoBooking(c, { tenantId: a.tenantId, propertyId: a.propertyId, bookingId, stay: built.capture, actorUserId: a.userId });
+      await carryOntoBooking(c, { tenantId: a.tenantId, propertyId: a.propertyId, bookingId, stay: built.capture, actorUserId: a.userId, keepAllergens: !!e.keep_allergens });
       await c.query(`update guest_enquiry set status='CONVERTED', booking_id=$2 where id=$1`, [e.id, bookingId]);
       const notes = await routedNotes(c, prop, e.id, bookingId, built.capture, "accepted", a.userId);
       await audit(c, a, "booking_group", bookingId, "group.create", { to: "ENQUIRY", payload: { from_enquiry: e.id, private: true, carried: true, loss: built.loss } });
@@ -660,7 +666,8 @@ export default async function guestPortal(f: FastifyInstance) {
       if (e.booking_id) {
         await c.query(`update booking_group set arrival_date=$2, departure_date=$3, expected_guests=$4 where id=$1`, [e.booking_id, capture.arrival, capture.departure, capture.people]);
         await c.query(`delete from room_occupancy where group_id=$1 and (on_date < $2::date or on_date > greatest($3::date - 1, $2::date))`, [e.booking_id, capture.arrival, capture.departure]);
-        await carryOntoBooking(c, { tenantId: prop.tenant_id, propertyId: prop.id, bookingId: e.booking_id, stay: capture });
+        await carryOntoBooking(c, { tenantId: prop.tenant_id, propertyId: prop.id, bookingId: e.booking_id, stay: capture, keepAllergens: !!(req.body?.keep_allergens ?? e.keep_allergens) });
+        if ("keep_allergens" in (req.body ?? {})) await c.query(`update guest_enquiry set keep_allergens=$2 where id=$1`, [e.id, !!req.body.keep_allergens]);
       }
       const notes = await routedNotes(c, prop, e.id, e.booking_id, capture, "amended");
       return { id: e.id as string, status: e.status as string, notes };

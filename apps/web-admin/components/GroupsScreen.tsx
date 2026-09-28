@@ -9,6 +9,7 @@ import EmailDialog from "@/components/EmailDialog";
 import { bookingValue, gbp } from "@/lib/pricing";
 import { api, ApiError } from "@/lib/api";
 import { fmt, nights } from "@/lib/format";
+import { MatchPrompts, ReturningCards, type MatchPrompt, type ReturningCardData } from "@/components/ReturningCard";
 
 const TODAY = new Date().toISOString().slice(0, 10);
 const FLOW: GroupStatus[] = ["ENQUIRY", "PROVISIONAL", "CONFIRMED", "IN_HOUSE", "COMPLETED"];
@@ -38,6 +39,7 @@ export default function GroupsScreen() {
   const [sheet, setSheet] = useState<{ programme: string; guests: number | null; rooms_placed: string[]; rooms_short: number; meals: { breakfast: number; lunch: number; dinner: number } | null; dietary: string | null; departments: { code: string; work: string }[] } | null>(null);
   const [stays, setStays] = useState<{ id: string; name: string; email: string; people: number; arrival: string; departure: string; status: string; programme_name: string | null; rooms: { number: string; section: string | null }[]; booking_id: string | null }[]>([]);
   const [roomDraft, setRoomDraft] = useState<Record<string, string>>({});
+  const [returning, setReturning] = useState<{ cards: ReturningCardData[]; prompts: MatchPrompt[] }>({ cards: [], prompts: [] });
   const today = new Date().toISOString().slice(0, 10);
   const sel = groups.find(g => g.id === selId) ?? groups.filter(g => g.status !== "CANCELLED" && g.status !== "COMPLETED" && g.departure >= today).sort((a, b) => a.arrival.localeCompare(b.arrival))[0];
   useEffect(() => {
@@ -46,6 +48,7 @@ export default function GroupsScreen() {
     if (sel?.id) api<NonNullable<typeof sheet>>(`/v1/groups/${sel.id}/sheet`).then(setSheet).catch(() => setSheet(null));
     if (sel?.id) api<NonNullable<typeof folio>>(`/v1/groups/${sel.id}/folio`).then(setFolio).catch(() => {});
     if (sel?.id) api<{ items: typeof comms }>(`/v1/groups/${sel.id}/comms`).then(r => setComms(r.items)).catch(() => {});
+    if (sel?.id) api<{ cards: ReturningCardData[]; prompts: MatchPrompt[] }>(`/v1/guest-history/booking/${sel.id}`).then(setReturning).catch(() => setReturning({ cards: [], prompts: [] }));
   }, [sel?.id, sel?.attendees]); // eslint-disable-line react-hooks/exhaustive-deps
   const loadGuestBook = () => {
     api<{ items: typeof enquiries }>("/v1/guest-enquiries").then(r => setEnquiries(r.items)).catch(() => {});
@@ -200,6 +203,8 @@ export default function GroupsScreen() {
               <div>{(() => { const v = bookingValue(sel); return <><span>Booking value</span><b>{v.value == null ? <span className="warn">Not priced — {v.how}</span> : gbp(v.value)}</b>{v.value != null && <div className="m" style={{ fontSize: 11, color: "var(--ink-2)" }}>{v.how}</div>}</>; })()}</div>
             </div>
 
+            <ReturningCards cards={returning.cards} />
+            <MatchPrompts prompts={returning.prompts} onDecide={(id, action) => run(async () => { await api(`/v1/guest-history/matches/${id}/${action}`, { method: "POST", body: "{}" }); if (sel?.id) setReturning(await api(`/v1/guest-history/booking/${sel.id}`)); say(action === "confirm" ? "Same guest — profiles merged" : "Not the same guest"); })} />
             {sel.dietaryNotes && <div className="note" style={{ borderColor: "var(--moss)", background: "var(--moss-soft)" }}>Dietary: {sel.dietaryNotes}</div>}
             {sel.notes && <div className="note" style={{ whiteSpace: "pre-wrap", maxHeight: 140, overflow: "auto" }}>{sel.notes}</div>}
             {sheet && (

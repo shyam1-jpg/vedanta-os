@@ -62,7 +62,7 @@ export default function Book() {
   const [step, setStep] = useState<Step>("browse");
   const [form, setForm] = useState({
     name: "", email: "", access_code: "", people: "1", arrival: "", departure: "", notes: "",
-    dietary_notes: "", accessibility_notes: "", room_preference: "", arrival_time_note: "", travel_notes: "",
+    dietary_notes: "", accessibility_notes: "", room_preference: "", arrival_time_note: "", travel_notes: "", keep_allergens: false,
   });
   const [avail, setAvail] = useState<Avail | null>(null);
   const [cal, setCal] = useState<Day[]>([]);
@@ -192,6 +192,7 @@ export default function Book() {
       name: form.name, email: form.email, people: rows.length, notes: form.notes,
       accessibility_notes: form.accessibility_notes,
       room_preference: form.room_preference, arrival_time_note: form.arrival_time_note, travel_notes: form.travel_notes,
+      keep_allergens: form.keep_allergens,
       party: rows.map(p => ({ ...p, other: p.other || null, accessibility: p.accessibility || null })),
       ...(editingId ? { arrival: form.arrival, departure: form.departure } : sel ? { programme_id: sel.id } : { arrival: form.arrival, departure: form.departure }),
     };
@@ -405,6 +406,10 @@ export default function Book() {
                   <textarea rows={2} value={form.travel_notes} onChange={e => { const v = e.target.value; setForm(f => ({ ...f, travel_notes: v })); }} placeholder="Train, taxi, self-drive…" />
                   <label>Guest notes</label>
                   <textarea rows={2} value={form.notes} onChange={e => { const v = e.target.value; setForm(f => ({ ...f, notes: v })); }} />
+                  <label className="check">
+                    <input type="checkbox" checked={form.keep_allergens} onChange={e => setForm(f => ({ ...f, keep_allergens: e.target.checked }))} />
+                    <span>Keep my dietary and allergen details for future stays</span>
+                  </label>
                   <button className="btn sec" onClick={() => setStep("pay")}>Continue to deposit</button>
                 </div>
               )}

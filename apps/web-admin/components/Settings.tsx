@@ -25,6 +25,7 @@ export default function Settings() {
   const [comply, setComply] = useState<{ leads: number[]; manager: string } | null>(null);
   const [lostHold, setLostHold] = useState<{ hold_days: number; manager: string } | null>(null);
   const [train, setTrain] = useState<{ leads: number[]; manager: string } | null>(null);
+  const [retain, setRetain] = useState<{ allergen_days_after_departure: number; feedback_text_days: number; staff_note_days: number; profile_inactive_months: number } | null>(null);
   const [stayCopy, setStayCopy] = useState<Record<string, string>>({});
   useEffect(() => {
     api<{ rules: { kitchen: RouteBox; restaurant: RouteBox; front: RouteBox }; receives: Record<string, string> }>("/v1/settings/booking-routing")
@@ -40,6 +41,7 @@ export default function Settings() {
     api<{ leads: number[]; manager: string }>("/v1/settings/compliance").then(setComply).catch(() => {});
     api<{ hold_days: number; manager: string }>("/v1/settings/lost-found").then(setLostHold).catch(() => {});
     api<{ leads: number[]; manager: string }>("/v1/settings/training").then(setTrain).catch(() => {});
+    api<{ allergen_days_after_departure: number; feedback_text_days: number; staff_note_days: number; profile_inactive_months: number }>("/v1/settings/guest-retention").then(setRetain).catch(() => {});
   }, []);
   const load = () => { api<{ items: Pkg[] }>("/v1/packages").then(r => setPkgs(r.items)); if (can("config.manage")) api<{ items: Key[] }>("/v1/integrations/keys").then(r => setKeys(r.items)).catch(() => {}); };
   useEffect(load, []); // eslint-disable-line react-hooks/exhaustive-deps
@@ -216,6 +218,27 @@ export default function Settings() {
           <button className="btn primary" style={{ marginTop: 12 }} onClick={() => run(async () => {
             setTrain(await api("/v1/settings/training", { method: "PUT", body: JSON.stringify(train) }));
           }, "Training reminders saved")}>Save training reminders</button>
+        </div>
+      )}
+      {retain && (
+        <div className="panel" style={{ marginTop: 14 }}>
+          <h3>Guest profile retention</h3>
+          <p className="m" style={{ color: "var(--ink-2)" }}>Allergen and health details are removed 30 days after departure unless the guest has agreed to keep them for future stays. That agreement lasts until they withdraw it, or until the whole profile is removed after a long quiet period. Feedback free text and staff notes have their own clocks. A removed field is marked &quot;deleted per retention policy on&quot; the day it went.</p>
+          <label style={{ display: "block", marginTop: 8 }}>Allergen and health data, days after departure
+            <input type="number" min={1} value={retain.allergen_days_after_departure} onChange={e => setRetain({ ...retain, allergen_days_after_departure: Number(e.target.value) })} />
+          </label>
+          <label style={{ display: "block", marginTop: 8 }}>Feedback free text, days
+            <input type="number" min={1} value={retain.feedback_text_days} onChange={e => setRetain({ ...retain, feedback_text_days: Number(e.target.value) })} />
+          </label>
+          <label style={{ display: "block", marginTop: 8 }}>Staff notes, days
+            <input type="number" min={1} value={retain.staff_note_days} onChange={e => setRetain({ ...retain, staff_note_days: Number(e.target.value) })} />
+          </label>
+          <label style={{ display: "block", marginTop: 8 }}>Whole profile, months without a stay
+            <input type="number" min={1} value={retain.profile_inactive_months} onChange={e => setRetain({ ...retain, profile_inactive_months: Number(e.target.value) })} />
+          </label>
+          <button className="btn primary" style={{ marginTop: 12 }} onClick={() => run(async () => {
+            setRetain(await api("/v1/settings/guest-retention", { method: "PUT", body: JSON.stringify(retain) }));
+          }, "Guest retention saved")}>Save guest retention</button>
         </div>
       )}
       {toast && <div className="toast">{toast}</div>}
