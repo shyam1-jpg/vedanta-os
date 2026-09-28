@@ -23,6 +23,7 @@ export default function Settings() {
   const [stockCopy, setStockCopy] = useState<Record<string, string>>({});
   const [stay, setStay] = useState<{ delay_label: string; delay_hours: number | null; retention_days: number; open_maintenance: boolean; emails: { kitchen: string; front: string; housekeeping: string; manager: string } } | null>(null);
   const [comply, setComply] = useState<{ leads: number[]; manager: string } | null>(null);
+  const [lostHold, setLostHold] = useState<{ hold_days: number; manager: string } | null>(null);
   const [stayCopy, setStayCopy] = useState<Record<string, string>>({});
   useEffect(() => {
     api<{ rules: { kitchen: RouteBox; restaurant: RouteBox; front: RouteBox }; receives: Record<string, string> }>("/v1/settings/booking-routing")
@@ -36,6 +37,7 @@ export default function Settings() {
     api<{ delay_label: string; delay_hours: number | null; retention_days: number; open_maintenance: boolean; emails: { kitchen: string; front: string; housekeeping: string; manager: string }; receives: Record<string, string> }>("/v1/settings/feedback")
       .then(r => { setStay(r); setStayCopy(r.receives); }).catch(() => {});
     api<{ leads: number[]; manager: string }>("/v1/settings/compliance").then(setComply).catch(() => {});
+    api<{ hold_days: number; manager: string }>("/v1/settings/lost-found").then(setLostHold).catch(() => {});
   }, []);
   const load = () => { api<{ items: Pkg[] }>("/v1/packages").then(r => setPkgs(r.items)); if (can("config.manage")) api<{ items: Key[] }>("/v1/integrations/keys").then(r => setKeys(r.items)).catch(() => {}); };
   useEffect(load, []); // eslint-disable-line react-hooks/exhaustive-deps
@@ -186,6 +188,17 @@ export default function Settings() {
             const saved = await api<{ leads: number[]; manager: string }>("/v1/settings/compliance", { method: "PUT", body: JSON.stringify(comply) });
             setComply(saved);
           }, "Compliance reminders saved")}>Save compliance reminders</button>
+        </div>
+      )}
+      {lostHold && (
+        <div className="panel" style={{ marginTop: 14 }}>
+          <h3>Lost property</h3>
+          <p className="m" style={{ color: "var(--ink-2)" }}>Items still held after this many days are flagged, and the general manager is told once. Guest contact details are removed when an item is returned, disposed of, or donated. Leave the address blank to skip the email. Do not commit a real address.</p>
+          <label style={{ display: "block", marginTop: 8 }}>Days to hold<input type="number" min={7} max={3650} value={lostHold.hold_days} onChange={e => setLostHold({ ...lostHold, hold_days: Number(e.target.value) })} /></label>
+          <label style={{ display: "block", marginTop: 8 }}>General manager<input placeholder="team@example.invalid" value={lostHold.manager} onChange={e => setLostHold({ ...lostHold, manager: e.target.value })} /></label>
+          <button className="btn primary" style={{ marginTop: 12 }} onClick={() => run(async () => {
+            setLostHold(await api("/v1/settings/lost-found", { method: "PUT", body: JSON.stringify(lostHold) }));
+          }, "Lost property settings saved")}>Save lost property settings</button>
         </div>
       )}
       {toast && <div className="toast">{toast}</div>}

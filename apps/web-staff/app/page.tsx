@@ -2,6 +2,7 @@
 import { useEffect, useState } from "react";
 import { API, api, shrinkPhoto, tok } from "@/lib/client";
 import CompliancePocket from "@/components/CompliancePocket";
+import LostPocket from "@/components/LostPocket";
 
 type Me = { name: string; email: string; role: string; role_name?: string; permissions?: string[]; property_name?: string | null; property_kicker?: string | null };
 type Prop = { name: string; kicker: string };
@@ -215,7 +216,7 @@ export default function Pocket() {
   const [secret, setSecret] = useState("");
   const [providers, setProviders] = useState<{ microsoft: boolean; dev: boolean } | null>(null);
   const [err, setErr] = useState<string | null>(null);
-  const [tab, setTab] = useState<"clock" | "leave" | "duty" | "sop" | "log" | "desk" | "night" | "manual" | "tasks" | "fault" | "stock" | "words" | "compliance">("clock");
+  const [tab, setTab] = useState<"clock" | "leave" | "duty" | "sop" | "log" | "desk" | "night" | "manual" | "tasks" | "fault" | "stock" | "words" | "compliance" | "lost">("clock");
   const [words, setWords] = useState<{ first_name: string; comment: string | null; created_at: string }[]>([]);
   const [desk, setDesk] = useState<{
     today: { weekday: string; title: string; method: string; ingredients: { name: string; qty: string }[] };
@@ -348,6 +349,7 @@ export default function Pocket() {
           {(me.permissions ?? []).includes("kitchen.stock") && <button className={tab === "stock" ? "on" : ""} onClick={() => setTab("stock")}>Stock</button>}
           <button className={tab === "words" ? "on" : ""} onClick={async () => { setTab("words"); try { setWords((await api<{ items: typeof words }>("/v1/feedback/kind-words")).items); } catch (e) { setErr((e as Error).message); } }}>Kind words</button>
           {(me.permissions ?? []).includes("compliance.calendar") && <button className={tab === "compliance" ? "on" : ""} onClick={() => setTab("compliance")}>Compliance</button>}
+          {(me.permissions ?? []).includes("lostfound.log") && <button className={tab === "lost" ? "on" : ""} onClick={() => setTab("lost")}>Lost & found</button>}
           <button className={tab === "desk" ? "on" : ""} onClick={() => setTab("desk")}>Front desk</button>
           <button className={tab === "night" ? "on" : ""} onClick={() => setTab("night")}>Night</button>
           <button className={tab === "manual" ? "on" : ""} onClick={() => setTab("manual")}>Manual</button>
@@ -504,6 +506,7 @@ export default function Pocket() {
         {tab === "fault" && <FaultPocket me={me} canWork={(me.permissions ?? []).includes("maintenance.work")} onError={setErr} />}
         {tab === "stock" && (me.permissions ?? []).includes("kitchen.stock") && <StockPocket onError={setErr} />}
         {tab === "compliance" && (me.permissions ?? []).includes("compliance.calendar") && <CompliancePocket onError={setErr} />}
+        {tab === "lost" && (me.permissions ?? []).includes("lostfound.log") && <LostPocket onError={setErr} />}
         {tab === "words" && (
           <div className="card">
             <h2>Kind words</h2>
