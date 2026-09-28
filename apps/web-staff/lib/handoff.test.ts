@@ -1,7 +1,8 @@
 import { describe, it } from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
-import { consumeSessionFragment, pocketSignInOffer, queryCarriesToken, safeNotice } from "./handoff.ts";
+import vm from "node:vm";
+import { consumeSessionFragment, FRAGMENT_STRIP_SCRIPT, pocketSignInOffer, queryCarriesToken, safeNotice } from "./handoff.ts";
 
 const TOKEN = "staffsessiontokenvalue1";
 
@@ -74,6 +75,41 @@ describe("consumeSessionFragment", () => {
     assert.equal(result.action, "none");
     assert.equal(JSON.stringify(result).includes(TOKEN), false);
     if (result.action === "none") assert.equal(result.error, "Sign-in did not complete. Try again.");
+  });
+});
+
+describe("fragment strip script", () => {
+  function run(loc: { pathname: string; search: string; hash: string }) {
+    const store = new Map<string, string>();
+    let replaced = "";
+    const context = {
+      location: { ...loc, origin: "https://app.parslia.net" },
+      sessionStorage: {
+        setItem: (key: string, value: string) => store.set(key, value),
+        getItem: (key: string) => store.get(key) ?? null,
+      },
+      history: { replaceState: (_state: null, _title: string, url: string) => { replaced = url; } },
+      URLSearchParams,
+    };
+    vm.runInNewContext(FRAGMENT_STRIP_SCRIPT, context);
+    return { store, replaced };
+  }
+
+  it("stores a fragment token and strips it before paint", () => {
+    const result = run({ pathname: "/pocket/", search: "", hash: `#token=${TOKEN}` });
+    assert.equal(result.store.get("vedanta.staff.token"), TOKEN);
+    assert.equal(result.store.get("vedanta.staff.handoff-from-link"), "1");
+    assert.equal(result.replaced, "https://app.parslia.net/pocket/");
+    assert.equal(result.replaced.includes(TOKEN), false);
+    assert.equal(result.replaced.includes("#"), false);
+  });
+
+  it("refuses a query token without storing or echoing it", () => {
+    const leaked = "querystringtokenvalue1";
+    const result = run({ pathname: "/pocket/", search: `?token=${leaked}`, hash: "" });
+    assert.equal(result.store.has("vedanta.staff.token"), false);
+    assert.equal(result.replaced, "https://app.parslia.net/pocket/");
+    assert.equal(JSON.stringify([...result.store.values()]).includes(leaked), false);
   });
 });
 

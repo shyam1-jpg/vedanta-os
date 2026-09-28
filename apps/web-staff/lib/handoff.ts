@@ -91,6 +91,13 @@ export function consumeSessionFragment(loc: { hash: string; search: string; path
   return { action: "store", token, url: path + cleaned.search };
 }
 
+/**
+ * Runs before React hydrates so the fragment is gone before the first paint.
+ * Stores a valid token and leaves a note for the page when the link is refused.
+ * The note is a fixed sentence, never the token.
+ */
+export const FRAGMENT_STRIP_SCRIPT = `(function(){try{var path=location.pathname&&location.pathname.charAt(0)==="/"?location.pathname:"/pocket/";var search=location.search||"";var hash=location.hash||"";var params=new URLSearchParams(search.charAt(0)==="?"?search.slice(1):search);var queryToken=false;params.forEach(function(_v,k){if(String(k).toLowerCase()==="token")queryToken=true;});if(queryToken){sessionStorage.setItem("vedanta.staff.handoff-note","This sign-in link is not valid. Ask your manager for a new one.");history.replaceState(null,"",location.origin+path);return;}var raw=hash.charAt(0)==="#"?hash.slice(1):hash;if(!raw||!(/(?:^|&)token=/).test(raw))return;var token=new URLSearchParams(raw).get("token")||"";if(!/^[A-Za-z0-9_-]{20,128}$/.test(token)){sessionStorage.setItem("vedanta.staff.handoff-note","This sign-in link is not valid or has expired. Ask your manager for a new one.");history.replaceState(null,"",location.origin+path+search);return;}sessionStorage.setItem("vedanta.staff.token",token);sessionStorage.setItem("vedanta.staff.handoff-from-link","1");history.replaceState(null,"",location.origin+path+search);}catch(e){}})();`;
+
 /** What Pocket should offer. Email is shown only when the API says email sign-in is enabled. */
 export function pocketSignInOffer(providers: { email?: boolean; microsoft?: boolean } | null): SignInOffer {
   if (!providers) return "pending";

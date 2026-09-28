@@ -9,6 +9,17 @@ const tok = {
 };
 /** One capture per page load. Strict mode re-runs the effect after the fragment is already gone. */
 let fragmentCapture: HandoffResult | null = null;
+let earlyNote: string | null | undefined;
+let earlyFromLink: boolean | undefined;
+function takeEarlyHandoff(): { note: string | null; fromLink: boolean } {
+  if (earlyNote === undefined) {
+    earlyNote = sessionStorage.getItem("vedanta.staff.handoff-note");
+    if (earlyNote) sessionStorage.removeItem("vedanta.staff.handoff-note");
+    earlyFromLink = sessionStorage.getItem("vedanta.staff.handoff-from-link") === "1";
+    if (earlyFromLink) sessionStorage.removeItem("vedanta.staff.handoff-from-link");
+  }
+  return { note: earlyNote, fromLink: !!earlyFromLink };
+}
 function captureFragment(): HandoffResult {
   if (fragmentCapture) return fragmentCapture;
   const handoff = consumeSessionFragment({
@@ -16,7 +27,10 @@ function captureFragment(): HandoffResult {
     search: window.location.search,
     pathname: window.location.pathname,
   });
-  if (handoff.action !== "none" || window.location.hash) history.replaceState(null, "", handoff.url);
+  if (handoff.action !== "none" || window.location.hash) {
+    const next = new URL(handoff.url, window.location.origin);
+    history.replaceState(null, "", next.origin + next.pathname + next.search);
+  }
   if (handoff.action === "store") tok.set(handoff.token);
   fragmentCapture = handoff;
   return handoff;
@@ -95,6 +109,7 @@ export default function Pocket() {
   }
 
   useLayoutEffect(() => {
+    const early = takeEarlyHandoff();
     const handoff = captureFragment();
     let cancelled = false;
     api<Prop>("/guest/property").then(p => { if (!cancelled) setProp({ name: p.name, kicker: p.kicker }); }).catch(() => {});
@@ -102,8 +117,8 @@ export default function Pocket() {
       if (!cancelled) setOffer(pocketSignInOffer({ email: p.email ?? !!p.dev, microsoft: !!p.microsoft }));
     }).catch(() => { if (!cancelled) setErr(cur => cur ?? "Cannot reach the house. Try again in a moment."); });
     const session = (async () => {
-      if (handoff.action === "reject") { setErr(handoff.message); return; }
-      const fromLink = handoff.action === "store";
+      if (early.note || handoff.action === "reject") { setErr(early.note || (handoff.action === "reject" ? handoff.message : "")); return; }
+      const fromLink = early.fromLink || handoff.action === "store";
       if (!tok.get()) {
         if (handoff.action === "none" && handoff.error) setErr(handoff.error);
         return;
