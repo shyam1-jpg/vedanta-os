@@ -3,8 +3,8 @@ import type { FastifyInstance } from "fastify";
 import { pool } from "./db.ts";
 import { requireActor, allow, problem } from "./auth.ts";
 import { sendEmail } from "./email.ts";
-import { openText } from "./fieldCrypto.ts";
 import { parseFaultRouting } from "../../../domains/ops/fault.ts";
+import { loadHouseFacts } from "./houseFacts.ts";
 import {
   auditEmail,
   auditShouldRun,
@@ -19,12 +19,6 @@ import {
 } from "../../../domains/ops/nightAudit.ts";
 
 const DATE = /^\d{4}-\d{2}-\d{2}$/;
-
-function opened(value: string | null | undefined): string {
-  if (!value) return "";
-  try { return openText(value)?.trim() ?? ""; }
-  catch { return ""; }
-}
 
 async function londonClock(): Promise<{ date: string; time: string; tomorrow: string }> {
   const row = (await pool.query(
@@ -51,212 +45,57 @@ function settingsBody(settings: NightAuditSettings) {
   return { time: settings.time, gm_email: settings.gmEmail, auto_email: settings.autoEmail };
 }
 
-async function sectionRows(label: string, sql: string, params: unknown[]) {
-  try { return (await pool.query(sql, params)).rows as Record<string, unknown>[]; }
-  catch (err) {
-    console.error(`[night-audit] ${label} unavailable`, err instanceof Error ? err.message : err);
-    return [];
-  }
-}
-
-async function sectionCount(label: string, sql: string, params: unknown[]) {
-  try { return Number((await pool.query(sql, params)).rows[0]?.n ?? 0); }
-  catch (err) {
-    console.error(`[night-audit] ${label} unavailable`, err instanceof Error ? err.message : err);
-    return 0;
-  }
-}
-
-const ROOM_FREE = `not r.staff_only
-  and r.status not in ('OUT_OF_SERVICE', 'OUT_OF_ORDER')
-  and not exists (
-    select 1 from maintenance_ticket t
-    where t.room_id = r.id and t.takes_room_out and t.status not in ('DONE', 'CANCELLED')
-  )`;
-
 async function collect(propertyId: string, today: string, tomorrow: string) {
-  const stayRows = await sectionRows("stays", `
-    select g.name as group_name, g.expected_guests, g.arrival_date::text as arrival_date, g.departure_date::text as departure_date,
-           g.accessibility_notes, p.given_name, p.family_name,
-           (
-             select string_agg(n, ', ' order by n) from (
-               select distinct r.number as n
-               from room_occupancy o
-               join room r on r.id = o.room_id
-               where o.group_id = g.id and o.on_date between $2::date and $3::date
-             ) rooms
-           ) as room,
-           exists (
-             select 1 from diet_profile d
-             join person ap on ap.id = d.person_id and ap.merged_into_id is null
-             where (d.severity = 'ANAPHYLAXIS' or coalesce(d.allergen_detail, '') ilike '%anaphylaxis%')
-               and (
-                 d.person_id = g.organiser_person_id
-                 or exists (select 1 from group_attendee a where a.group_id = g.id and a.person_id = d.person_id)
-               )
-           ) as severe,
-           (
-             exists (
-               select 1 from group_attendee a
-               join person ap on ap.id = a.person_id and ap.merged_into_id is null
-               join group_attendee prev on prev.person_id = a.person_id and prev.group_id <> g.id
-               join booking_group pg on pg.id = prev.group_id and pg.status = 'COMPLETED' and pg.property_id = g.property_id
-               where a.group_id = g.id
-             )
-             or exists (
-               select 1 from booking_group prev
-               join person op on op.id = prev.organiser_person_id and op.merged_into_id is null
-               where prev.property_id = g.property_id and prev.status = 'COMPLETED'
-                 and prev.id <> g.id and prev.organiser_person_id = g.organiser_person_id
-             )
-           ) as returning
-    from booking_group g
-    left join person p on p.id = g.organiser_person_id and p.merged_into_id is null
-    where g.property_id = $1
-      and g.status in ('PROVISIONAL', 'CONFIRMED', 'IN_HOUSE')
-      and (g.arrival_date = $3::date or g.departure_date = $3::date)
-  `, [propertyId, today, tomorrow]);
-
+  const facts = await loadHouseFacts({
+    propertyId,
+    stayOn: tomorrow,
+    roomFrom: today,
+    roomTo: tomorrow,
+    occupancyOn: today,
+    paidOn: today,
+    ticketOn: today,
+    issueOn: today,
+    trainingOn: today,
+    trainingDays: 30,
+    complianceOn: today,
+    complianceDays: 7,
+    handoverDates: [today, tomorrow],
+    handoverMorning: true,
+    handoverLimit: 12,
+    deliveryOn: tomorrow,
+    includeInHouse: false,
+    shiftsOn: null,
+    logAs: "night-audit",
+  });
   const stays = [];
-  for (const row of stayRows) {
-    const access = opened(row.accessibility_notes as string | null);
+  for (const row of facts.stays) {
     const base = {
-      givenName: row.given_name as string | null,
-      familyName: row.family_name as string | null,
-      groupName: row.group_name as string | null,
-      room: row.room as string | null,
-      party: row.expected_guests as number | null,
-      returning: !!row.returning,
+      givenName: row.givenName,
+      familyName: row.familyName,
+      groupName: row.groupName,
+      room: row.room,
+      party: row.party,
+      returning: row.returning,
       severity: row.severe ? "ANAPHYLAXIS" : null,
-      accessibility: access,
+      accessibility: row.accessibility,
     };
-    if (row.arrival_date === tomorrow) stays.push(projectStay({ ...base, movement: "arrival" }));
-    if (row.departure_date === tomorrow) stays.push(projectStay({ ...base, movement: "departure" }));
+    if (row.arrivalDate === tomorrow) stays.push(projectStay({ ...base, movement: "arrival" as const }));
+    if (row.departureDate === tomorrow) stays.push(projectStay({ ...base, movement: "departure" as const }));
   }
-
-  const occupiedRooms = await sectionCount("occupied", `
-    select count(distinct o.room_id)::int as n
-    from room_occupancy o
-    join room r on r.id = o.room_id
-    join booking_group g on g.id = o.group_id
-    where r.property_id = $1 and o.on_date = $2::date
-      and g.status not in ('CANCELLED', 'ENQUIRY')
-      and ${ROOM_FREE}
-  `, [propertyId, today]);
-
-  const availableRooms = await sectionCount("available", `
-    select count(*)::int as n from room r
-    where r.property_id = $1 and ${ROOM_FREE}
-  `, [propertyId]);
-
-  const payments = (await sectionRows("revenue", `
-    select p.kind, p.amount, p.note
-    from payment p
-    join folio f on f.id = p.folio_id
-    where f.property_id = $1 and p.paid_at is not null
-      and (timezone('Europe/London', p.paid_at))::date = $2::date
-  `, [propertyId, today])).map(row => ({ kind: String(row.kind ?? ""), amount: Number(row.amount), note: row.note as string | null }));
-
-  const tickets = (await sectionRows("maintenance", `
-    select t.number, t.title, t.priority, t.status,
-           (($2::date) - (timezone('Europe/London', t.created_at))::date) as age_days,
-           coalesce(r.number, t.location, 'House') as location
-    from maintenance_ticket t
-    left join room r on r.id = t.room_id
-    where t.property_id = $1 and t.status not in ('DONE', 'CANCELLED')
-    order by t.created_at
-  `, [propertyId, today])).map(row => ({
-    number: `M-${row.number}`,
-    title: String(row.title ?? "Ticket"),
-    priority: String(row.priority ?? "NORMAL"),
-    status: String(row.status ?? "OPEN"),
-    ageDays: Number(row.age_days ?? 0),
-    location: String(row.location ?? "House"),
-  }));
-
-  const issues = (await sectionRows("issues", `
-    select coalesce(f.problem_category, 'other') as label,
-           (c.due_on is not null and c.due_on < $2::date) as overdue
-    from capa c
-    left join guest_feedback f on f.id = c.feedback_id
-    where c.property_id = $1 and c.status not in ('closed', 'verified')
-    union all
-    select 'complaint', false
-    from guest_complaint gc
-    where gc.property_id = $1 and gc.resolved_at is null
-  `, [propertyId, today])).map(row => ({ label: String(row.label ?? "other"), overdue: !!row.overdue }));
-
-  const stock = (await sectionRows("stock", `
-    select name, quantity, unit, low_threshold
-    from kitchen_stock_item
-    where property_id = $1 and active and quantity < low_threshold
-    order by name
-  `, [propertyId])).map(row => ({
-    name: String(row.name),
-    quantity: Number(row.quantity),
-    unit: String(row.unit ?? ""),
-    low: Number(row.low_threshold),
-  }));
-
-  const training = (await sectionRows("training", `
-    select u.display_name as name, i.title, a.expires_on::text as expires_on
-    from training_assignment a
-    join training_item i on i.id = a.item_id
-    join app_user u on u.id = a.user_id
-    where a.property_id = $1 and i.certificate and a.signed_off_at is not null
-      and a.expires_on between $2::date and ($2::date + 30)
-    order by a.expires_on, u.display_name
-  `, [propertyId, today])).map(row => ({
-    name: String(row.name ?? ""),
-    title: String(row.title ?? ""),
-    expiresOn: String(row.expires_on),
-  }));
-
-  const compliance = (await sectionRows("compliance", `
-    select title, next_due::text as due_on
-    from compliance_item
-    where property_id = $1 and active and next_due is not null and next_due <= ($2::date + 7)
-    order by next_due, title
-  `, [propertyId, today])).map(row => ({ title: String(row.title), dueOn: String(row.due_on) }));
-
-  const notes = (await sectionRows("handover", `
-    select author_name, department, shift, body
-    from ops_handover
-    where property_id = $1 and for_date in ($2::date, $3::date)
-      and (shift = 'night' or 'morning' = any(tags) or upper(department) in ('FRONT', 'NIGHT'))
-    order by created_at desc
-    limit 12
-  `, [propertyId, today, tomorrow])).map(row => ({
-    author: String(row.author_name ?? "Staff"),
-    department: String(row.department ?? ""),
-    shift: String(row.shift ?? ""),
-    excerpt: opened(row.body as string | null),
-  }));
-
-  const deliveries = (await sectionRows("deliveries", `
-    select name, array_to_string(categories, ', ') as detail
-    from supplier
-    where property_id = $1 and active and next_delivery = $2::date
-    order by name
-  `, [propertyId, tomorrow])).map(row => ({
-    supplier: String(row.name),
-    detail: String(row.detail ?? ""),
-  }));
-
   return buildNightAudit({
     auditDate: today,
     tomorrow,
     stays,
-    occupiedRooms,
-    availableRooms,
-    payments,
-    tickets,
-    issues,
-    stock,
-    training,
-    compliance,
-    notes,
-    deliveries,
+    occupiedRooms: facts.occupiedRooms,
+    availableRooms: facts.availableRooms,
+    payments: facts.payments,
+    tickets: facts.tickets.map(({ number, title, priority, status, ageDays, location }) => ({ number, title, priority, status, ageDays, location })),
+    issues: facts.issues.map(({ label, overdue }) => ({ label, overdue })),
+    stock: facts.stock.map(({ name, quantity, unit, low }) => ({ name, quantity, unit, low })),
+    training: facts.training.map(({ name, title, expiresOn }) => ({ name, title, expiresOn })),
+    compliance: facts.compliance.map(({ title, dueOn }) => ({ title, dueOn })),
+    notes: facts.notes.map(({ author, department, shift, excerpt }) => ({ author, department, shift, excerpt })),
+    deliveries: facts.deliveries.map(({ supplier, detail }) => ({ supplier, detail })),
   });
 }
 

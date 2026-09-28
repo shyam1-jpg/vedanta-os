@@ -252,7 +252,8 @@ async function loadBundle(db: Db, propertyId: string, personId: string, thisGrou
             p.guest_account_id, p.erased_at, p.merged_into_id,
             gp.accessibility_notes, gp.room_preference, gp.special_requests, gp.allergen_keep, gp.allergen_consent_at,
             gp.allergen_consent_withdrawn_at, gp.profile_marker, gp.allergen_marker, gp.notes profile_notes,
-            ga.dietary_notes, ga.accessibility_notes account_access, ga.room_preference account_room, ga.vip, ga.notes account_notes
+            ga.dietary_notes, ga.accessibility_notes account_access, ga.room_preference account_room,
+            coalesce(gp.vip, ga.vip, false) as vip, ga.notes account_notes
      from person p
      left join guest_profile gp on gp.person_id = p.id
      left join guest_account ga on ga.id = p.guest_account_id
@@ -566,7 +567,7 @@ export default async function guestHistoryRoutes(f: FastifyInstance) {
     const digits = q.replace(/\D/g, "");
     const rows = (await pool.query(
       `select p.id, p.given_name || ' ' || p.family_name as name, p.email, p.phone, gp.room_preference,
-              coalesce(ga.vip, false) vip,
+              coalesce(gp.vip, ga.vip, false) vip,
               d.diet, d.allergens, d.severity, d.allergen_detail, gp.allergen_marker, gp.allergen_keep, gp.allergen_consent_withdrawn_at, gp.profile_marker
        from person p
        left join guest_profile gp on gp.person_id=p.id
@@ -806,6 +807,19 @@ export default async function guestHistoryRoutes(f: FastifyInstance) {
     }
     await event(pool, { tenantId: a.tenantId, propertyId: a.propertyId, personId: person.id, action: keep ? "consent" : "withdraw", actorUserId: a.userId });
     return { ok: true, keep };
+  });
+
+  f.post("/v1/guest-history/:personId/vip", async (req: any, reply) => {
+    const a = await actor(req, reply); if (!a) return;
+    if (profileView(a.role, a.perms) !== "manager") return reply.code(403).send(problem(403, "forbidden", "A manager sets the VIP flag"));
+    const vip = !!req.body?.vip;
+    const person = (await pool.query(`select id, guest_account_id from person where id=$1 and tenant_id=$2 and merged_into_id is null`, [req.params.personId, a.tenantId])).rows[0];
+    if (!person) return reply.code(404).send(problem(404, "not_found", "No such guest"));
+    await ensureProfile(pool, a.tenantId, person.id);
+    await pool.query(`update guest_profile set vip=$2 where person_id=$1`, [person.id, vip]);
+    if (person.guest_account_id) await pool.query(`update guest_account set vip=$2 where id=$1`, [person.guest_account_id, vip]);
+    await event(pool, { tenantId: a.tenantId, propertyId: a.propertyId, personId: person.id, action: vip ? "vip" : "vip_clear", actorUserId: a.userId });
+    return { ok: true, vip };
   });
 
   f.get("/v1/guest-history/:personId/export", async (req: any, reply) => {
