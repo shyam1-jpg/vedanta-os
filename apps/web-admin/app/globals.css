@@ -423,6 +423,11 @@ td.mark-dep { box-shadow: inset 3px 0 0 var(--marigold); }
 .assign-check { display: flex; gap: 8px; align-items: center; margin-top: 8px; }
 .assign-check input { width: auto; margin: 0; }
 .assign-guest, .assign-request { margin-top: 16px; }
+.assign-progress { display: grid; gap: 8px; margin: 12px 0; }
+.assign-progress progress { width: 100%; height: 12px; }
+.assign-progress span { display: block; font-size: 13px; }
+.assign-pick { min-width: 140px; }
+.assign-pick select { width: 100%; }
 .assign-sheet { display: none; }
 .assign-sheet.on { display: block; position: fixed; left: 0; right: 0; bottom: 0; max-height: 70vh; overflow: auto; background: var(--paper); border-top: 1px solid var(--line); padding: 16px 16px 28px; z-index: 40; }
 .assign-sheet header { display: flex; justify-content: space-between; align-items: center; }
@@ -441,8 +446,6 @@ td.mark-dep { box-shadow: inset 3px 0 0 var(--marigold); }
 .roomalloc-holds { display: flex; flex-wrap: wrap; gap: 8px 14px; margin-top: 10px; align-items: center; }
 .roomalloc-holds label { display: flex; gap: 6px; align-items: center; }
 @media (min-width: 900px) {
-  .assign-layout { grid-template-columns: 240px 1fr; }
+  .assign-layout { grid-template-columns: minmax(240px, 320px) 1fr; }
   .assign-rooms { grid-template-columns: 1fr 1fr; }
-  .assign-open { display: none; }
-  .assign-sheet, .assign-sheet.on { display: none; }
 }

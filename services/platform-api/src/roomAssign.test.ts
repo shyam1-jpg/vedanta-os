@@ -42,5 +42,21 @@ describe("organiser room assignment wiring", () => {
     assert.match(occupancy, /group_room_hold/);
     assert.match(occupancy, /room_held/);
     assert.match(server, /roomAssignRoutes/);
+    assert.match(server, /remindRoomLists/);
+  });
+
+  it("keeps allergen details off the organiser board and reminds through the shared mail helper", () => {
+    const board = src.slice(src.indexOf("async function organiserBoard"), src.indexOf("function allowAssign"));
+    assert.equal(board.includes("allergens"), false);
+    assert.equal(board.includes("diet_notes"), false);
+    assert.match(board, /organiserClientView/);
+    const attendees = src.slice(src.indexOf('"/public/organiser/attendees"'), src.indexOf('"/public/organiser/attendees/remove"'));
+    assert.equal(attendees.includes("diet_profile"), false);
+    assert.match(src, /export async function remindRoomLists/);
+    assert.match(src, /organiser_room_reminder/);
+    assert.match(src, /on conflict do nothing/);
+    assert.match(domain, /function autoAssign/);
+    assert.equal(src.includes("ALLOW_UNVERIFIED"), false);
+    assert.equal(src.includes("decideBookingGate"), false);
   });
 });

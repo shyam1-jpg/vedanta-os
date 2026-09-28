@@ -166,6 +166,7 @@ app.listen({ port: Number(process.env.PORT ?? 4000), host: "0.0.0.0" }).then(asy
     const { runScheduledNightAudit } = await import("./nightAudit.ts");
     const { expireShiftSwaps } = await import("./shiftSwap.ts");
     const { remindSpend } = await import("./spend.ts");
+    const { remindRoomLists } = await import("./roomAssign.ts");
     const { pool } = await import("./db.ts");
     const runComms = async () => {
       const props = (await pool.query("SELECT id FROM property")).rows;
@@ -181,6 +182,7 @@ app.listen({ port: Number(process.env.PORT ?? 4000), host: "0.0.0.0" }).then(asy
         try { await runScheduledNightAudit(p.id); } catch (err) { await reportSchedulerError(p.id, "runScheduledNightAudit", err); }
         try { await expireShiftSwaps(p.id); } catch (err) { await reportSchedulerError(p.id, "expireShiftSwaps", err); }
         try { await remindSpend(p.id); } catch (err) { await reportSchedulerError(p.id, "remindSpend", err); }
+        try { await remindRoomLists(p.id); } catch (err) { await reportSchedulerError(p.id, "remindRoomLists", err); }
       }
     };
     runComms(); // run on boot
