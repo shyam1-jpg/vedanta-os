@@ -19,6 +19,9 @@ export function isPublicProgrammeName(name: string): boolean {
   if (/^hold\b/i.test(n)) return false;
   if (/\bbooking\b/i.test(n)) return false;
   if (/^option\s+for\b/i.test(n)) return false;
+  // Staff experiments must never become public merely because their title
+  // contains an event word and the publish switch was accidentally enabled.
+  if (/\b(test|testing|dummy|sample|internal|not bookable)\b/i.test(n)) return false;
   // Has event/organisation words → show
   if (EVENT_WORDS.test(n)) return true;
   // Multi-word name where every word is capitalised → likely a person → hide
