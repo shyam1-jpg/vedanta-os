@@ -1,5 +1,7 @@
 "use client";
 import { useEffect, useState } from "react";
+import YearCalendar from "./YearCalendar";
+import type { PublicRetreat } from "./calendar-dates";
 const API = process.env.NEXT_PUBLIC_API_URL ?? "";
 const tok = {
   get: () => (typeof window === "undefined" ? null : sessionStorage.getItem("vedanta.guest.token")),
@@ -226,6 +228,26 @@ export default function Book() {
             </div>
           )}
 
+          <YearCalendar
+            onPickNight={(arrival, departure) => {
+              setSel(null);
+              setForm(f => ({ ...f, arrival, departure }));
+              setStep("room");
+              searchDates(arrival, departure);
+              document.getElementById("your-dates")?.scrollIntoView({ behavior: "smooth", block: "start" });
+            }}
+            onPickRetreat={(retreat: PublicRetreat) => {
+              const existing = programmes.find(p => p.id === retreat.id);
+              const nights = Math.max(0, Math.round((Date.parse(retreat.departure) - Date.parse(retreat.arrival)) / 86_400_000));
+              pickProgramme(existing ?? {
+                id: retreat.id, name: retreat.name, kind: retreat.kind, basis: null,
+                arrival: retreat.arrival, arrival_time: null, departure: retreat.departure, departure_time: null,
+                nights, places: retreat.capacity, spa: false, meals: true, package: null, price: null, about: null,
+              });
+              document.getElementById("your-dates")?.scrollIntoView({ behavior: "smooth", block: "start" });
+            }}
+          />
+
           <div className="split">
             <div>
               <h2>Open retreats</h2>
@@ -241,8 +263,8 @@ export default function Book() {
                 ))}
               </div>
 
-              <h2 style={{ marginTop: 36 }}>Availability</h2>
-              <p className="lead">Live free rooms for the next four weeks. Choose dates to see room types.</p>
+              <h2 style={{ marginTop: 36 }}>Next four weeks</h2>
+              <p className="lead">Live free rooms. Choose a day to see room types.</p>
               <div className="cal">
                 {cal.map(d => (
                   <button key={d.date} className={"cal-d" + (d.free_rooms === 0 ? " none" : "")} onClick={() => {
@@ -265,7 +287,7 @@ export default function Book() {
                 {STEPS.map(s => <span key={s.id} className={STEPS.findIndex(x => x.id === step) >= STEPS.findIndex(x => x.id === s.id) ? "done" : ""}>{s.label}</span>)}
               </div>
 
-              <div className="card">
+              <div className="card" id="your-dates">
                 <h2 style={{ fontSize: 24 }}>{sel ? sel.name : "Your dates"}</h2>
                 {sel && <p className="m">{fmt(sel.arrival)} → {fmt(sel.departure)} · {nights(sel)}{sel.basis ? ` · ${sel.basis}` : ""}</p>}
                 {sel?.about && <p className="copy">{sel.about}</p>}
