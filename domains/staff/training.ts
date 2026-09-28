@@ -8,6 +8,12 @@ export const TRAINING_CATEGORIES = [
   { code: "health_safety", label: "Health and safety" },
   { code: "manual_handling", label: "Manual handling" },
   { code: "coshh", label: "COSHH" },
+  { code: "hygiene", label: "Hygiene" },
+  { code: "knife", label: "Knife skills" },
+  { code: "guest_service", label: "Guest service" },
+  { code: "accessibility", label: "Accessibility awareness" },
+  { code: "equipment", label: "Equipment handling" },
+  { code: "cleaning", label: "Cleaning standards" },
   { code: "role_specific", label: "Role-specific" },
   { code: "other", label: "Other" },
 ] as const;
@@ -159,4 +165,314 @@ export function parseTemplate(raw: unknown): { ok: true; name: string; role: str
 export function staffProgress(from: string): TrainingStatus | null {
   if (from === "not_started" || from === "in_progress") return "in_progress";
   return null;
+}
+
+export type ModuleShare = "department" | "selected" | "all";
+
+/** The general manager and the system owner see every department. Everyone else sees their own. */
+export const TRAINING_ALL_ROLES = ["SYSTEM_OWNER", "GENERAL_MANAGER"] as const;
+
+export const MODULE_EXAMPLE_NOTE = "Example — edit this to match the house. It is not a finished course.";
+
+type DefaultModule = {
+  key: string;
+  title: string;
+  category: TrainingCategory;
+  share: ModuleShare;
+  locked: boolean;
+  required: boolean;
+  certificate: boolean;
+  validMonths: number | null;
+  departments: string[];
+  checks: string[];
+};
+
+/** Editable defaults. Fire safety is one module on every department. Chemical safety is shared by maintenance and housekeeping. */
+export const DEPARTMENT_MODULES: DefaultModule[] = [
+  {
+    key: "fire",
+    title: "Fire safety",
+    category: "fire_safety",
+    share: "all",
+    locked: true,
+    required: true,
+    certificate: true,
+    validMonths: 12,
+    departments: [],
+    checks: [
+      "Find the fire exits and the assembly point",
+      "Raise the alarm and call for help",
+      "Use an extinguisher only if you are trained and it is safe",
+    ],
+  },
+  {
+    key: "food",
+    title: "Food safety",
+    category: "food_hygiene",
+    share: "department",
+    locked: false,
+    required: true,
+    certificate: true,
+    validMonths: 36,
+    departments: ["KITCHEN"],
+    checks: [
+      "Wash hands before handling food",
+      "Keep hot food hot and cold food cold",
+      "Keep allergens away from the food they do not belong in",
+    ],
+  },
+  {
+    key: "allergen",
+    title: "Allergen awareness",
+    category: "allergen",
+    share: "department",
+    locked: false,
+    required: true,
+    certificate: false,
+    validMonths: null,
+    departments: ["KITCHEN"],
+    checks: [
+      "Read the allergen on the booking before service",
+      "Know the severe and anaphylactic marks",
+      "Tell a manager if a guest's diet is unclear",
+    ],
+  },
+  {
+    key: "hygiene",
+    title: "Hygiene",
+    category: "hygiene",
+    share: "department",
+    locked: false,
+    required: true,
+    certificate: false,
+    validMonths: null,
+    departments: ["KITCHEN"],
+    checks: [
+      "Wear clean work clothes",
+      "Keep the bench and the sink clean",
+      "Cover a cut and change gloves",
+    ],
+  },
+  {
+    key: "knife",
+    title: "Knife skills",
+    category: "knife",
+    share: "department",
+    locked: false,
+    required: true,
+    certificate: false,
+    validMonths: null,
+    departments: ["KITCHEN"],
+    checks: [
+      "Carry a knife point down",
+      "Use a stable board",
+      "Store knives in the rack, not in a sink of water",
+    ],
+  },
+  {
+    key: "guest",
+    title: "Guest service",
+    category: "guest_service",
+    share: "department",
+    locked: false,
+    required: true,
+    certificate: false,
+    validMonths: null,
+    departments: ["FRONT"],
+    checks: [
+      "Greet the guest and use their name",
+      "Know today's arrivals and who needs assistance",
+      "Pass a problem to the right department",
+    ],
+  },
+  {
+    key: "access",
+    title: "Accessibility awareness",
+    category: "accessibility",
+    share: "department",
+    locked: false,
+    required: true,
+    certificate: false,
+    validMonths: null,
+    departments: ["FRONT"],
+    checks: [
+      "Ask what help the guest wants",
+      "Keep routes clear",
+      "Know which rooms have step-free access",
+    ],
+  },
+  {
+    key: "equipment",
+    title: "Equipment handling",
+    category: "equipment",
+    share: "department",
+    locked: false,
+    required: true,
+    certificate: false,
+    validMonths: null,
+    departments: ["MAINT"],
+    checks: [
+      "Check a machine is isolated before you work on it",
+      "Use the right tool",
+      "Report a fault before you leave it",
+    ],
+  },
+  {
+    key: "coshh",
+    title: "Chemical safety (COSHH)",
+    category: "coshh",
+    share: "selected",
+    locked: false,
+    required: true,
+    certificate: false,
+    validMonths: null,
+    departments: ["MAINT", "HK"],
+    checks: [
+      "Read the label and the COSHH sheet",
+      "Wear the protection the sheet asks for",
+      "Store chemicals in the locked cupboard",
+    ],
+  },
+  {
+    key: "cleaning",
+    title: "Cleaning standards",
+    category: "cleaning",
+    share: "department",
+    locked: false,
+    required: true,
+    certificate: false,
+    validMonths: null,
+    departments: ["HK"],
+    checks: [
+      "Clean a departure room to the checklist",
+      "Keep clean and used linen apart",
+      "Report damage before the next guest",
+    ],
+  },
+];
+
+export type PlacedModule = DefaultModule & { placements: { department: string; sort: number }[] };
+
+/** Fire safety is placed on every department the property actually has. The others keep their own list. */
+export function placeDefaultModules(propertyDepartments: string[]): PlacedModule[] {
+  const depts = [...new Set(propertyDepartments)];
+  const locals = DEPARTMENT_MODULES.filter(mod => mod.share !== "all");
+  return DEPARTMENT_MODULES.map(mod => {
+    const placed = mod.share === "all" ? depts : mod.departments.filter(code => depts.includes(code));
+    const placements = placed.map(department => {
+      const localIndex = locals.filter(other => other.departments.includes(department)).findIndex(other => other.key === mod.key);
+      return { department, sort: mod.share === "all" ? 0 : localIndex + 1 };
+    });
+    return { ...mod, placements };
+  });
+}
+
+export type Scope = { all: boolean; departments: string[] };
+
+export function trainingScope(input: { role: string; departments: string[] }): Scope {
+  return {
+    all: (TRAINING_ALL_ROLES as readonly string[]).includes(input.role),
+    departments: [...new Set(input.departments.filter(Boolean))],
+  };
+}
+
+export type ScopedModule = { id: string; title: string; share: ModuleShare; departments: string[]; active?: boolean };
+
+export function modulesInScope(modules: ScopedModule[], scope: Scope): ScopedModule[] {
+  const active = modules.filter(mod => mod.active !== false);
+  if (scope.all) return active;
+  const mine = new Set(scope.departments);
+  return active.filter(mod => mod.share === "all" || mod.departments.some(code => mine.has(code)));
+}
+
+export function moduleVisible(mod: { share: ModuleShare; departments: string[] }, scope: Scope): boolean {
+  return modulesInScope([{ id: "_", title: "", ...mod }], scope).length === 1;
+}
+
+/** An induction for a role starts from that department's modules, then adds anything the template names on top. */
+export function inductionItemIds(template: { department: string | null; itemIds: string[] }, modules: ScopedModule[]): string[] {
+  const base = template.department
+    ? modulesInScope(modules, { all: false, departments: [template.department] }).map(mod => mod.id)
+    : [];
+  return [...new Set([...base, ...template.itemIds])];
+}
+
+export function canEditDepartment(scope: Scope, department: string | null): boolean {
+  if (scope.all) return true;
+  return !!department && scope.departments.includes(department);
+}
+
+export function canEditModule(scope: Scope, mod: { share: ModuleShare; departments: string[] }): boolean {
+  if (scope.all) return true;
+  if (mod.departments.some(code => scope.departments.includes(code))) return true;
+  return mod.share === "all" && scope.departments.length > 0;
+}
+
+export function detachModule(
+  mod: { share: ModuleShare; locked: boolean; departments: string[] },
+  department: string,
+): { ok: true; departments: string[] } | { ok: false; error: string } {
+  if (mod.locked || mod.share === "all") {
+    return { ok: false, error: "This module stays on every department. You can edit it, not remove it." };
+  }
+  if (!mod.departments.includes(department)) return { ok: false, error: "That module is not on this department" };
+  return { ok: true, departments: mod.departments.filter(code => code !== department) };
+}
+
+export function nextShare(
+  current: { share: ModuleShare; locked: boolean },
+  change: { mandatoryAll?: boolean; shared?: boolean },
+): { ok: true; share: ModuleShare } | { ok: false; error: string } {
+  let share = current.share;
+  if (change.mandatoryAll === true) share = "all";
+  else if (change.mandatoryAll === false) share = change.shared ? "selected" : "department";
+  else if (change.shared === true && share !== "all") share = "selected";
+  else if (change.shared === false && share === "selected") share = "department";
+  if (current.locked && share !== "all") {
+    return { ok: false, error: "Fire safety stays mandatory for every department. You can edit the module." };
+  }
+  return { ok: true, share };
+}
+
+export type ChecklistPlan = {
+  ok: true;
+  changed: boolean;
+  clearSignoff: boolean;
+  removeIds: string[];
+  upserts: { id: string | null; label: string; sort: number }[];
+};
+
+/** A checklist edit keeps ticks for steps that are still there. Sign-off stays unless this edit asks for training again. */
+export function planChecklistEdit(
+  current: { id: string; label: string }[],
+  next: { id?: string | null; label?: string }[],
+  requiresRetraining: boolean,
+): ChecklistPlan | { ok: false; error: string } {
+  if (next.length > 40) return { ok: false, error: "A checklist can have up to 40 steps" };
+  const known = new Set(current.map(step => step.id));
+  const upserts: ChecklistPlan["upserts"] = [];
+  const seen = new Set<string>();
+  for (const step of next) {
+    const label = String(step.label ?? "").trim().slice(0, 200);
+    if (label.length < 2) return { ok: false, error: "Each checklist step needs a few words" };
+    const id = step.id && known.has(step.id) && !seen.has(step.id) ? step.id : null;
+    if (id) seen.add(id);
+    upserts.push({ id, label, sort: upserts.length });
+  }
+  const removeIds = current.filter(step => !seen.has(step.id)).map(step => step.id);
+  const changed = removeIds.length > 0
+    || upserts.some(step => !step.id)
+    || upserts.some(step => current.find(row => row.id === step.id)?.label !== step.label)
+    || current.map(step => step.id).join("|") !== upserts.map(step => step.id ?? "").join("|");
+  return { ok: true, changed, clearSignoff: changed && requiresRetraining, removeIds, upserts };
+}
+
+export function ticksAfterEdit(ticks: string[], removeIds: string[]): string[] {
+  const drop = new Set(removeIds);
+  return ticks.filter(id => !drop.has(id));
+}
+
+export function signoffAfterEdit(signedOff: boolean, plan: { clearSignoff: boolean }): boolean {
+  if (!signedOff) return false;
+  return !plan.clearSignoff;
 }
