@@ -345,7 +345,17 @@ td.mark-dep { box-shadow: inset 3px 0 0 var(--marigold); }
 .manual-ol { margin: 8px 0 0 18px; color: var(--ink); }
 .manual-ol li { margin: 8px 0; }
 .check .chip { margin-right: 8px; }
+.audit-counts { display: flex; flex-wrap: wrap; gap: 8px; list-style: none; padding: 0; margin: 12px 0; }
+.audit-counts li { flex: 1 1 88px; background: var(--paper); border: 1px solid var(--line); border-radius: 8px; padding: 8px 10px; }
+.audit-counts b { display: block; font-family: var(--serif); font-size: 1.25rem; }
+.audit-counts span { font-size: 12px; color: var(--ink-2); }
+.audit-dot { width: 8px; height: 8px; border-radius: 50%; display: inline-block; margin-right: 6px; vertical-align: middle; }
+.audit-dot.red { background: var(--brick); }
+.audit-dot.amber { background: var(--gold); }
+.audit-dot.green { background: var(--moss); }
+.audit-actions { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 8px; }
 @media (max-width: 900px) {
   .manual-layout { grid-template-columns: 1fr; }
   .look-act { grid-template-columns: 1fr; }
+  .audit-actions .btn { flex: 1 1 140px; }
 }

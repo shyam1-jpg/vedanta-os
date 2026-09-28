@@ -27,6 +27,7 @@ export default function Settings() {
   const [train, setTrain] = useState<{ leads: number[]; manager: string } | null>(null);
   const [retain, setRetain] = useState<{ allergen_days_after_departure: number; feedback_text_days: number; staff_note_days: number; profile_inactive_months: number } | null>(null);
   const [deposit, setDeposit] = useState<{ amount_gbp: number; policy: string } | null>(null);
+  const [audit, setAudit] = useState<{ time: string; gm_email: string; auto_email: boolean } | null>(null);
   const [stayCopy, setStayCopy] = useState<Record<string, string>>({});
   useEffect(() => {
     api<{ rules: { kitchen: RouteBox; restaurant: RouteBox; front: RouteBox }; receives: Record<string, string> }>("/v1/settings/booking-routing")
@@ -44,6 +45,7 @@ export default function Settings() {
     api<{ leads: number[]; manager: string }>("/v1/settings/training").then(setTrain).catch(() => {});
     api<{ allergen_days_after_departure: number; feedback_text_days: number; staff_note_days: number; profile_inactive_months: number }>("/v1/settings/guest-retention").then(setRetain).catch(() => {});
     api<{ amount_gbp: number; policy: string }>("/v1/settings/deposit").then(setDeposit).catch(() => {});
+    api<{ time: string; gm_email: string; auto_email: boolean }>("/v1/settings/night-audit").then(setAudit).catch(() => {});
   }, []);
   const load = () => { api<{ items: Pkg[] }>("/v1/packages").then(r => setPkgs(r.items)); if (can("config.manage")) api<{ items: Key[] }>("/v1/integrations/keys").then(r => setKeys(r.items)).catch(() => {}); };
   useEffect(load, []); // eslint-disable-line react-hooks/exhaustive-deps
@@ -235,6 +237,24 @@ export default function Settings() {
           <button className="btn primary" style={{ marginTop: 12 }} onClick={() => run(async () => {
             setDeposit(await api("/v1/settings/deposit", { method: "PUT", body: JSON.stringify(deposit) }));
           }, "Deposit saved")}>Save deposit</button>
+        </div>
+      )}
+      {audit && (
+        <div className="panel" style={{ marginTop: 14 }}>
+          <h3>Night audit</h3>
+          <p className="m" style={{ color: "var(--ink-2)" }}>The house report runs once each night, London time. Food is never counted. Leave the address blank to use the fault-routing manager. Automatic email stays off until you turn it on. If SMTP is not set, the note is logged. Do not commit a real address.</p>
+          <label style={{ display: "block", marginTop: 8 }}>Time
+            <input aria-label="Night audit time" value={audit.time} onChange={e => setAudit({ ...audit, time: e.target.value })} />
+          </label>
+          <label style={{ display: "block", marginTop: 8 }}>General manager
+            <input placeholder="team@example.invalid" aria-label="Night audit general manager" value={audit.gm_email} onChange={e => setAudit({ ...audit, gm_email: e.target.value })} />
+          </label>
+          <label className="m" style={{ display: "flex", alignItems: "center", marginTop: 12 }}>
+            <input type="checkbox" checked={audit.auto_email} onChange={e => setAudit({ ...audit, auto_email: e.target.checked })} /> Email the general manager when the night job runs
+          </label>
+          <button className="btn primary" style={{ marginTop: 12 }} onClick={() => run(async () => {
+            setAudit(await api("/v1/settings/night-audit", { method: "PUT", body: JSON.stringify(audit) }));
+          }, "Night audit saved")}>Save night audit</button>
         </div>
       )}
       {retain && (

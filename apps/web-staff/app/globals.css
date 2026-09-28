@@ -22,3 +22,11 @@ input[type=checkbox] { width: auto; flex: none; margin: 0 10px 0 0; }
 .tabs button { flex: 1; border: 1px solid var(--line); background: #fff; padding: 10px; cursor: pointer; }
 .tabs button.on { background: var(--forest); color: var(--ivory); border-color: var(--forest); }
 .tabs button { font-size: 13px; }
+.audit-counts { display: flex; flex-wrap: wrap; gap: 8px; list-style: none; padding: 0; margin: 0; }
+.audit-counts li { flex: 1 1 84px; background: #fff; border: 1px solid var(--line); padding: 8px; }
+.audit-counts b { display: block; font-size: 1.15rem; }
+.audit-counts span { font-size: 12px; color: var(--ink-2); }
+.audit-dot { width: 8px; height: 8px; border-radius: 50%; display: inline-block; margin-right: 6px; }
+.audit-dot.red { background: #8A3B32; }
+.audit-dot.amber { background: #C4A574; }
+.audit-dot.green { background: #4F6758; }
