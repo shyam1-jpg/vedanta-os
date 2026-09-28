@@ -31,6 +31,7 @@ export default function Settings() {
   const [deposit, setDeposit] = useState<{ amount_gbp: number; policy: string } | null>(null);
   const [audit, setAudit] = useState<{ time: string; gm_email: string; auto_email: boolean } | null>(null);
   const [impact, setImpact] = useState<{ enabled: boolean; public: boolean } | null>(null);
+  const [cows, setCows] = useState<{ enabled: boolean } | null>(null);
   const [swaps, setSwaps] = useState<{ min_rest_hours: number; standard_week_hours: number; expire_hours_before: number; board: boolean; approval: Record<string, boolean> } | null>(null);
   const [swapDepts, setSwapDepts] = useState("");
   const [brief, setBrief] = useState<{ severe: number; cold: number; vip: number; compliance: number; staffing: number; heads: Record<string, number> } | null>(null);
@@ -64,6 +65,7 @@ export default function Settings() {
     api<{ amount_gbp: number; policy: string }>("/v1/settings/deposit").then(setDeposit).catch(() => {});
     api<{ time: string; gm_email: string; auto_email: boolean }>("/v1/settings/night-audit").then(setAudit).catch(() => {});
     api<{ enabled?: boolean; public?: boolean }>("/v1/settings/sustainability").then(row => setImpact({ enabled: row.enabled === true, public: row.public === true })).catch(() => {});
+    api<{ enabled?: boolean }>("/v1/settings/cow-care").then(row => setCows({ enabled: row.enabled === true })).catch(() => {});
     api<{ min_rest_hours: number; standard_week_hours: number; expire_hours_before: number; board?: boolean; approval?: Record<string, boolean> }>("/v1/settings/shift-swap").then(row => {
       const approval = row.approval ?? {};
       setSwaps({ ...row, board: row.board === true, approval });
@@ -306,6 +308,16 @@ export default function Settings() {
           <button className="btn primary" style={{ marginTop: 12 }} onClick={() => run(async () => {
             setImpact(await api("/v1/settings/sustainability", { method: "PUT", body: JSON.stringify({ enabled: impact.enabled === true, public: impact.public === true }) }));
           }, "Sustainability settings saved")}>Save sustainability</button>
+        </div>
+      )}
+      {cows && (
+        <div className="panel" style={{ marginTop: 14 }}>
+          <h3>Cow care</h3>
+          <p className="m" style={{ color: "var(--ink-2)" }}>A daily note for the two animals: who is with them, what they were fed, a health note, and a vet visit. The bull stays staff only. Guests never see that animal. The cows are never milked. Leave this off until the house wants the log.</p>
+          <label style={{ display: "block", marginTop: 8 }}><input type="checkbox" checked={cows.enabled} onChange={e => setCows({ enabled: e.target.checked })} /> Keep a cow care log</label>
+          <button className="btn primary" style={{ marginTop: 12 }} onClick={() => run(async () => {
+            setCows(await api("/v1/settings/cow-care", { method: "PUT", body: JSON.stringify({ enabled: cows.enabled === true }) }));
+          }, "Cow care saved")}>Save cow care</button>
         </div>
       )}
       {swaps && (

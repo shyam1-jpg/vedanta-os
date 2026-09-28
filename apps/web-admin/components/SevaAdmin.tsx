@@ -2,7 +2,7 @@
 import { useEffect, useState } from "react";
 import { api } from "@/lib/api";
 
-type Animal = { id: string; name: string; audience: "guest" | "staff"; note: string };
+type Animal = { id: string; name: string; audience: "guest" | "staff"; note: string; guestFacing?: boolean };
 type Activity = { id: string; name: string; kind: string; safetyNotes: string; tasks: string[]; minAge: number; capacity: number; location: string };
 type Slot = { id: string; name: string; date: string; start: string; label: string; supervisorName: string | null; roster: { name: string; status: string }[] };
 type Board = { activities: Activity[]; animals: Animal[]; slots: Slot[]; safety: { guestsVisitCowsWithStaff: boolean; kitchenFoodHandling: boolean } };
@@ -10,6 +10,7 @@ type Board = { activities: Activity[]; animals: Animal[]; slots: Slot[]; safety:
 export default function SevaAdmin() {
   const [board, setBoard] = useState<Board | null>(null);
   const [activity, setActivity] = useState("");
+  const [animalId, setAnimalId] = useState("");
   const [from, setFrom] = useState("");
   const [to, setTo] = useState("");
   const [names, setNames] = useState<Record<string, string>>({});
@@ -25,7 +26,8 @@ export default function SevaAdmin() {
   const generate = async () => {
     setErr(null);
     try {
-      await api("/v1/seva/slots", { method: "POST", body: JSON.stringify({ activity_id: activity, from, to, start: "09:00" }) });
+      const chosen = board?.activities.find(item => item.id === activity);
+      await api("/v1/seva/slots", { method: "POST", body: JSON.stringify({ activity_id: activity, from, to, start: "09:00", animal_id: chosen?.kind === "cow_care" ? (animalId || undefined) : undefined }) });
       await load();
     } catch (e) { setErr((e as Error).message); }
   };
@@ -70,6 +72,13 @@ export default function SevaAdmin() {
                 {board.activities.map(item => <option key={item.id} value={item.id}>{item.name}</option>)}
               </select>
             </label>
+            {board.activities.find(item => item.id === activity)?.kind === "cow_care" && (
+              <label>Animal
+                <select aria-label="Cow for the slot" value={animalId} onChange={e => setAnimalId(e.target.value)}>
+                  {board.animals.filter(item => item.guestFacing !== false && item.audience === "guest").map(item => <option key={item.id} value={item.id}>{item.name}</option>)}
+                </select>
+              </label>
+            )}
             <label>From<input aria-label="From" type="date" value={from} onChange={e => setFrom(e.target.value)} /></label>
             <label>To<input aria-label="To" type="date" value={to} onChange={e => setTo(e.target.value)} /></label>
             <button className="btn" type="button" onClick={generate}>Add daily slots</button>

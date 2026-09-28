@@ -31,4 +31,7 @@ test("a bull marked for guests, a person, or a cow caption without supervision s
   const forced = reviewPhoto({ category: "goshala", title: "Example Bull", alt: "A bull. No people.", caption: "Staff only", src: "data:image/svg+xml,%3Csvg%3E%3C/svg%3E", audience: "guest", showsBull: true }, "y");
   assert.equal(forced.ok, true);
   if (forced.ok) assert.equal(forced.photo.audience, "staff");
+  const renamed = { ...photos[0], title: "The grounds", caption: "A quiet field with Example Storm.", alt: "Trees and a lawn. No people." };
+  assert.equal(guestMaySee(renamed, ["Example Storm"]), false);
+  assert.equal(publicGallery([renamed], { enabled: true }, ["Example Storm"]).length, 0);
 });

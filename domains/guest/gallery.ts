@@ -4,6 +4,8 @@
  * The switch defaults to off, so the public site stays empty until the house turns it on.
  */
 
+import { mentionsHiddenAnimal } from "../ops/cowCare.ts";
+
 export const GALLERY_CATEGORIES = ["grounds", "goshala", "kitchen", "rooms", "other"] as const;
 export type GalleryCategory = (typeof GALLERY_CATEGORIES)[number];
 
@@ -91,20 +93,30 @@ export function cowCaptionOk(caption: string): boolean {
   return true;
 }
 
-export function guestMaySee(photo: GalleryPhoto): boolean {
+export function guestMaySee(photo: GalleryPhoto, staffOnlyNames: string[] = []): boolean {
   if (photo.hidden || photo.audience !== "guest") return false;
   if (photo.showsPeople || photo.showsBull) return false;
   const text = blob(photo.title, photo.alt, photo.caption);
   if (text.includes("bull")) return false;
+  if (mentionsHiddenAnimal(text, staffOnlyNames)) return false;
   const cow = photo.category === "goshala" || text.includes("cow");
   if (cow && !cowCaptionOk(photo.caption)) return false;
   if (!photo.alt.trim() || !photo.src.trim()) return false;
   return true;
 }
 
-export function publicGallery(photos: GalleryPhoto[], settings: GallerySettings): GalleryPhoto[] {
+export function publicGallery(photos: GalleryPhoto[], settings: GallerySettings, staffOnlyNames: string[] = []): GalleryPhoto[] {
   if (!settings.enabled) return [];
-  return photos.filter(guestMaySee).slice().sort((a, b) => a.sort - b.sort || a.title.localeCompare(b.title));
+  return photos.filter(photo => guestMaySee(photo, staffOnlyNames)).slice().sort((a, b) => a.sort - b.sort || a.title.localeCompare(b.title));
+}
+
+/** A guest caption that names a staff-only animal stays on the staff list. */
+export function shieldGuestPhoto(photo: GalleryPhoto, staffOnlyNames: string[]): GalleryPhoto {
+  const text = blob(photo.title, photo.alt, photo.caption);
+  if (photo.showsBull || text.includes("bull") || mentionsHiddenAnimal(text, staffOnlyNames)) {
+    return { ...photo, audience: "staff", showsBull: true };
+  }
+  return photo;
 }
 
 export type PhotoDraft = {

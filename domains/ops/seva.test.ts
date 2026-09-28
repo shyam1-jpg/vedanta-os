@@ -88,6 +88,12 @@ test("capacity, overlap, age, waiver, hygiene, and staff-only animals", () => {
   assert.equal(bull.ok, false);
   if (!bull.ok) assert.match(bull.error, /staff only/);
 
+  const linkedBull = bookSeva({
+    personKey: "p1", firstName: "Test", age: 20, slot: { ...cow, animalId: "example-bull" }, activity: cows, animals, chosenAnimalId: "example-daisy",
+    existing: [], waiverAck: true, hygieneAck: false, safety,
+  });
+  assert.equal(linkedBull.ok, false);
+
   const first = bookSeva({
     personKey: "p1", firstName: "Test", age: 20, slot: cow, activity: cows, animals, chosenAnimalId: "example-daisy",
     existing: [], waiverAck: true, hygieneAck: false, safety,

@@ -8,8 +8,10 @@ import {
   publicGallery,
   reviewPhoto,
   seedPhotos,
+  shieldGuestPhoto,
   type GalleryPhoto,
 } from "../../../domains/guest/gallery.ts";
+import { staffOnlyAnimalNames } from "./cowCare.ts";
 
 type PhotoRow = {
   id: string; category: GalleryPhoto["category"]; title: string; alt_text: string; caption: string; image_src: string;
@@ -68,7 +70,8 @@ export default async function galleryRoutes(app: FastifyInstance) {
       const house = await property();
       if (!house) return { enabled: false, items: [] };
       await ensureSeed(house.id, house.tenant_id);
-      const items = publicGallery(await listPhotos(house.id), { enabled: house.enabled });
+      const hidden = await staffOnlyAnimalNames(house.id).catch(() => ["Example Bull"]);
+      const items = publicGallery(await listPhotos(house.id), { enabled: house.enabled }, hidden);
       return { enabled: house.enabled, items: items.map(photo => ({ id: photo.id, category: photo.category, title: photo.title, alt: photo.alt, caption: photo.caption, src: photo.src })) };
     } catch {
       return { enabled: false, items: [] };
@@ -106,7 +109,8 @@ export default async function galleryRoutes(app: FastifyInstance) {
     }
     const reviewed = reviewPhoto(draft, "new");
     if (!reviewed.ok) return reply.code(422).send(problem(422, "validation", reviewed.error));
-    const photo = reviewed.photo;
+    const hidden = await staffOnlyAnimalNames(actor.propertyId).catch(() => ["Example Bull"]);
+    const photo = shieldGuestPhoto(reviewed.photo, hidden);
     const row = (await pool.query(
       `insert into gallery_photo (tenant_id, property_id, category, title, alt_text, caption, image_src, audience, shows_people, shows_bull, hidden, sort_order, licence)
        values ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13) returning id`,
@@ -127,7 +131,8 @@ export default async function galleryRoutes(app: FastifyInstance) {
     const photo = photoOf(current);
     const reviewed = reviewPhoto({ ...photo, ...req.body, alt: req.body?.alt ?? photo.alt, src: req.body?.src ?? photo.src }, photo.id);
     if (!reviewed.ok) return reply.code(422).send(problem(422, "validation", reviewed.error));
-    const next = reviewed.photo;
+    const hidden = await staffOnlyAnimalNames(actor.propertyId).catch(() => ["Example Bull"]);
+    const next = shieldGuestPhoto(reviewed.photo, hidden);
     await pool.query(
       `update gallery_photo set category=$2, title=$3, alt_text=$4, caption=$5, image_src=$6, audience=$7, shows_people=$8, shows_bull=$9, hidden=$10, sort_order=$11 where id=$1`,
       [photo.id, next.category, next.title, next.alt, next.caption, next.src, next.audience, next.showsPeople, next.showsBull, next.hidden, next.sort],

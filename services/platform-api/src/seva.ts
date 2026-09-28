@@ -12,7 +12,9 @@ import {
   parseSevaSafety,
   seedActivities,
   seedAnimals,
+  sevaAnimalForSlot,
   sevaBriefingText,
+  sevaSlotForGuest,
   welcomeSevaLines,
   type SevaActivity,
   type SevaAnimal,
@@ -66,11 +68,19 @@ async function ensureSeed(tenantId: string, propertyId: string) {
   const animals = (await pool.query(`select count(*)::int n from seva_animal where property_id=$1`, [propertyId])).rows[0];
   if (!animals?.n) {
     for (const animal of seedAnimals()) {
-      await pool.query(
-        `insert into seva_animal (tenant_id, property_id, code, name, audience, note) values ($1,$2,$3,$4,$5,$6)
-         on conflict (property_id, code) do nothing`,
-        [tenantId, propertyId, animal.id, animal.name, animal.audience, animal.note],
-      );
+      try {
+        await pool.query(
+          `insert into seva_animal (tenant_id, property_id, code, name, audience, note, guest_facing, kind) values ($1,$2,$3,$4,$5,$6,$7,$8)
+           on conflict (property_id, code) do nothing`,
+          [tenantId, propertyId, animal.id, animal.name, animal.audience, animal.note, animal.guestFacing === true, animal.kind ?? "cow"],
+        );
+      } catch {
+        await pool.query(
+          `insert into seva_animal (tenant_id, property_id, code, name, audience, note) values ($1,$2,$3,$4,$5,$6)
+           on conflict (property_id, code) do nothing`,
+          [tenantId, propertyId, animal.id, animal.name, animal.audience, animal.note],
+        );
+      }
     }
   }
 }
@@ -85,21 +95,61 @@ async function loadActivities(propertyId: string): Promise<SevaActivity[]> {
 }
 
 async function loadAnimals(propertyId: string): Promise<SevaAnimal[]> {
-  const rows = (await pool.query(`select code, name, audience, note from seva_animal where property_id=$1 order by name`, [propertyId])).rows;
-  return rows.map((row: { code: string; name: string; audience: "guest" | "staff"; note: string }) => ({
-    id: row.code, name: row.name, audience: row.audience, note: row.note,
-  }));
+  try {
+    const rows = (await pool.query(
+      `select code, name, audience, note, guest_facing, kind from seva_animal where property_id=$1 order by name`,
+      [propertyId],
+    )).rows as { code: string; name: string; audience: "guest" | "staff"; note: string; guest_facing: boolean; kind: "cow" | "bull" | null }[];
+    return rows.map(row => ({
+      id: row.code,
+      name: row.name,
+      audience: row.kind === "bull" || row.guest_facing === false ? "staff" : row.audience,
+      note: row.note,
+      guestFacing: row.kind === "bull" ? false : row.guest_facing === true,
+      kind: row.kind === "bull" ? "bull" : "cow",
+    }));
+  } catch {
+    const rows = (await pool.query(`select code, name, audience, note from seva_animal where property_id=$1 order by name`, [propertyId])).rows;
+    return rows.map((row: { code: string; name: string; audience: "guest" | "staff"; note: string }) => ({
+      id: row.code,
+      name: row.name,
+      audience: row.audience,
+      note: row.note,
+      guestFacing: row.audience === "guest",
+      kind: row.audience === "staff" ? "bull" as const : "cow" as const,
+    }));
+  }
+}
+
+function slotOf(row: { id: string; activity_id: string; date: string; start_time: string; end_time: string; capacity: number; supervisor_name: string | null; animal_code?: string | null }): SevaSlot {
+  return {
+    id: row.id,
+    activityId: row.activity_id,
+    date: row.date,
+    start: row.start_time,
+    end: row.end_time,
+    capacity: row.capacity,
+    supervisorName: row.supervisor_name,
+    animalId: row.animal_code ?? null,
+  };
 }
 
 async function loadSlots(propertyId: string, from: string, to: string): Promise<SevaSlot[]> {
-  const rows = (await pool.query(
-    `select id, activity_id, on_date::text date, start_time, end_time, capacity, supervisor_name
-     from seva_slot where property_id=$1 and on_date between $2::date and $3::date order by on_date, start_time`,
-    [propertyId, from, to],
-  )).rows;
-  return rows.map((row: { id: string; activity_id: string; date: string; start_time: string; end_time: string; capacity: number; supervisor_name: string | null }) => ({
-    id: row.id, activityId: row.activity_id, date: row.date, start: row.start_time, end: row.end_time, capacity: row.capacity, supervisorName: row.supervisor_name,
-  }));
+  try {
+    const rows = (await pool.query(
+      `select id, activity_id, on_date::text date, start_time, end_time, capacity, supervisor_name, animal_code
+       from seva_slot where property_id=$1 and on_date between $2::date and $3::date order by on_date, start_time`,
+      [propertyId, from, to],
+    )).rows;
+    return rows.map(slotOf);
+  } catch {
+    const rows = (await pool.query(
+      `select id, activity_id, on_date::text date, start_time, end_time, capacity, supervisor_name
+       from seva_slot where property_id=$1 and on_date between $2::date and $3::date order by on_date, start_time`,
+      [propertyId, from, to],
+    )).rows;
+    return rows.map((row: { id: string; activity_id: string; date: string; start_time: string; end_time: string; capacity: number; supervisor_name: string | null }) => slotOf(row));
+  }
 }
 
 async function loadBookings(propertyId: string, slotIds: string[]): Promise<SevaBooking[]> {
@@ -117,8 +167,9 @@ async function loadBookings(propertyId: string, slotIds: string[]): Promise<Seva
 
 export async function sevaForStay(scope: { propertyId: string; personId: string; from: string; to: string }) {
   const activities = await loadActivities(scope.propertyId);
-  const animals = guestAnimals(await loadAnimals(scope.propertyId));
-  const slots = await loadSlots(scope.propertyId, scope.from, scope.to);
+  const allAnimals = await loadAnimals(scope.propertyId);
+  const animals = guestAnimals(allAnimals);
+  const slots = (await loadSlots(scope.propertyId, scope.from, scope.to)).filter(slot => sevaSlotForGuest(slot.animalId, allAnimals));
   const bookings = await loadBookings(scope.propertyId, slots.map(slot => slot.id));
   const safety = await safetyFor(scope.propertyId);
   return {
@@ -221,6 +272,9 @@ export default async function sevaRoutes(f: FastifyInstance) {
     await ensureSeed(a.tenantId, a.propertyId);
     const activity = (await pool.query(`select * from seva_activity where property_id=$1 and (id::text=$2 or code=$2)`, [a.propertyId, String(req.body?.activity_id ?? "")])).rows[0] as ActivityRow | undefined;
     if (!activity) return reply.code(404).send(problem(404, "not_found", "That activity is not on the list"));
+    const animals = await loadAnimals(a.propertyId);
+    const linked = sevaAnimalForSlot(activity.kind, animals, req.body?.animal_id ? String(req.body.animal_id) : null);
+    if (!linked.ok) return reply.code(422).send(problem(422, "validation", linked.error));
     const made = generateDailySlots({
       activityId: activity.id,
       from: String(req.body?.from ?? ""),
@@ -231,14 +285,40 @@ export default async function sevaRoutes(f: FastifyInstance) {
     });
     if (!made.length) return reply.code(422).send(problem(422, "validation", "Choose the dates for these slots"));
     for (const slot of made) {
-      await pool.query(
-        `insert into seva_slot (tenant_id, property_id, activity_id, on_date, start_time, end_time, capacity)
-         values ($1,$2,$3,$4::date,$5,$6,$7)
-         on conflict (activity_id, on_date, start_time) do nothing`,
-        [a.tenantId, a.propertyId, activity.id, slot.date, slot.start, slot.end, slot.capacity],
-      );
+      try {
+        await pool.query(
+          `insert into seva_slot (tenant_id, property_id, activity_id, on_date, start_time, end_time, capacity, animal_code)
+           values ($1,$2,$3,$4::date,$5,$6,$7,$8)
+           on conflict (activity_id, on_date, start_time) do update set animal_code = coalesce(excluded.animal_code, seva_slot.animal_code)`,
+          [a.tenantId, a.propertyId, activity.id, slot.date, slot.start, slot.end, slot.capacity, linked.animalId],
+        );
+      } catch {
+        await pool.query(
+          `insert into seva_slot (tenant_id, property_id, activity_id, on_date, start_time, end_time, capacity)
+           values ($1,$2,$3,$4::date,$5,$6,$7)
+           on conflict (activity_id, on_date, start_time) do nothing`,
+          [a.tenantId, a.propertyId, activity.id, slot.date, slot.start, slot.end, slot.capacity],
+        );
+      }
     }
     return { created: made.length };
+  });
+
+  f.post<{ Params: { id: string } }>("/v1/seva/slots/:id/animal", async (req: any, reply) => {
+    const a = await requireActor(req, reply, ["ADMIN", "STAFF"]); if (!a || !allow(a, "group.update", reply)) return;
+    const slot = (await pool.query(
+      `select s.id, a.kind from seva_slot s join seva_activity a on a.id = s.activity_id where s.id=$1 and s.property_id=$2`,
+      [req.params.id, a.propertyId],
+    )).rows[0] as { id: string; kind: string } | undefined;
+    if (!slot) return reply.code(404).send(problem(404, "not_found", "That slot is not on the list"));
+    const linked = sevaAnimalForSlot(slot.kind, await loadAnimals(a.propertyId), req.body?.animal_id ? String(req.body.animal_id) : null);
+    if (!linked.ok) return reply.code(422).send(problem(422, "validation", linked.error));
+    try {
+      await pool.query(`update seva_slot set animal_code=$3 where id=$1 and property_id=$2`, [slot.id, a.propertyId, linked.animalId]);
+    } catch {
+      return reply.code(503).send(problem(503, "unavailable", "Cow care is not ready yet"));
+    }
+    return { ok: true, animal_id: linked.animalId };
   });
 
   f.post<{ Params: { id: string } }>("/v1/seva/slots/:id/supervisor", async (req: any, reply) => {
@@ -252,14 +332,22 @@ export default async function sevaRoutes(f: FastifyInstance) {
   f.post<{ Params: { token: string } }>("/public/journey/:token/seva", async (req: any, reply) => {
     const found = await openStayLink(req.params.token);
     if (!found.ok) return reply.code(found.status).send(problem(found.status, "not_found", found.error));
-    const slotRow = (await pool.query(
-      `select s.id slot_id, s.activity_id, s.on_date::text date, s.start_time, s.end_time, s.capacity slot_capacity, s.supervisor_name,
+    const slotSql = `select s.id slot_id, s.activity_id, s.on_date::text date, s.start_time, s.end_time, s.capacity slot_capacity, s.supervisor_name,
               a.id, a.code, a.name, a.kind, a.description, a.location, a.duration_minutes, a.capacity, a.min_age, a.supervisor_role,
-              a.safety_notes, a.waiver_required, a.waiver_text, a.tasks, a.active
-       from seva_slot s join seva_activity a on a.id=s.activity_id
-       where s.id=$1 and s.property_id=$2`,
-      [req.body?.slot_id, found.row.property_id],
-    )).rows[0];
+              a.safety_notes, a.waiver_required, a.waiver_text, a.tasks, a.active`;
+    let slotRow: any;
+    try {
+      slotRow = (await pool.query(
+        `${slotSql}, s.animal_code from seva_slot s join seva_activity a on a.id=s.activity_id where s.id=$1 and s.property_id=$2`,
+        [req.body?.slot_id, found.row.property_id],
+      )).rows[0];
+    } catch {
+      slotRow = (await pool.query(
+        `${slotSql} from seva_slot s join seva_activity a on a.id=s.activity_id where s.id=$1 and s.property_id=$2`,
+        [req.body?.slot_id, found.row.property_id],
+      )).rows[0];
+      if (slotRow) slotRow.animal_code = null;
+    }
     if (!slotRow) return reply.code(404).send(problem(404, "not_found", "That slot is not on the list"));
     if (slotRow.date < found.row.arrival || slotRow.date > found.row.departure) {
       return reply.code(422).send(problem(422, "validation", "That slot is not during your stay"));
@@ -270,7 +358,7 @@ export default async function sevaRoutes(f: FastifyInstance) {
       personKey: found.row.person_id,
       firstName: found.row.given_name || "Guest",
       age: req.body?.age == null || req.body?.age === "" ? null : Number(req.body.age),
-      slot: { id: slotRow.slot_id, activityId: slotRow.activity_id, date: slotRow.date, start: slotRow.start_time, end: slotRow.end_time, capacity: slotRow.slot_capacity, supervisorName: slotRow.supervisor_name },
+      slot: { id: slotRow.slot_id, activityId: slotRow.activity_id, date: slotRow.date, start: slotRow.start_time, end: slotRow.end_time, capacity: slotRow.slot_capacity, supervisorName: slotRow.supervisor_name, animalId: slotRow.animal_code ?? null },
       activity: activityOf(slotRow),
       animals,
       chosenAnimalId: req.body?.animal_id ? String(req.body.animal_id) : null,

@@ -2,6 +2,8 @@
  *  Cow care never offers a staff-only animal. Kitchen help stays off food handling unless the house turns that on.
  */
 
+import { animalForSlot, isGuestFacing, seedCows, slotVisibleToGuest, type CowKind } from "./cowCare.ts";
+
 export type SevaKind = "kitchen_help" | "gardening" | "cow_care" | "other";
 
 export type SevaActivity = {
@@ -26,6 +28,8 @@ export type SevaAnimal = {
   name: string;
   audience: "guest" | "staff";
   note: string;
+  guestFacing?: boolean;
+  kind?: CowKind;
 };
 
 export type SevaSafety = {
@@ -42,6 +46,7 @@ export type SevaSlot = {
   end: string;
   capacity: number;
   supervisorName: string | null;
+  animalId?: string | null;
 };
 
 export type SevaBooking = {
@@ -166,14 +171,41 @@ export function seedActivities(): SevaActivity[] {
 
 /** Placeholder names only. Real animal names belong in the local seed, not this repo. */
 export function seedAnimals(): SevaAnimal[] {
-  return [
-    { id: "example-daisy", name: "Example Daisy", audience: "guest", note: "A gentle cow. Guests visit only with staff." },
-    { id: "example-bull", name: "Example Bull", audience: "staff", note: "STAFF ONLY. Never offered to guests." },
-  ];
+  return seedCows().map(animal => ({
+    id: animal.id,
+    name: animal.name,
+    audience: isGuestFacing(animal) ? "guest" as const : "staff" as const,
+    note: animal.note,
+    guestFacing: animal.guestFacing,
+    kind: animal.kind,
+  }));
+}
+
+export function animalGuestFacing(animal: SevaAnimal): boolean {
+  return isGuestFacing({
+    guestFacing: animal.guestFacing === true || (animal.guestFacing == null && animal.audience === "guest"),
+    kind: animal.kind === "bull" ? "bull" : "cow",
+  });
 }
 
 export function guestAnimals(animals: SevaAnimal[]): SevaAnimal[] {
-  return animals.filter(animal => animal.audience === "guest");
+  return animals.filter(animalGuestFacing);
+}
+
+export function sevaAnimalForSlot(kind: string, animals: SevaAnimal[], chosenId: string | null) {
+  return animalForSlot(kind, animals.map(animal => ({
+    id: animal.id,
+    guestFacing: animalGuestFacing(animal),
+    kind: animal.kind === "bull" || !animalGuestFacing(animal) && animal.audience === "staff" ? "bull" as const : "cow" as const,
+  })), chosenId);
+}
+
+export function sevaSlotForGuest(animalId: string | null | undefined, animals: SevaAnimal[]): boolean {
+  return slotVisibleToGuest(animalId, animals.map(animal => ({
+    id: animal.id,
+    guestFacing: animalGuestFacing(animal),
+    kind: animal.kind === "bull" ? "bull" : animalGuestFacing(animal) ? "cow" : "bull",
+  })));
 }
 
 export function kitchenTasks(activity: SevaActivity, safety: SevaSafety): string[] {
@@ -252,9 +284,12 @@ export function bookSeva(input: {
     if (blocked) return { ok: false, error: "Kitchen help is washing up and laying the buffet, not food handling" };
   }
   let animalId: string | null = null;
+  if (input.slot.animalId && !sevaSlotForGuest(input.slot.animalId, input.animals)) {
+    return { ok: false, error: "That animal is staff only and is never offered to guests" };
+  }
   if (input.activity.kind === "cow_care") {
     const chosen = input.animals.find(animal => animal.id === input.chosenAnimalId);
-    if (!chosen || chosen.audience !== "guest") {
+    if (!chosen || !animalGuestFacing(chosen)) {
       return { ok: false, error: "That animal is staff only and is never offered to guests" };
     }
     animalId = chosen.id;
