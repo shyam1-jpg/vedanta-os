@@ -34,6 +34,7 @@ import {
 import { acceptWarning, captureFromStored, dietarySummary, resendAccessCode, splitName, type OutboundNote, type StayCapture } from "../../../domains/guest/booking.ts";
 import { applyGuestConsent, suggestContact } from "./guestHistory.ts";
 import { cleanIdempotencyKey, formatBookingReference, issueSessionOnRegister, publicBookingOpen } from "../../../domains/guest/bookingGate.ts";
+import { parseDepositSettings } from "../../../domains/payments/deposit.ts";
 
 const hits = new Map<string, { n: number; t: number }>();
 function rateOk(key: string): boolean {
@@ -346,8 +347,7 @@ export default async function guestPortal(f: FastifyInstance) {
       sessionVerified: !!session?.email_verified,
     });
     const settings = (await pool.query(`select settings from property where id=$1`, [prop.id])).rows[0]?.settings ?? {};
-    const deposit = settings.deposit ?? {};
-    const amount = Number(deposit.amount_gbp);
+    const deposit = parseDepositSettings(settings.deposit);
     const contact = settings.contact_email || settings.booking_routing?.front?.email || null;
     return {
       open: gate.open,
@@ -356,10 +356,8 @@ export default async function guestPortal(f: FastifyInstance) {
       contact,
       website: prop.website,
       payments: paymentsEnabled(),
-      deposit_gbp: Number.isFinite(amount) && amount >= 0 ? amount : 200,
-      deposit_policy: typeof deposit.policy === "string" && deposit.policy.trim()
-        ? deposit.policy.trim()
-        : "The house agrees the deposit when your place is accepted. Food is not billed.",
+      deposit_gbp: deposit.amount_gbp,
+      deposit_policy: deposit.policy,
       food_billed: false,
     };
   });

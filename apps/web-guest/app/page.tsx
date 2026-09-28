@@ -458,22 +458,23 @@ export default function Book() {
                   <div style={{ background: "var(--surface, #f5f0e8)", borderRadius: 10, padding: "14px 16px", marginBottom: 16 }}>
                     <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 6 }}>
                       <span className="m">Deposit amount</span>
-                      <b>£200.00</b>
+                      <b>£{booking.deposit_gbp.toFixed(2)}</b>
                     </div>
                     <div style={{ display: "flex", justifyContent: "space-between" }}>
                       <span className="m">Balance</span>
-                      <span className="m" style={{ color: "var(--ink-2, #666)" }}>Agreed with the house after acceptance</span>
+                      <span className="m" style={{ color: "var(--ink-2, #666)" }}>{booking.deposit_policy}</span>
                     </div>
                   </div>
                   {paymentsOn ? (
                   <button className="btn" disabled={busy || !form.name || !form.email.includes("@")} onClick={async () => {
-                    const enquiryResult = await doEnquiry();
+                    const enquiryResult = savedEnquiryId ? { id: savedEnquiryId } : await doEnquiry({ finish: false });
                     if (!enquiryResult?.id) return;
+                    setSavedEnquiryId(enquiryResult.id);
                     try {
-                      const r = await api<{ url: string }>(`/guest-enquiries/${enquiryResult.id}/stripe/checkout`, { method: "POST" });
+                      const r = await api<{ url: string }>(`/v1/guest-enquiries/${enquiryResult.id}/stripe/checkout`, { method: "POST" });
                       if (r?.url) window.location.href = r.url;
                     } catch (e) {
-                      setErr((e as Error).message || "Your place is saved. The card page did not open.");
+                      setErr((e as Error).message || "Your place is saved. The card page did not open. Try again from this page — it will not be sent twice.");
                     }
                   }}>
                     {busy ? "…" : "Pay deposit & save my place"}

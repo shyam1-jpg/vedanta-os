@@ -26,6 +26,7 @@ export default function Settings() {
   const [lostHold, setLostHold] = useState<{ hold_days: number; manager: string } | null>(null);
   const [train, setTrain] = useState<{ leads: number[]; manager: string } | null>(null);
   const [retain, setRetain] = useState<{ allergen_days_after_departure: number; feedback_text_days: number; staff_note_days: number; profile_inactive_months: number } | null>(null);
+  const [deposit, setDeposit] = useState<{ amount_gbp: number; policy: string } | null>(null);
   const [stayCopy, setStayCopy] = useState<Record<string, string>>({});
   useEffect(() => {
     api<{ rules: { kitchen: RouteBox; restaurant: RouteBox; front: RouteBox }; receives: Record<string, string> }>("/v1/settings/booking-routing")
@@ -42,6 +43,7 @@ export default function Settings() {
     api<{ hold_days: number; manager: string }>("/v1/settings/lost-found").then(setLostHold).catch(() => {});
     api<{ leads: number[]; manager: string }>("/v1/settings/training").then(setTrain).catch(() => {});
     api<{ allergen_days_after_departure: number; feedback_text_days: number; staff_note_days: number; profile_inactive_months: number }>("/v1/settings/guest-retention").then(setRetain).catch(() => {});
+    api<{ amount_gbp: number; policy: string }>("/v1/settings/deposit").then(setDeposit).catch(() => {});
   }, []);
   const load = () => { api<{ items: Pkg[] }>("/v1/packages").then(r => setPkgs(r.items)); if (can("config.manage")) api<{ items: Key[] }>("/v1/integrations/keys").then(r => setKeys(r.items)).catch(() => {}); };
   useEffect(load, []); // eslint-disable-line react-hooks/exhaustive-deps
@@ -218,6 +220,21 @@ export default function Settings() {
           <button className="btn primary" style={{ marginTop: 12 }} onClick={() => run(async () => {
             setTrain(await api("/v1/settings/training", { method: "PUT", body: JSON.stringify(train) }));
           }, "Training reminders saved")}>Save training reminders</button>
+        </div>
+      )}
+      {deposit && (
+        <div className="panel" style={{ marginTop: 14 }}>
+          <h3>Deposit</h3>
+          <p className="m" style={{ color: "var(--ink-2)" }}>Card payments stay off until the house turns them on. Food is never billed. This amount is the deposit a guest is asked for when card payments are on.</p>
+          <label style={{ display: "block", marginTop: 8 }}>Deposit amount (£)
+            <input type="number" min={0} step="0.01" value={deposit.amount_gbp} onChange={e => setDeposit({ ...deposit, amount_gbp: Number(e.target.value) })} />
+          </label>
+          <label style={{ display: "block", marginTop: 8 }}>Policy shown to the guest
+            <textarea rows={3} value={deposit.policy} onChange={e => setDeposit({ ...deposit, policy: e.target.value })} />
+          </label>
+          <button className="btn primary" style={{ marginTop: 12 }} onClick={() => run(async () => {
+            setDeposit(await api("/v1/settings/deposit", { method: "PUT", body: JSON.stringify(deposit) }));
+          }, "Deposit saved")}>Save deposit</button>
         </div>
       )}
       {retain && (

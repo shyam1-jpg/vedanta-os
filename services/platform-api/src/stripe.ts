@@ -13,6 +13,7 @@ import type { FastifyInstance } from "fastify";
 import { pool } from "./db.ts";
 import { requireActor, allow, problem } from "./auth.ts";
 import { bodyHasCardData, paymentsEnabled, stripeAuditPayload } from "./payments.ts";
+import { depositLine, parseDepositSettings, stripeChargeAllowed } from "../../../domains/payments/deposit.ts";
 
 const STRIPE_KEY = process.env.STRIPE_SECRET_KEY ?? "";
 const WEBHOOK_SECRET = process.env.STRIPE_WEBHOOK_SECRET ?? "";
@@ -39,8 +40,14 @@ async function stripeRequest(path: string, body?: Record<string, string | number
   return data as any;
 }
 
-function paymentsClosed(reply: any) {
-  return reply.code(503).send(problem(503, "payments_disabled", "Card payments are turned off. The house confirms the deposit. Food is not billed."));
+function liveChargesEnabled(): boolean {
+  return ["1", "true", "yes", "on"].includes((process.env.PAYMENTS_LIVE ?? "").trim().toLowerCase());
+}
+
+function chargeGate(reply: any) {
+  const gate = stripeChargeAllowed({ paymentsEnabled: paymentsEnabled(), secretKey: STRIPE_KEY, liveEnabled: liveChargesEnabled() });
+  if (!gate.ok) return reply.code(gate.status).send(problem(gate.status, gate.code, gate.detail));
+  return null;
 }
 
 function refuseCard(req: any, reply: any) {
@@ -55,14 +62,16 @@ export default async function stripe(f: FastifyInstance) {
   // Create a Stripe Checkout session for a deposit on a booking group
   f.post<{ Params: { id: string } }>("/v1/groups/:id/stripe/checkout", async (req: any, reply) => {
     const a = await requireActor(req, reply); if (!a || !allow(a, "group.update", reply)) return;
-    if (!paymentsEnabled()) return paymentsClosed(reply);
+    if (chargeGate(reply)) return;
     if (refuseCard(req, reply)) return;
-    if (!STRIPE_KEY) return reply.code(503).send(problem(503, "stripe_not_configured", "Set STRIPE_SECRET_KEY to enable online payments"));
 
     const g = (await pool.query(
-      `SELECT g.id, g.name, g.contact_email, g.contact_name, g.organisation,
+      `SELECT g.id, g.name, g.contact_email, g.organisation,
+              coalesce(nullif(trim(p.given_name || ' ' || coalesce(p.family_name, '')), ''), g.organisation) AS contact_name,
               f.id AS folio_id, f.balance_due, f.total_agreed
-       FROM booking_group g LEFT JOIN folio f ON f.group_id = g.id
+       FROM booking_group g
+       LEFT JOIN person p ON p.id = g.organiser_person_id
+       LEFT JOIN folio f ON f.group_id = g.id
        WHERE g.id=$1 AND g.property_id=$2`, [req.params.id, a.propertyId]
     )).rows[0];
 
@@ -96,33 +105,36 @@ export default async function stripe(f: FastifyInstance) {
 
   // Create a Stripe Checkout session for a guest deposit on an enquiry
   f.post<{ Params: { id: string } }>("/v1/guest-enquiries/:id/stripe/checkout", async (req: any, reply) => {
-    if (!paymentsEnabled()) return paymentsClosed(reply);
+    if (chargeGate(reply)) return;
     if (refuseCard(req, reply)) return;
-    if (!STRIPE_KEY) return reply.code(503).send(problem(503, "stripe_not_configured", "Set STRIPE_SECRET_KEY to enable online payments"));
-    // Guest auth — no actor needed, uses guest JWT
-    const tok = (req.headers.authorization ?? "").replace("Bearer ", "");
+    const tok = (req.headers.authorization ?? "").replace(/^Bearer\s+/i, "").trim();
     if (!tok) return reply.code(401).send(problem(401, "unauthorized", "Sign in first"));
 
     const enquiry = (await pool.query(
-      `SELECT ge.id, ge.people, ge.arrival::text, ge.departure::text, ge.programme_name,
-              ge.deposit_amount, ga.email, ga.display_name, p.name AS prop_name, p.id AS property_id
+      `SELECT ge.id, ge.people, ge.arrival_date::text AS arrival, ge.departure_date::text AS departure,
+              ge.deposit_amount, ge.name AS guest_name, bg.name AS programme_name,
+              ga.email, ga.display_name, p.name AS prop_name, p.id AS property_id, p.settings
        FROM guest_enquiry ge
        JOIN guest_session gs ON gs.guest_id = ge.guest_id AND gs.token = $2 AND gs.expires_at > now()
        JOIN guest_account ga ON ga.id = ge.guest_id
        JOIN property p ON p.id = ge.property_id
+       LEFT JOIN booking_group bg ON bg.id = ge.programme_id
        WHERE ge.id=$1`, [req.params.id, tok]
     )).rows[0];
 
     if (!enquiry) return reply.code(404).send(problem(404, "not_found", "Enquiry not found or not yours"));
 
-    const depositPence = Math.round(Number(enquiry.deposit_amount ?? 200) * 100);
+    const configured = parseDepositSettings(enquiry.settings?.deposit);
+    const depositPence = Math.round(Number(enquiry.deposit_amount ?? configured.amount_gbp) * 100);
+    if (depositPence < 50) return reply.code(422).send(problem(422, "validation", "The deposit is below the card minimum. The house can confirm it instead."));
+    const line = depositLine({ amountGbp: depositPence / 100, guest: enquiry.programme_name ?? enquiry.guest_name ?? "My Stay", house: enquiry.prop_name ?? "The Vedanta Way" });
 
     const session = await stripeRequest("/checkout/sessions", {
       "payment_method_types[0]": "card",
       "line_items[0][price_data][currency]": "gbp",
       "line_items[0][price_data][unit_amount]": depositPence,
-      "line_items[0][price_data][product_data][name]": `Deposit — ${enquiry.programme_name ?? "My Stay"} at ${enquiry.prop_name}`,
-      "line_items[0][price_data][product_data][description]": `${enquiry.arrival} → ${enquiry.departure} · ${enquiry.people} guest${enquiry.people > 1 ? "s" : ""}`,
+      "line_items[0][price_data][product_data][name]": line.name,
+      "line_items[0][price_data][product_data][description]": `${line.description} ${enquiry.arrival} → ${enquiry.departure} · ${enquiry.people} guest${enquiry.people > 1 ? "s" : ""}`,
       "line_items[0][quantity]": 1,
       mode: "payment",
       customer_email: enquiry.email,
@@ -132,9 +144,25 @@ export default async function stripe(f: FastifyInstance) {
       "metadata[property_id]": enquiry.property_id,
     });
 
-    await pool.query(`UPDATE guest_enquiry SET stripe_session_id=$2 WHERE id=$1`, [req.params.id, session.id]);
+    await pool.query(`UPDATE guest_enquiry SET stripe_session_id=$2, deposit_amount=$3 WHERE id=$1`, [req.params.id, session.id, depositPence / 100]);
 
     return { url: session.url, session_id: session.id };
+  });
+
+  f.get("/v1/settings/deposit", async (req, reply) => {
+    const a = await requireActor(req, reply); if (!a || !allow(a, "package.manage", reply)) return;
+    const row = (await pool.query(`select settings from property where id=$1`, [a.propertyId])).rows[0];
+    return { ...parseDepositSettings(row?.settings?.deposit), food_billed: false };
+  });
+
+  f.put("/v1/settings/deposit", async (req: any, reply) => {
+    const a = await requireActor(req, reply); if (!a || !allow(a, "package.manage", reply)) return;
+    const deposit = parseDepositSettings(req.body);
+    await pool.query(
+      `update property set settings = jsonb_set(coalesce(settings, '{}'::jsonb), '{deposit}', $2::jsonb, true) where id=$1`,
+      [a.propertyId, JSON.stringify(deposit)],
+    );
+    return { ...deposit, food_billed: false };
   });
 
   // Stripe webhook — mark payments as received when checkout.session.completed fires
@@ -192,7 +220,7 @@ export default async function stripe(f: FastifyInstance) {
       enabled: paymentsEnabled(),
       configured: paymentsEnabled() && !!STRIPE_KEY,
       webhook_configured: !!WEBHOOK_SECRET,
-      mode: !paymentsEnabled() ? "disabled" : STRIPE_KEY.startsWith("sk_live") ? "live" : STRIPE_KEY ? "test" : "not_configured",
+      mode: !paymentsEnabled() ? "disabled" : STRIPE_KEY.startsWith("sk_live") ? (liveChargesEnabled() ? "live" : "live_blocked") : STRIPE_KEY.startsWith("sk_test") ? "test" : "not_configured",
     };
   });
 }
