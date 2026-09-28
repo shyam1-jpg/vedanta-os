@@ -15,6 +15,7 @@ export default function Shell({ children }: { children: React.ReactNode }) {
 }
 
 function HouseShell({ children }: { children: ReactNode }) {
+  const p = usePathname();
   const { user, ready } = useStore();
   const router = useRouter();
   const [hasToken, setHasToken] = useState<boolean | null>(null);
@@ -23,13 +24,13 @@ function HouseShell({ children }: { children: ReactNode }) {
 
   useEffect(() => {
     if (hasToken === false) {
-      router.replace("/sign-in/");
+      router.replace("/sign-in/?next=" + encodeURIComponent(p || "/house/"));
       return;
     }
     if (hasToken && ready && !user) {
       router.replace("/sign-in/?error=" + encodeURIComponent("Your session ended. Sign in again."));
     }
-  }, [hasToken, ready, user, router]);
+  }, [hasToken, ready, user, router, p]);
 
   if (hasToken === false || (ready && !user) || !user) return null;
   return <div className="shell"><Nav /><main className="main">{children}</main><PwaRegister /></div>;
