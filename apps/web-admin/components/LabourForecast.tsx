@@ -1,6 +1,7 @@
 "use client";
 import { useEffect, useState } from "react";
 import { api } from "@/lib/api";
+import { addDays } from "@/lib/format";
 
 type RotaRow = { shift_date: string; department: string; shifts: number; scheduled_hours: number };
 type OccRow = { arrival_date: string; departure_date: string; guests: number };
@@ -16,24 +17,28 @@ export default function LabourForecast() {
   const [occupancy, setOccupancy] = useState<OccRow[]>([]);
   const [expiring, setExpiring] = useState<Expiring[]>([]);
   const [weekOffset, setWeekOffset] = useState(0);
-
-  const monday = new Date();
-  monday.setDate(monday.getDate() - monday.getDay() + 1 + weekOffset * 7);
-  const from = monday.toISOString().slice(0, 10);
-  const to = new Date(monday.getTime() + 6 * 86400000).toISOString().slice(0, 10);
+  const [anchorMonday, setAnchorMonday] = useState<string | null>(null);
 
   useEffect(() => {
+    const now = new Date();
+    now.setHours(12, 0, 0, 0);
+    const dow = now.getDay();
+    now.setDate(now.getDate() + (dow === 0 ? -6 : 1 - dow));
+    const iso = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}-${String(now.getDate()).padStart(2, "0")}`;
+    setAnchorMonday(iso);
+  }, []);
+
+  const from = anchorMonday ? addDays(anchorMonday, weekOffset * 7) : "";
+  const to = from ? addDays(from, 6) : "";
+
+  useEffect(() => {
+    if (!from || !to) return;
     api<{ rota: RotaRow[]; occupancy: OccRow[] }>(`/v1/labour/forecast?from=${from}&to=${to}`)
       .then(r => { setRota(r.rota); setOccupancy(r.occupancy); }).catch(() => {});
     api<{ items: Expiring[] }>("/v1/training/expiring").then(r => setExpiring(r.items)).catch(() => {});
   }, [from, to]);
 
-  // Build 7-day grid
-  const days: string[] = [];
-  for (let i = 0; i < 7; i++) {
-    const d = new Date(monday.getTime() + i * 86400000);
-    days.push(d.toISOString().slice(0, 10));
-  }
+  const days: string[] = from ? Array.from({ length: 7 }, (_, i) => addDays(from, i)) : [];
 
   const depts = [...new Set(rota.map(r => r.department))].sort();
 
@@ -48,7 +53,7 @@ export default function LabourForecast() {
   const guestsMap: Record<string, number> = {};
   for (const d of days) {
     let g = 0;
-    for (const o of occupancy) { if (o.arrival_date <= d && o.departure_date > d) g += Number(o.guests ?? 0); }
+    for (const o of occupancy) { if (o.arrival_date <= d && o.departure_date >= d) g += Number(o.guests ?? 0); }
     guestsMap[d] = g;
   }
 
@@ -60,7 +65,7 @@ export default function LabourForecast() {
         <div><div className="kicker">HR</div><h1 style={{ margin: 0 }}>Labour forecast</h1></div>
         <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
           <button className="btn" onClick={() => setWeekOffset(w => w - 1)}>‹ Prev</button>
-          <span style={{ padding: "0 12px", fontWeight: 600, fontSize: 14 }}>{fmtDay(from)} – {fmtDay(to)}</span>
+          <span style={{ padding: "0 12px", fontWeight: 600, fontSize: 14 }}>{from && to ? `${fmtDay(from)} – ${fmtDay(to)}` : "This week"}</span>
           <button className="btn" onClick={() => setWeekOffset(w => w + 1)}>Next ›</button>
           <button className="btn" onClick={() => setWeekOffset(0)} style={{ color: "var(--ink-2)", fontSize: 12 }}>This week</button>
         </div>

@@ -15,9 +15,9 @@ export default async function hr(f: FastifyInstance) {
     const { from, to, department, user_id } = req.query ?? {};
     const r = await pool.query(`
       SELECT rs.id, rs.shift_date::text, rs.start_time::text, rs.end_time::text,
-             rs.department, rs.status, rs.notes, rs.break_minutes,
-             u.display_name, u.email
-      FROM rota_shift rs JOIN app_user u ON u.id = rs.user_id
+             rs.department, rs.status, rs.notes, rs.break_minutes, rs.gap, rs.gap_reason,
+             coalesce(u.display_name, 'GAP') AS display_name, u.email
+      FROM rota_shift rs LEFT JOIN app_user u ON u.id = rs.user_id
       WHERE rs.property_id = $1
         AND ($2::date IS NULL OR rs.shift_date >= $2::date)
         AND ($3::date IS NULL OR rs.shift_date <= $3::date)
@@ -128,7 +128,11 @@ export default async function hr(f: FastifyInstance) {
 
   f.get("/v1/training", async (req: any, reply) => {
     const a = await requireActor(req, reply); if (!a) return;
-    const userId = req.query?.user_id ?? a.userId;
+    const requested = req.query?.user_id as string | undefined;
+    if (requested && requested !== a.userId && !a.perms.has("clock.manage")) {
+      return reply.code(403).send(problem(403, "forbidden", "You can only open your own training record"));
+    }
+    const userId = requested && a.perms.has("clock.manage") ? requested : a.userId;
     const r = await pool.query(`
       SELECT id, title, kind, completed_at::text, expires_at::text, certificate_ref, notes,
              CASE WHEN expires_at < current_date THEN 'expired'

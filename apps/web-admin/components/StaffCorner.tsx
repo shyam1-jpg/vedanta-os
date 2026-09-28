@@ -156,7 +156,7 @@ export default function StaffCorner() {
       {tab === "sop" && showSop && (
         <div className="panel">
           <h3>Send an SOP to the pocket</h3>
-          <p className="m" style={{ color: "var(--ink-2)" }}>Send a one-off note, or open Manual to edit the living book and send a chapter. They mark it received on the Pocket.</p>
+          <p className="m" style={{ color: "var(--ink-2)" }}>Send a one-off note, or open <a href="/sops/">SOPs</a> to list, edit and assign the library. They mark it received on the Pocket.</p>
           <input placeholder="Title" value={sop.title} onChange={e => setSop({ ...sop, title: e.target.value })} />
           <textarea rows={8} placeholder="Step-by-step procedure" value={sop.body} onChange={e => setSop({ ...sop, body: e.target.value })} style={{ width: "100%", marginTop: 8 }} />
           <div className="chips" style={{ margin: "10px 0" }}>{people.map(p => <button key={p.id} className={"chipbtn" + (sop.user_ids.includes(p.id) ? " on" : "")} onClick={() => setSop(s => ({ ...s, user_ids: s.user_ids.includes(p.id) ? s.user_ids.filter(i => i !== p.id) : [...s.user_ids, p.id] }))}>{p.name}</button>)}</div>

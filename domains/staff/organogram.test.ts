@@ -1,6 +1,6 @@
 import { describe, it } from "node:test";
 import assert from "node:assert/strict";
-import { buildOrganogram, HOD_ROLES, HOUSE_DEPARTMENTS, HOUSE_POSITIONS, ROLE_NAMES } from "./organogram.ts";
+import { buildOrganogram, HOD_ROLES, HOUSE_DEPARTMENTS, HOUSE_POSITIONS, HOUSE_SECTIONS, KITCHEN_ROLES, ROLE_NAMES } from "./organogram.ts";
 import { leaveNeedsHodFirst } from "./leave-state.ts";
 
 const house = [
@@ -74,6 +74,14 @@ describe("holiday signatures follow the organogram", () => {
       assert.equal(leaveNeedsHodFirst(role), false, role);
       assert.ok(HOD_ROLES.has(role) || role === "GENERAL_MANAGER", role);
     }
+  });
+
+  it("keeps Gyms as a sub-section of Restaurant", () => {
+    const gyms = HOUSE_SECTIONS.find(s => s.code === "GYMS");
+    assert.ok(gyms);
+    assert.equal(gyms.department, "RESTAURANT");
+    assert.equal(HOUSE_DEPARTMENTS.some(d => d.code === "GYMS" || d.name.toLowerCase() === "gyms"), false);
+    for (const code of KITCHEN_ROLES) assert.ok(HOUSE_POSITIONS.some(p => p.code === code), code);
   });
 
   it("labels waiter / waitress and chef de partie in words people use in the house", () => {

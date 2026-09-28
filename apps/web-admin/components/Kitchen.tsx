@@ -27,6 +27,7 @@ export default function Kitchen() {
   const [err, setErr] = useState<string | null>(null);
   const [flags, setFlags] = useState<Flag[]>([]);
   const [orders, setOrders] = useState<FohOrder[]>([]);
+  const [hour, setHour] = useState<number | null>(null);
   const end = addDays(start, 6);
 
   useEffect(() => {
@@ -34,6 +35,8 @@ export default function Kitchen() {
     api<{ items: Flag[] }>(`/v1/guests/in-house?from=${start}&to=${end}`).then(r => setFlags(r.items)).catch(() => setFlags([]));
     api<{ orders: FohOrder[] }>("/v1/service/front-desk").then(r => setOrders(r.orders.filter(o => o.status !== "done"))).catch(() => setOrders([]));
   }, [start, end]);
+
+  useEffect(() => { setHour(new Date().getHours()); }, []);
 
   const byDate = new Map(days.map(d => [d.date, d]));
   const week = Array.from({ length: 7 }, (_, i) => addDays(start, i));
@@ -45,12 +48,12 @@ export default function Kitchen() {
   const todayOrders = orders.filter(o => o.for_date === TODAY || !o.for_date);
   const todayPeak = Math.max(today?.breakfast ?? 0, today?.lunch ?? 0, today?.dinner ?? 0);
 
-  const nextMeal = useMemo<[string, number]>(() => {
-    const hour = new Date().getHours();
+  const nextMeal = useMemo<[string, number] | null>(() => {
+    if (hour == null) return null;
     if (hour < 10) return ["Breakfast", today?.breakfast ?? 0];
     if (hour < 15) return ["Lunch", today?.lunch ?? 0];
     return ["Dinner", today?.dinner ?? 0];
-  }, [today]);
+  }, [hour, today]);
 
   const card: CSSProperties = { background: "var(--paper, #fff)", border: "1px solid var(--line, #e6e0d5)", borderRadius: 16, padding: 16, minHeight: 110 };
   const metric: CSSProperties = { fontSize: 30, fontWeight: 700, lineHeight: 1.05, marginTop: 8 };
@@ -69,7 +72,7 @@ export default function Kitchen() {
       {err && <div className="note">Live kitchen data could not be loaded: {err}</div>}
 
       <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit,minmax(180px,1fr))", gap: 12, marginBottom: 18 }}>
-        <div style={card}><div className="m">{nextMeal[0]} covers</div><div style={metric}>{nextMeal[1]}</div><div className="m">Next service · capacity {max}</div></div>
+        <div style={card}><div className="m">{nextMeal ? `${nextMeal[0]} covers` : "Service covers"}</div><div style={metric}>{nextMeal ? nextMeal[1] : "—"}</div><div className="m">Next service · capacity {max}</div></div>
         <div style={card}><div className="m">Today peak</div><div style={metric}>{todayPeak}</div><div className="m">Highest single sitting</div></div>
         <div style={{ ...card, borderColor: highRisk.length ? "#b44" : "var(--line, #e6e0d5)" }}><div className="m">Allergy alerts</div><div style={metric}>{highRisk.length}</div><div className="m">Allergy / anaphylaxis flags today</div></div>
         <div style={card}><div className="m">FOH requests</div><div style={metric}>{todayOrders.length}</div><div className="m">Open requests requiring kitchen action</div></div>

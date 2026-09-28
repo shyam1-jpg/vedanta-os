@@ -1,0 +1,93 @@
+{
+  "note": "Copy this file to db/import/staff-teams.local.json (gitignored). Replace every email with the person's Microsoft 365 address before importing. Do not commit the local file. Names here are placeholders.",
+  "people": [
+    {
+      "email": "head.chef.example@example.invalid",
+      "name": "Head Chef Example",
+      "role": "HEAD_CHEF",
+      "department": "KITCHEN",
+      "section": null,
+      "templates": ["never_kp", "opens_0700"]
+    },
+    {
+      "email": "sous.example@example.invalid",
+      "name": "Sous Chef Example",
+      "role": "SOUS_CHEF",
+      "department": "KITCHEN",
+      "section": null,
+      "templates": ["never_kp", "opens_0700"]
+    },
+    {
+      "email": "cdp.one.example@example.invalid",
+      "name": "Chef de Partie Example One",
+      "role": "CHEF_DE_PARTIE",
+      "department": "KITCHEN",
+      "section": null,
+      "templates": ["never_kp"]
+    },
+    {
+      "email": "cdp.two.example@example.invalid",
+      "name": "Chef de Partie Example Two",
+      "role": "CHEF_DE_PARTIE",
+      "department": "KITCHEN",
+      "section": null,
+      "templates": ["never_kp", "cdp_mon_tue_from_1800"]
+    },
+    {
+      "email": "kp.early.example@example.invalid",
+      "name": "Kitchen Porter Example Early",
+      "role": "KITCHEN_PORTER",
+      "department": "KITCHEN",
+      "section": null,
+      "templates": ["kp_earliest_1000"]
+    },
+    {
+      "email": "kp.lates.example@example.invalid",
+      "name": "Kitchen Porter Example Lates",
+      "role": "KITCHEN_PORTER",
+      "department": "KITCHEN",
+      "section": null,
+      "templates": ["kp_lates_only"]
+    },
+    {
+      "email": "kp.student.example@example.invalid",
+      "name": "Kitchen Porter Example Student",
+      "role": "KITCHEN_PORTER",
+      "department": "KITCHEN",
+      "section": null,
+      "templates": ["student_kp_80h_month"]
+    },
+    {
+      "email": "ka.example@example.invalid",
+      "name": "Kitchen Assistant Example",
+      "role": "KITCHEN_ASSISTANT",
+      "department": "KITCHEN",
+      "section": null,
+      "templates": ["never_kp"]
+    },
+    {
+      "email": "estate.lead.example@example.invalid",
+      "name": "Estate Manager Example",
+      "role": "ESTATE_MANAGER",
+      "department": "GROUNDS",
+      "section": null,
+      "templates": []
+    },
+    {
+      "email": "grounds.one.example@example.invalid",
+      "name": "Grounds Example One",
+      "role": "GROUNDS",
+      "department": "GROUNDS",
+      "section": null,
+      "templates": []
+    },
+    {
+      "email": "restaurant.one.example@example.invalid",
+      "name": "Restaurant Example One",
+      "role": "RESTAURANT_STAFF",
+      "department": "RESTAURANT",
+      "section": "GYMS",
+      "templates": []
+    }
+  ]
+}

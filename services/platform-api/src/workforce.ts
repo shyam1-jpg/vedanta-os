@@ -15,6 +15,7 @@ import { splitTips, type TipMethod } from "../../../domains/staff/tips.ts";
 import { payrollRow, shiftsFromPunches, weekStartMonday, addDaysIso } from "../../../domains/staff/payroll.ts";
 import { parseDutySlot } from "../../../domains/ops/night.ts";
 import { openText, sealText } from "./fieldCrypto.ts";
+import { uniqueSlug } from "../../../domains/ops/sop.ts";
 
 function openHr(row: any) {
   return {
@@ -221,7 +222,10 @@ export default async function workforce(f: FastifyInstance) {
   f.post("/v1/workforce/sop", async (req: any, reply) => {
     const a = await house(req, reply, "sop.manage"); if (!a) return;
     if (!req.body?.title || !req.body?.body) return reply.code(422).send(problem(422, "validation", "title and body are required"));
-    const s = (await pool.query(`insert into staff_sop (tenant_id,property_id,title,body,created_by) values ($1,$2,$3,$4,$5) returning id`, [a.tenantId, a.propertyId, req.body.title, req.body.body, a.userId])).rows[0];
+    const taken = (await pool.query(`select slug from staff_sop where property_id=$1 and slug is not null`, [a.propertyId])).rows.map((row: { slug: string }) => row.slug);
+    const slug = uniqueSlug(String(req.body.title), taken);
+    const department = req.body.department ? String(req.body.department) : null;
+    const s = (await pool.query(`insert into staff_sop (tenant_id,property_id,title,body,department,slug,created_by) values ($1,$2,$3,$4,$5,$6,$7) returning id`, [a.tenantId, a.propertyId, req.body.title, req.body.body, department, slug, a.userId])).rows[0];
     const ids: string[] = req.body.user_ids ?? [];
     for (const id of ids) await pool.query(`insert into staff_sop_assignment (sop_id, user_id) values ($1,$2) on conflict do nothing`, [s.id, id]);
     return { id: s.id, sent: ids.length };

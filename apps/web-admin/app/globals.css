@@ -349,3 +349,29 @@ td.mark-dep { box-shadow: inset 3px 0 0 var(--marigold); }
   .manual-layout { grid-template-columns: 1fr; }
   .look-act { grid-template-columns: 1fr; }
 }
+
+.rota-guests { display: grid; grid-template-columns: repeat(7, 1fr); gap: 8px; margin-top: 12px; }
+.rota-guests label { font-size: 12px; color: var(--ink-2); }
+.rota-guests input, .rota-guests select { display: block; width: 100%; margin-top: 4px; padding: 7px 8px; border: 1px solid var(--line); border-radius: 6px; font: inherit; background: white; }
+.rota-grid { display: block; overflow-x: auto; }
+.rota-head { font-size: 12px; font-weight: 600; padding: 8px; background: var(--forest); color: var(--ivory); }
+.rota-head small { display: block; font-weight: 400; color: #D5D0C6; }
+.rota-row { display: grid; grid-template-columns: 140px repeat(7, minmax(120px, 1fr)); min-width: 980px; }
+.rota-dept { padding: 8px; background: var(--paper); border-bottom: 1px solid var(--line); font-weight: 600; }
+.rota-dept em, .rota-shift em { display: block; font-style: normal; font-size: 11px; color: var(--brick); font-weight: 500; }
+.rota-cell { padding: 6px; border-bottom: 1px solid var(--line); border-left: 1px solid var(--line); background: var(--paper); display: grid; gap: 6px; align-content: start; }
+.rota-shift { background: var(--lake-soft); border-radius: 4px; padding: 6px 8px; display: grid; gap: 2px; font-size: 12.5px; }
+.rota-shift.gap { background: var(--brick-soft); }
+.rota-shift select, .rota-person input { font: inherit; padding: 3px 4px; border: 1px solid var(--line); border-radius: 4px; background: var(--paper); }
+.rota-person { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; padding: 8px 0; border-bottom: 1px solid var(--line); }
+.rota-person label { font-size: 12px; color: var(--ink-2); display: flex; gap: 4px; align-items: center; }
+@media (min-width: 1100px) {
+  .rota-grid { display: block; }
+  .rota-row { grid-template-columns: 150px repeat(7, 1fr); }
+}
+@media print {
+  .nav, .no-print, .toast, .pwa { display: none !important; }
+  .shell { display: block; }
+  .main { padding: 0; }
+  .rota-shift { break-inside: avoid; }
+}

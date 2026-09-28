@@ -29,15 +29,19 @@ import programmeRoutes from "./programme.ts";
 import autoCommsRoutes from "./autocomms.ts";
 import aiDutyManagerRoutes from "./ai-duty-manager.ts";
 import hrRoutes from "./hr.ts";
+import rotaRoutes from "./rota.ts";
+import sopRoutes from "./sops.ts";
 import purchasingRoutes from "./purchasing.ts";
 import financeRoutes from "./finance.ts";
 import emergencyRoutes from "./emergency.ts";
 import stripeRoutes from "./stripe.ts";
 import { assertFieldEncryptionReady } from "./fieldCrypto.ts";
+import { installJsonBody } from "./jsonBody.ts";
 
 assertFieldEncryptionReady();
 
 const app = Fastify({ logger: process.env.NODE_ENV !== "test" });
+installJsonBody(app);
 const isProd = process.env.NODE_ENV === "production";
 
 function truthy(v: string | undefined): boolean {
@@ -68,7 +72,7 @@ app.addHook("onRequest", async (req, reply) => {
     reply.header("vary", "Origin");
   }
   reply.header("access-control-allow-headers", "authorization, content-type, if-match");
-  reply.header("access-control-allow-methods", "GET,POST,PATCH,DELETE,OPTIONS");
+  reply.header("access-control-allow-methods", "GET,POST,PUT,PATCH,DELETE,OPTIONS");
   reply.header("access-control-expose-headers", "etag");
   reply.header("x-content-type-options", "nosniff");
   reply.header("x-frame-options", "DENY");
@@ -134,7 +138,7 @@ app.setErrorHandler((err: any, req, reply) => {
 });
 
 app.get("/health", async () => { await pool.query("select 1"); return { ok: true }; });
-await app.register(authRoutes); await app.register(microsoft); await app.register(groups, { prefix: "/v1" }); await app.register(occupancy, { prefix: "/v1" }); await app.register(users, { prefix: "/v1" }); await app.register(guests, { prefix: "/v1" }); await app.register(housekeeping, { prefix: "/v1" }); await app.register(reports, { prefix: "/v1" }); await app.register(packages, { prefix: "/v1" }); await app.register(forms); await app.register(integrations); await app.register(email); await app.register(maintenance, { prefix: "/v1" }); await app.register(autoplace, { prefix: "/v1" }); await app.register(estate, { prefix: "/v1" }); await app.register(workforce); await app.register(guestPortal); await app.register(ops); await app.register(service); await app.register(manuals); await app.register(tasks); await app.register(quality, { prefix: "/v1" }); await app.register(sessions); await app.register(folioRoutes); await app.register(programmeRoutes); await app.register(autoCommsRoutes); await app.register(aiDutyManagerRoutes); await app.register(hrRoutes); await app.register(purchasingRoutes); await app.register(financeRoutes); await app.register(emergencyRoutes); await app.register(stripeRoutes);
+await app.register(authRoutes); await app.register(microsoft); await app.register(groups, { prefix: "/v1" }); await app.register(occupancy, { prefix: "/v1" }); await app.register(users, { prefix: "/v1" }); await app.register(guests, { prefix: "/v1" }); await app.register(housekeeping, { prefix: "/v1" }); await app.register(reports, { prefix: "/v1" }); await app.register(packages, { prefix: "/v1" }); await app.register(forms); await app.register(integrations); await app.register(email); await app.register(maintenance, { prefix: "/v1" }); await app.register(autoplace, { prefix: "/v1" }); await app.register(estate, { prefix: "/v1" }); await app.register(workforce); await app.register(guestPortal); await app.register(ops); await app.register(service); await app.register(manuals); await app.register(tasks); await app.register(quality, { prefix: "/v1" }); await app.register(sessions); await app.register(folioRoutes); await app.register(programmeRoutes); await app.register(autoCommsRoutes); await app.register(aiDutyManagerRoutes); await app.register(hrRoutes); await app.register(rotaRoutes); await app.register(sopRoutes); await app.register(purchasingRoutes); await app.register(financeRoutes); await app.register(emergencyRoutes); await app.register(stripeRoutes);
 app.listen({ port: Number(process.env.PORT ?? 4000), host: "0.0.0.0" }).then(async () => {
   // Process due auto-communications every 15 minutes
   try {
