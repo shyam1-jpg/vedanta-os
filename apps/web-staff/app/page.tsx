@@ -1,19 +1,7 @@
 "use client";
 import { useEffect, useState } from "react";
-
-const API = process.env.NEXT_PUBLIC_API_URL ?? "";
-const tok = {
-  get: () => (typeof window === "undefined" ? null : sessionStorage.getItem("vedanta.staff.token")),
-  set: (t: string | null) => { if (t) sessionStorage.setItem("vedanta.staff.token", t); else sessionStorage.removeItem("vedanta.staff.token"); },
-};
-async function api<T>(path: string, init: RequestInit = {}): Promise<T> {
-  const headers: Record<string, string> = { "content-type": "application/json", ...(init.headers as Record<string, string> ?? {}) };
-  const t = tok.get(); if (t) headers.authorization = `Bearer ${t}`;
-  const res = await fetch(API + path, { ...init, headers });
-  const body = res.status === 204 ? null : await res.json().catch(() => null);
-  if (!res.ok) throw new Error(body?.detail ?? res.statusText);
-  return body as T;
-}
+import { API, api, shrinkPhoto, tok } from "@/lib/client";
+import CompliancePocket from "@/components/CompliancePocket";
 
 type Me = { name: string; email: string; role: string; role_name?: string; permissions?: string[]; property_name?: string | null; property_kicker?: string | null };
 type Prop = { name: string; kicker: string };
@@ -32,36 +20,6 @@ type FaultItem = {
   asset_name: string | null; equipment_label: string | null; food_safety: boolean; has_photo: boolean;
   reported_by: string | null; created_at: string;
 };
-
-async function shrinkPhoto(file: File): Promise<string> {
-  const url = URL.createObjectURL(file);
-  try {
-    const img = await new Promise<HTMLImageElement>((resolve, reject) => {
-      const el = new Image();
-      el.onload = () => resolve(el);
-      el.onerror = () => reject(new Error("Attach a photo as an image"));
-      el.src = url;
-    });
-    const max = 1280;
-    const scale = Math.min(1, max / Math.max(img.width, img.height));
-    const canvas = document.createElement("canvas");
-    canvas.width = Math.max(1, Math.round(img.width * scale));
-    canvas.height = Math.max(1, Math.round(img.height * scale));
-    const ctx = canvas.getContext("2d");
-    if (!ctx) throw new Error("Could not read the photo");
-    ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
-    let quality = 0.72;
-    let data = canvas.toDataURL("image/jpeg", quality);
-    while (data.length > 680_000 && quality > 0.35) {
-      quality -= 0.08;
-      data = canvas.toDataURL("image/jpeg", quality);
-    }
-    if (!data.startsWith("data:image/") || data.length > 700_000) throw new Error("That photo is too large — use a smaller one");
-    return data;
-  } finally {
-    URL.revokeObjectURL(url);
-  }
-}
 
 function FaultPocket({ me, canWork, onError }: { me: Me; canWork: boolean; onError: (msg: string | null) => void }) {
   const [cat, setCat] = useState<FaultCat | null>(null);
@@ -257,7 +215,7 @@ export default function Pocket() {
   const [secret, setSecret] = useState("");
   const [providers, setProviders] = useState<{ microsoft: boolean; dev: boolean } | null>(null);
   const [err, setErr] = useState<string | null>(null);
-  const [tab, setTab] = useState<"clock" | "leave" | "duty" | "sop" | "log" | "desk" | "night" | "manual" | "tasks" | "fault" | "stock" | "words">("clock");
+  const [tab, setTab] = useState<"clock" | "leave" | "duty" | "sop" | "log" | "desk" | "night" | "manual" | "tasks" | "fault" | "stock" | "words" | "compliance">("clock");
   const [words, setWords] = useState<{ first_name: string; comment: string | null; created_at: string }[]>([]);
   const [desk, setDesk] = useState<{
     today: { weekday: string; title: string; method: string; ingredients: { name: string; qty: string }[] };
@@ -389,6 +347,7 @@ export default function Pocket() {
           <button className={tab === "fault" ? "on" : ""} onClick={() => setTab("fault")}>Fault</button>
           {(me.permissions ?? []).includes("kitchen.stock") && <button className={tab === "stock" ? "on" : ""} onClick={() => setTab("stock")}>Stock</button>}
           <button className={tab === "words" ? "on" : ""} onClick={async () => { setTab("words"); try { setWords((await api<{ items: typeof words }>("/v1/feedback/kind-words")).items); } catch (e) { setErr((e as Error).message); } }}>Kind words</button>
+          {(me.permissions ?? []).includes("compliance.calendar") && <button className={tab === "compliance" ? "on" : ""} onClick={() => setTab("compliance")}>Compliance</button>}
           <button className={tab === "desk" ? "on" : ""} onClick={() => setTab("desk")}>Front desk</button>
           <button className={tab === "night" ? "on" : ""} onClick={() => setTab("night")}>Night</button>
           <button className={tab === "manual" ? "on" : ""} onClick={() => setTab("manual")}>Manual</button>
@@ -544,6 +503,7 @@ export default function Pocket() {
         )}
         {tab === "fault" && <FaultPocket me={me} canWork={(me.permissions ?? []).includes("maintenance.work")} onError={setErr} />}
         {tab === "stock" && (me.permissions ?? []).includes("kitchen.stock") && <StockPocket onError={setErr} />}
+        {tab === "compliance" && (me.permissions ?? []).includes("compliance.calendar") && <CompliancePocket onError={setErr} />}
         {tab === "words" && (
           <div className="card">
             <h2>Kind words</h2>

@@ -22,6 +22,7 @@ export default function Settings() {
   const [stockMail, setStockMail] = useState<{ kitchen: string; buyer: string } | null>(null);
   const [stockCopy, setStockCopy] = useState<Record<string, string>>({});
   const [stay, setStay] = useState<{ delay_label: string; delay_hours: number | null; retention_days: number; open_maintenance: boolean; emails: { kitchen: string; front: string; housekeeping: string; manager: string } } | null>(null);
+  const [comply, setComply] = useState<{ leads: number[]; manager: string } | null>(null);
   const [stayCopy, setStayCopy] = useState<Record<string, string>>({});
   useEffect(() => {
     api<{ rules: { kitchen: RouteBox; restaurant: RouteBox; front: RouteBox }; receives: Record<string, string> }>("/v1/settings/booking-routing")
@@ -34,6 +35,7 @@ export default function Settings() {
       .then(r => { setStockMail(r.emails); setStockCopy(r.receives); }).catch(() => {});
     api<{ delay_label: string; delay_hours: number | null; retention_days: number; open_maintenance: boolean; emails: { kitchen: string; front: string; housekeeping: string; manager: string }; receives: Record<string, string> }>("/v1/settings/feedback")
       .then(r => { setStay(r); setStayCopy(r.receives); }).catch(() => {});
+    api<{ leads: number[]; manager: string }>("/v1/settings/compliance").then(setComply).catch(() => {});
   }, []);
   const load = () => { api<{ items: Pkg[] }>("/v1/packages").then(r => setPkgs(r.items)); if (can("config.manage")) api<{ items: Key[] }>("/v1/integrations/keys").then(r => setKeys(r.items)).catch(() => {}); };
   useEffect(load, []); // eslint-disable-line react-hooks/exhaustive-deps
@@ -168,6 +170,22 @@ export default function Settings() {
             const saved = await api<NonNullable<typeof stay>>("/v1/settings/feedback", { method: "PUT", body: JSON.stringify({ delay: stay.delay_label, delay_hours: stay.delay_hours, retention_days: stay.retention_days, open_maintenance: stay.open_maintenance, emails: stay.emails }) });
             setStay({ ...stay, ...saved, delay_label: saved.delay_label ?? (typeof (saved as { delay?: unknown }).delay === "string" ? "morning_after" : "hours") });
           }, "Feedback settings saved")}>Save feedback settings</button>
+        </div>
+      )}
+      {comply && (
+        <div className="panel" style={{ marginTop: 14 }}>
+          <h3>Compliance reminders</h3>
+          <p className="m" style={{ color: "var(--ink-2)" }}>The responsible person and the general manager are told before each deadline, and once when an item is overdue. Leave the general manager blank to skip that copy. Do not commit a real address. If SMTP is not set, the note is logged.</p>
+          <label style={{ display: "block", marginTop: 8 }}>Days before, separated by commas
+            <input value={comply.leads.join(", ")} onChange={e => setComply({ ...comply, leads: e.target.value.split(",").map(n => Number(n.trim())).filter(n => Number.isFinite(n)) })} />
+          </label>
+          <label style={{ display: "block", marginTop: 8 }}>General manager
+            <input placeholder="team@example.invalid" value={comply.manager} onChange={e => setComply({ ...comply, manager: e.target.value })} />
+          </label>
+          <button className="btn primary" style={{ marginTop: 12 }} onClick={() => run(async () => {
+            const saved = await api<{ leads: number[]; manager: string }>("/v1/settings/compliance", { method: "PUT", body: JSON.stringify(comply) });
+            setComply(saved);
+          }, "Compliance reminders saved")}>Save compliance reminders</button>
         </div>
       )}
       {toast && <div className="toast">{toast}</div>}

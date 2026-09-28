@@ -133,6 +133,15 @@ export function cleanPhoto(raw: unknown): { ok: true; photo: string | null } | {
   return { ok: true, photo };
 }
 
+/** A photo or a PDF, same size limit as a fault photo. */
+export function cleanAttachment(raw: unknown): { ok: true; file: string | null } | { ok: false; error: string } {
+  if (raw == null || String(raw).trim() === "") return { ok: true, file: null };
+  const file = String(raw).trim();
+  if (!file.startsWith("data:image/") && !file.startsWith("data:application/pdf")) return { ok: false, error: "Attach a photo or a PDF" };
+  if (file.length > PHOTO_MAX) return { ok: false, error: "That file is too large — use a smaller one" };
+  return { ok: true, file };
+}
+
 export function validateFault(input: {
   title?: unknown;
   description?: unknown;
