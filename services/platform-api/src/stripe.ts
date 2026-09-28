@@ -99,7 +99,10 @@ export default async function stripe(f: FastifyInstance) {
 
     if (!enquiry) return reply.code(404).send(problem(404, "not_found", "Enquiry not found or not yours"));
 
-    const depositPence = Math.round(Number(enquiry.deposit_amount ?? 200) * 100);
+    // Never charge an assumed deposit: staff must first record an agreed amount.
+    const depositPence = Math.round(Number(enquiry.deposit_amount) * 100);
+    if (!Number.isFinite(depositPence) || depositPence < 50)
+      return reply.code(409).send(problem(409, "deposit_not_agreed", "The house must agree and record a deposit before payment"));
 
     const session = await stripeRequest("/checkout/sessions", {
       "payment_method_types[0]": "card",
