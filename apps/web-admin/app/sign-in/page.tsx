@@ -19,7 +19,21 @@ export default function SignIn() {
       setProviders({ microsoft: !!p.microsoft, dev: !!p.dev });
     }).catch(() => setErr("Cannot reach the house. Try again in a moment."));
   }, [signInWithToken]);
-  useEffect(() => { if (user) router.replace("/house/"); }, [user, router]);
+  useEffect(() => {
+    if (!user) return;
+    let stop = false;
+    const go = async () => {
+      if (!user.permissions?.includes("briefing.read")) { router.replace("/house/"); return; }
+      try {
+        const row = await api<{ home: string }>("/v1/me/home");
+        if (!stop) router.replace(row.home === "briefing" ? "/briefing/" : "/house/");
+      } catch {
+        if (!stop) router.replace("/house/");
+      }
+    };
+    void go();
+    return () => { stop = true; };
+  }, [user, router]);
   const loadDev = async () => {
     setBusy(true); setErr(null);
     try {

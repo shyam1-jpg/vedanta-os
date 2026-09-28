@@ -29,6 +29,7 @@ export default function Settings() {
   const [deposit, setDeposit] = useState<{ amount_gbp: number; policy: string } | null>(null);
   const [audit, setAudit] = useState<{ time: string; gm_email: string; auto_email: boolean } | null>(null);
   const [swaps, setSwaps] = useState<{ min_rest_hours: number; standard_week_hours: number; expire_hours_before: number } | null>(null);
+  const [brief, setBrief] = useState<{ severe: number; cold: number; vip: number; compliance: number; staffing: number; heads: Record<string, number> } | null>(null);
   const [stayCopy, setStayCopy] = useState<Record<string, string>>({});
   useEffect(() => {
     api<{ rules: { kitchen: RouteBox; restaurant: RouteBox; front: RouteBox }; receives: Record<string, string> }>("/v1/settings/booking-routing")
@@ -48,6 +49,7 @@ export default function Settings() {
     api<{ amount_gbp: number; policy: string }>("/v1/settings/deposit").then(setDeposit).catch(() => {});
     api<{ time: string; gm_email: string; auto_email: boolean }>("/v1/settings/night-audit").then(setAudit).catch(() => {});
     api<{ min_rest_hours: number; standard_week_hours: number; expire_hours_before: number }>("/v1/settings/shift-swap").then(setSwaps).catch(() => {});
+    api<{ severe: number; cold: number; vip: number; compliance: number; staffing: number; heads: Record<string, number> }>("/v1/settings/briefing").then(setBrief).catch(() => {});
   }, []);
   const load = () => { api<{ items: Pkg[] }>("/v1/packages").then(r => setPkgs(r.items)); if (can("config.manage")) api<{ items: Key[] }>("/v1/integrations/keys").then(r => setKeys(r.items)).catch(() => {}); };
   useEffect(load, []); // eslint-disable-line react-hooks/exhaustive-deps
@@ -275,6 +277,36 @@ export default function Settings() {
           <button className="btn primary" style={{ marginTop: 12 }} onClick={() => run(async () => {
             setSwaps(await api("/v1/settings/shift-swap", { method: "PUT", body: JSON.stringify(swaps) }));
           }, "Shift swap settings saved")}>Save shift swaps</button>
+        </div>
+      )}
+      {brief && (
+        <div className="panel" style={{ marginTop: 14 }}>
+          <h3>Morning briefing</h3>
+          <p className="m" style={{ color: "var(--ink-2)" }}>The top of the morning board is the three highest scores. A pin stays in that three for today. Points are the rule, and the board says which rule it used. Kitchen and front are the minimum people on the rota.</p>
+          <label style={{ display: "block", marginTop: 8 }}>Severe allergen
+            <input type="number" min={0} aria-label="Severe allergen points" value={brief.severe} onChange={e => setBrief({ ...brief, severe: Number(e.target.value) })} />
+          </label>
+          <label style={{ display: "block", marginTop: 8 }}>Fridge or freezer fault
+            <input type="number" min={0} aria-label="Cold fault points" value={brief.cold} onChange={e => setBrief({ ...brief, cold: Number(e.target.value) })} />
+          </label>
+          <label style={{ display: "block", marginTop: 8 }}>VIP or flagged returning guest
+            <input type="number" min={0} aria-label="VIP points" value={brief.vip} onChange={e => setBrief({ ...brief, vip: Number(e.target.value) })} />
+          </label>
+          <label style={{ display: "block", marginTop: 8 }}>Overdue compliance
+            <input type="number" min={0} aria-label="Compliance points" value={brief.compliance} onChange={e => setBrief({ ...brief, compliance: Number(e.target.value) })} />
+          </label>
+          <label style={{ display: "block", marginTop: 8 }}>Understaffing
+            <input type="number" min={0} aria-label="Understaffing points" value={brief.staffing} onChange={e => setBrief({ ...brief, staffing: Number(e.target.value) })} />
+          </label>
+          <label style={{ display: "block", marginTop: 8 }}>Kitchen on shift
+            <input type="number" min={0} aria-label="Kitchen heads" value={brief.heads.KITCHEN ?? 2} onChange={e => setBrief({ ...brief, heads: { ...brief.heads, KITCHEN: Number(e.target.value) } })} />
+          </label>
+          <label style={{ display: "block", marginTop: 8 }}>Front on shift
+            <input type="number" min={0} aria-label="Front heads" value={brief.heads.FRONT ?? 1} onChange={e => setBrief({ ...brief, heads: { ...brief.heads, FRONT: Number(e.target.value) } })} />
+          </label>
+          <button className="btn primary" style={{ marginTop: 12 }} onClick={() => run(async () => {
+            setBrief(await api("/v1/settings/briefing", { method: "PUT", body: JSON.stringify(brief) }));
+          }, "Briefing rules saved")}>Save briefing rules</button>
         </div>
       )}
       {retain && (

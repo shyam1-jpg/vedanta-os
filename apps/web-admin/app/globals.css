@@ -354,6 +354,12 @@ td.mark-dep { box-shadow: inset 3px 0 0 var(--marigold); }
 .audit-dot.amber { background: var(--gold); }
 .audit-dot.green { background: var(--moss); }
 .audit-actions { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 8px; }
+.briefing-watch { display: flex; gap: 8px; overflow-x: auto; padding: 4px 0 8px; }
+.briefing-card { flex: 0 0 240px; border: 1px solid var(--line); border-radius: 10px; padding: 12px; background: #fff; }
+.briefing-section { margin-top: 12px; }
+.briefing-line { display: block; width: 100%; text-align: left; padding: 12px 2px; border: 0; border-bottom: 1px solid var(--line); background: transparent; color: inherit; text-decoration: none; min-height: 44px; }
+.briefing-actions { display: flex; gap: 8px; margin-top: 8px; }
+@media (max-width: 720px) { .briefing-card { flex-basis: 86%; } }
 @media (max-width: 900px) {
   .manual-layout { grid-template-columns: 1fr; }
   .look-act { grid-template-columns: 1fr; }

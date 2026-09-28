@@ -32,3 +32,8 @@ input[type=checkbox] { width: auto; flex: none; margin: 0 10px 0 0; }
 .audit-dot.green { background: #4F6758; }
 .swap-hard { color: #8A3B32; }
 .swap-warn { color: #8a5a12; }
+.briefing-watch { display: flex; gap: 8px; overflow-x: auto; }
+.briefing-card { flex: 0 0 86%; margin: 8px 0; }
+.briefing-line { display: block; width: 100%; text-align: left; padding: 12px 0; border: 0; border-bottom: 1px solid var(--line); background: transparent; color: inherit; min-height: 44px; cursor: pointer; }
+.briefing-actions { display: flex; gap: 8px; }
+.briefing-actions .btn { width: auto; margin-top: 8px; }

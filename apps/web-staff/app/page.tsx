@@ -1,5 +1,5 @@
 "use client";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { API, api, shrinkPhoto, tok } from "@/lib/client";
 import CompliancePocket from "@/components/CompliancePocket";
 import LostPocket from "@/components/LostPocket";
@@ -7,6 +7,7 @@ import SupplierPocket from "@/components/SupplierPocket";
 import MyTraining from "@/components/MyTraining";
 import NightAuditPocket from "@/components/NightAuditPocket";
 import ShiftSwapPocket from "@/components/ShiftSwapPocket";
+import BriefingPocket from "@/components/BriefingPocket";
 import ReturningGuests from "@/components/ReturningGuests";
 
 type Me = { name: string; email: string; role: string; role_name?: string; permissions?: string[]; property_name?: string | null; property_kicker?: string | null };
@@ -221,7 +222,8 @@ export default function Pocket() {
   const [secret, setSecret] = useState("");
   const [providers, setProviders] = useState<{ microsoft: boolean; dev: boolean } | null>(null);
   const [err, setErr] = useState<string | null>(null);
-  const [tab, setTab] = useState<"clock" | "leave" | "duty" | "sop" | "log" | "desk" | "night" | "manual" | "tasks" | "fault" | "stock" | "words" | "compliance" | "lost" | "suppliers" | "training" | "audit" | "swaps">("clock");
+  const [tab, setTab] = useState<"clock" | "leave" | "duty" | "sop" | "log" | "desk" | "night" | "manual" | "tasks" | "fault" | "stock" | "words" | "compliance" | "lost" | "suppliers" | "training" | "audit" | "swaps" | "brief">("clock");
+  const openedHome = useRef(false);
   const [words, setWords] = useState<{ first_name: string; comment: string | null; created_at: string }[]>([]);
   const [desk, setDesk] = useState<{
     today: { weekday: string; title: string; method: string; ingredients: { name: string; qty: string }[] };
@@ -260,6 +262,13 @@ export default function Pocket() {
 
   const load = async () => {
     const u = await api<Me>("/me"); setMe(u);
+    if (!openedHome.current && (u.permissions ?? []).includes("briefing.read")) {
+      openedHome.current = true;
+      try {
+        const home = await api<{ home: string }>("/v1/me/home");
+        if (home.home === "briefing") setTab("brief");
+      } catch { /* the clock stays up */ }
+    }
     setClock(await api("/staff/clock"));
     setLeave(await api("/staff/leave"));
     setSops((await api<{ items: typeof sops }>("/staff/sop")).items);
@@ -345,6 +354,7 @@ export default function Pocket() {
           </div>
         )}
         <div className="tabs">
+          {(me.permissions ?? []).includes("briefing.read") && <button className={tab === "brief" ? "on" : ""} data-testid="pocket-briefing" onClick={() => setTab("brief")}>Briefing</button>}
           <button className={tab === "clock" ? "on" : ""} onClick={() => setTab("clock")}>Clock</button>
           <button className={tab === "leave" ? "on" : ""} onClick={() => setTab("leave")}>Holiday</button>
           <button className={tab === "duty" ? "on" : ""} onClick={() => setTab("duty")}>Duty</button>
@@ -519,6 +529,12 @@ export default function Pocket() {
         {tab === "suppliers" && (me.permissions ?? []).includes("supplier.register") && <SupplierPocket onError={setErr} />}
         {tab === "training" && (me.permissions ?? []).includes("training.self") && <MyTraining onError={setErr} />}
         {tab === "audit" && (me.permissions ?? []).includes("night.audit") && <NightAuditPocket onError={setErr} />}
+        {tab === "brief" && (me.permissions ?? []).includes("briefing.read") && (
+          <BriefingPocket
+            openTabs={["desk", "log", "fault", ...((me.permissions ?? []).includes("kitchen.stock") ? ["stock"] : []), ...((me.permissions ?? []).includes("compliance.calendar") ? ["compliance"] : []), ...((me.permissions ?? []).includes("training.self") ? ["training"] : []), ...((me.permissions ?? []).includes("supplier.register") ? ["suppliers"] : []), ...((me.permissions ?? []).includes("shift.swap") ? ["swaps"] : [])]}
+            onOpen={setTab}
+          />
+        )}
         {tab === "swaps" && (me.permissions ?? []).includes("shift.swap") && <ShiftSwapPocket canManage={(me.permissions ?? []).includes("shift.swap.manage")} onError={setErr} />}
         {tab === "words" && (
           <div className="card">
@@ -609,7 +625,7 @@ export default function Pocket() {
           </div>
         )}
         {err && <div className="note">{err}</div>}
-        <button className="btn ghost" onClick={() => { tok.set(null); setMe(null); }}>Sign out</button>
+        <button className="btn ghost" onClick={() => { tok.set(null); setMe(null); openedHome.current = false; }}>Sign out</button>
       </div>
     </>
   );

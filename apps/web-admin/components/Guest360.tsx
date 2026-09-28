@@ -149,6 +149,17 @@ export default function Guest360() {
 
             {tab === "preferences" && (
               <div>
+                {manager ? (
+                  <label className="m" style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                    <input type="checkbox" data-testid="guest-vip" checked={!!guest.vip} onChange={e => {
+                      if (!selId) return;
+                      const vip = e.target.checked;
+                      api(`/v1/guest-history/${selId}/vip`, { method: "POST", body: JSON.stringify({ vip }) })
+                        .then(() => { load(selId); say(vip ? "Marked as VIP" : "VIP flag cleared"); })
+                        .catch(err => say(err instanceof ApiError ? err.problem.detail : "Could not save the VIP flag"));
+                    }} /> VIP
+                  </label>
+                ) : guest.vip ? <p>VIP</p> : null}
                 <p>Room: {guest.roomPreference || "Not recorded"}</p>
                 <p>Access: {guest.accessibility || "Not recorded"}</p>
                 <p>Requests: {guest.specialRequests || guest.preferences || "Not recorded"}</p>
