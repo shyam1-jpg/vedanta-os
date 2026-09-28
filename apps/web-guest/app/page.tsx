@@ -39,6 +39,15 @@ const STEPS: { id: Step; label: string }[] = [
   { id: "done", label: "Confirmation" },
 ];
 
+const photo = (file: string) => `/book/images/${file}`;
+const GALLERY: { file: string; title: string; caption: string; alt: string; wide?: boolean }[] = [
+  { file: "house-aerial.jpg", title: "The house", caption: "The retreat house and grounds.", alt: "Aerial view of the retreat house and grounds", wide: true },
+  { file: "dining-room.jpg", title: "Dining hall", caption: "Buffet-only, and pure vegetarian.", alt: "The dining hall laid for a buffet", },
+  { file: "food.jpg", title: "From the kitchen", caption: "No eggs, and no onion, garlic or other onion-family ingredients.", alt: "A vegetarian dish", },
+  { file: "lounge.jpg", title: "Guest lounge", caption: "The guest lounge.", alt: "The guest lounge", },
+  { file: "lake.jpg", title: "The grounds", caption: "A lake in the grounds.", alt: "A lake in the grounds", },
+];
+
 export default function Book() {
   const [prop, setProp] = useState<Prop | null>(null);
   const [me, setMe] = useState<Me | null>(null);
@@ -181,11 +190,14 @@ export default function Book() {
         </div>
       </header>
 
-      <section className="hero">
-        <div className="kicker">{prop?.kicker ?? "Retreat Center"}</div>
-        <h1>{prop?.name ?? "The Vedanta Way"}</h1>
-        <p className="tag">Luxury retreat centre</p>
-        <p>{prop?.about}</p>
+      <section className="hero" aria-label={prop?.name ?? "The Vedanta Way"}>
+        <div className="hero-inner">
+          <div className="kicker">{prop?.kicker ?? "Retreat Center"}</div>
+          <h1>{prop?.name ?? "The Vedanta Way"}</h1>
+          <p className="tag">{prop?.tagline ?? "Luxury retreat centre"}</p>
+          {prop?.about && <p className="about">{prop.about}</p>}
+          <a className="hero-cta" href="#open-retreats">Browse open retreats</a>
+        </div>
       </section>
 
       <div className="band">
@@ -195,6 +207,24 @@ export default function Book() {
             <div><b>{prop?.check_out_by ?? "11:00"}</b><span>Check-out by</span></div>
             <div><b>{prop?.rooms ?? 41}</b><span>Guest rooms</span></div>
           </div>
+
+          <section className="gallery" aria-label="The house and grounds">
+            <p className="section-kicker">The house</p>
+            <h2>House, table and grounds</h2>
+            <p className="lead">The restaurant is buffet-only and pure vegetarian — no eggs, and no onion, garlic or other onion-family ingredients.</p>
+            <div className="gallery-grid">
+              {GALLERY.map(g => (
+                <figure key={g.file} className={g.wide ? "shot wide" : "shot"}>
+                  <img src={photo(g.file)} alt={g.alt} />
+                  <figcaption>
+                    <strong>{g.title}</strong>
+                    <span>{g.caption}</span>
+                  </figcaption>
+                </figure>
+              ))}
+            </div>
+            <p className="goshala">A goshala on the grounds is home to two cows, Hari and Lakshmi, for care and seva.</p>
+          </section>
 
           {auth !== "hidden" && !me && (
             <div className="card" style={{ maxWidth: 480, marginBottom: 28 }}>
@@ -228,7 +258,7 @@ export default function Book() {
 
           <div className="split">
             <div>
-              <h2>Open retreats</h2>
+              <h2 id="open-retreats">Open retreats</h2>
               <p className="lead">Browse programmes, dates and rooms before you create an account. Registration happens when you save a place.</p>
               <div className="grid">
                 {programmes.length === 0 && <p className="m">No published retreats right now. Search your own dates — the house still has rooms to offer.</p>}
@@ -305,7 +335,8 @@ export default function Book() {
                 <div className="card" style={{ marginTop: 18 }}>
                   <h2 style={{ fontSize: 22 }}>Diet, access and arrival</h2>
                   <label>Dietary requirements</label>
-                  <textarea rows={2} value={form.dietary_notes} onChange={e => setForm({ ...form, dietary_notes: e.target.value })} placeholder="Vegetarian, vegan, Jain, gluten-free, allergies…" />
+                  <p className="hint">Buffet-only and pure vegetarian: no eggs, and no onion, garlic or other onion-family ingredients.</p>
+                  <textarea rows={2} value={form.dietary_notes} onChange={e => setForm({ ...form, dietary_notes: e.target.value })} placeholder="Vegan, Jain, gluten-free, allergies…" />
                   <label>Accessibility</label>
                   <textarea rows={2} value={form.accessibility_notes} onChange={e => setForm({ ...form, accessibility_notes: e.target.value })} />
                   <label>Expected arrival time</label>
@@ -410,7 +441,7 @@ export default function Book() {
               <div><b>Check-in / out</b><span>Arrive from {prop?.check_in_from ?? "15:00"}. Rooms ready for the evening. Leave by {prop?.check_out_by ?? "11:00"}.</span></div>
               <div><b>Deposit & refunds</b><span>The house agrees the deposit and any refund when your place is accepted. Nothing is charged on this page.</span></div>
               <div><b>Cancellation</b><span>Terms are confirmed with your booking, not guessed here.</span></div>
-              <div><b>Meals & diet</b><span>Kitchen is vegetarian. Tell us vegan, Jain, gluten-free or allergies on the form.</span></div>
+              <div><b>Meals & diet</b><span>The restaurant is buffet-only and pure vegetarian: no eggs, and no onion, garlic or other onion-family ingredients. Tell us vegan, Jain, gluten-free or allergies on the form.</span></div>
               <div><b>Accessibility</b><span>Ask for a ground-floor or accessible room when you save your place.</span></div>
               <div><b>Privacy & support</b><span>Your stay is private. Write to reception at the house, or use access-code help if you cannot sign in.</span></div>
             </div>
