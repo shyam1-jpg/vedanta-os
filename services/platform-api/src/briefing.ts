@@ -38,6 +38,8 @@ function toBriefing(raw: HouseFacts, date: string): BriefingFacts {
       vip: row.vip,
       flagged: row.flagged,
       allergens: row.allergens.map(code => code.replace(/_/g, " ")).filter(Boolean),
+      group: String(row.groupName ?? "").trim() || "House",
+      accessNote: row.accessibility.trim(),
     };
     if (row.arrivalDate === date) stays.push({ ...base, id: `${row.id}:arrival`, movement: "arrival" });
     if (row.departureDate === date) stays.push({ ...base, id: `${row.id}:departure`, movement: "departure" });
@@ -78,7 +80,7 @@ function toBriefing(raw: HouseFacts, date: string): BriefingFacts {
   };
 }
 
-async function factsFor(propertyId: string, date: string): Promise<{ facts: BriefingFacts; cached: boolean; generatedAt: string }> {
+export async function factsFor(propertyId: string, date: string): Promise<{ facts: BriefingFacts; cached: boolean; generatedAt: string }> {
   const key = `${propertyId}:${date}`;
   const hit = cache.get(key);
   if (hit && Date.now() - hit.at < CACHE_MS) return { facts: hit.facts, cached: true, generatedAt: hit.generatedAt };

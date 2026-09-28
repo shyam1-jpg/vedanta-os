@@ -13,6 +13,7 @@ import SpendPocket from "@/components/SpendPocket";
 import ArrivalsPocket from "@/components/ArrivalsPocket";
 import SevaPocket from "@/components/SevaPocket";
 import ShuttlePocket from "@/components/ShuttlePocket";
+import WhosInPocket from "@/components/WhosInPocket";
 import ReturningGuests from "@/components/ReturningGuests";
 
 type Me = { name: string; email: string; role: string; role_name?: string; permissions?: string[]; property_name?: string | null; property_kicker?: string | null };
@@ -227,7 +228,7 @@ export default function Pocket() {
   const [secret, setSecret] = useState("");
   const [providers, setProviders] = useState<{ microsoft: boolean; dev: boolean } | null>(null);
   const [err, setErr] = useState<string | null>(null);
-  const [tab, setTab] = useState<"clock" | "leave" | "duty" | "sop" | "log" | "desk" | "night" | "manual" | "tasks" | "fault" | "stock" | "words" | "compliance" | "lost" | "suppliers" | "training" | "audit" | "swaps" | "brief" | "org" | "spend" | "arrivals" | "seva" | "shuttle">("clock");
+  const [tab, setTab] = useState<"clock" | "leave" | "duty" | "sop" | "log" | "desk" | "night" | "manual" | "tasks" | "fault" | "stock" | "words" | "compliance" | "lost" | "suppliers" | "training" | "audit" | "swaps" | "brief" | "org" | "spend" | "arrivals" | "seva" | "shuttle" | "whos">("clock");
   const openedHome = useRef(false);
   const [words, setWords] = useState<{ first_name: string; comment: string | null; created_at: string }[]>([]);
   const [desk, setDesk] = useState<{
@@ -379,6 +380,7 @@ export default function Pocket() {
           <button className={tab === "arrivals" ? "on" : ""} data-testid="pocket-arrivals-tab" onClick={() => setTab("arrivals")}>Arrivals</button>
           <button className={tab === "seva" ? "on" : ""} data-testid="pocket-seva-tab" onClick={() => setTab("seva")}>Seva</button>
           <button className={tab === "shuttle" ? "on" : ""} data-testid="pocket-shuttle-tab" onClick={() => setTab("shuttle")}>Shuttle</button>
+          <button className={tab === "whos" ? "on" : ""} data-testid="pocket-whos-tab" onClick={() => setTab("whos")}>Who&apos;s in</button>
           <button className={tab === "desk" ? "on" : ""} onClick={() => setTab("desk")}>Front desk</button>
           <button className={tab === "night" ? "on" : ""} onClick={() => setTab("night")}>Night</button>
           <button className={tab === "manual" ? "on" : ""} onClick={() => setTab("manual")}>Manual</button>
@@ -559,6 +561,7 @@ export default function Pocket() {
         {tab === "arrivals" && <ArrivalsPocket />}
         {tab === "seva" && <SevaPocket onError={setErr} />}
         {tab === "shuttle" && <ShuttlePocket onError={setErr} />}
+        {tab === "whos" && <WhosInPocket onError={setErr} />}
         {tab === "desk" && (
           <div>
             <ReturningGuests surface="front" />

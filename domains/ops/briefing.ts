@@ -21,6 +21,8 @@ export type BriefingStay = {
   flagged: boolean;
   allergens: string[];
   checkIn?: string;
+  group?: string;
+  accessNote?: string;
 };
 
 export type BriefingShift = {
