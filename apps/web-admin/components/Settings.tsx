@@ -32,6 +32,7 @@ export default function Settings() {
   const [brief, setBrief] = useState<{ severe: number; cold: number; vip: number; compliance: number; staffing: number; heads: Record<string, number> } | null>(null);
   const [orgSettings, setOrgSettings] = useState<{ allow_multiple_gm: boolean; staff_contact: "work" | "none" } | null>(null);
   const [spendSettings, setSpendSettings] = useState<{ gm_email: string; notify_heads: boolean; categories: { code: string; name: string }[] } | null>(null);
+  const [roomSettings, setRoomSettings] = useState<{ cutoff_days: number; staff_email: string } | null>(null);
   const [stayCopy, setStayCopy] = useState<Record<string, string>>({});
   useEffect(() => {
     api<{ rules: { kitchen: RouteBox; restaurant: RouteBox; front: RouteBox }; receives: Record<string, string> }>("/v1/settings/booking-routing")
@@ -54,6 +55,7 @@ export default function Settings() {
     api<{ severe: number; cold: number; vip: number; compliance: number; staffing: number; heads: Record<string, number> }>("/v1/settings/briefing").then(setBrief).catch(() => {});
     api<{ allow_multiple_gm: boolean; staff_contact: "work" | "none" }>("/v1/org/settings").then(setOrgSettings).catch(() => {});
     api<{ gm_email: string; notify_heads: boolean; categories: { code: string; name: string }[] }>("/v1/spend/settings").then(setSpendSettings).catch(() => {});
+    api<{ cutoff_days: number; staff_email: string }>("/v1/room-assign/settings").then(setRoomSettings).catch(() => {});
   }, []);
   const load = () => { api<{ items: Pkg[] }>("/v1/packages").then(r => setPkgs(r.items)); if (can("config.manage")) api<{ items: Key[] }>("/v1/integrations/keys").then(r => setKeys(r.items)).catch(() => {}); };
   useEffect(load, []); // eslint-disable-line react-hooks/exhaustive-deps
@@ -346,6 +348,21 @@ export default function Settings() {
           <button className="btn primary" style={{ marginTop: 12 }} onClick={() => run(async () => {
             setSpendSettings(await api("/v1/spend/settings", { method: "PUT", body: JSON.stringify(spendSettings) }));
           }, "Spending alerts saved")}>Save spending alerts</button>
+        </div>
+      )}
+      {roomSettings && (
+        <div className="panel" style={{ marginTop: 14 }}>
+          <h3>Room assignment lock</h3>
+          <p className="m" style={{ color: "var(--ink-2)" }}>An organiser can move their own guests until this many days before arrival. After that they write to the house. The address here is told when a room list is finished or changed.</p>
+          <label style={{ display: "block", marginTop: 8 }}>Days before arrival
+            <input type="number" min={0} max={60} aria-label="Room lock days" value={roomSettings.cutoff_days} onChange={e => setRoomSettings({ ...roomSettings, cutoff_days: Number(e.target.value) })} />
+          </label>
+          <label style={{ display: "block", marginTop: 8 }}>House email
+            <input type="email" aria-label="Room assignment email" value={roomSettings.staff_email} onChange={e => setRoomSettings({ ...roomSettings, staff_email: e.target.value })} />
+          </label>
+          <button className="btn primary" style={{ marginTop: 12 }} onClick={() => run(async () => {
+            setRoomSettings(await api("/v1/room-assign/settings", { method: "PUT", body: JSON.stringify(roomSettings) }));
+          }, "Room assignment lock saved")}>Save room assignment lock</button>
         </div>
       )}
       {retain && (

@@ -408,3 +408,41 @@ td.mark-dep { box-shadow: inset 3px 0 0 var(--marigold); }
 .spend-bars div { flex: 1; display: flex; flex-direction: column; justify-content: flex-end; align-items: center; height: 100%; }
 .spend-bars i { display: block; width: 100%; max-width: 36px; background: #3d5c4a; }
 .spend-bars span { font-size: 11px; margin-top: 4px; }
+.assign-page .pubcard { max-width: 1100px; }
+.assign-page label, .roomalloc label { display: block; margin-top: 8px; }
+.assign-page input, .assign-page select, .assign-page textarea, .roomalloc input, .roomalloc select { width: 100%; margin-top: 4px; padding: 8px; border: 1px solid var(--line); background: #fff; font: inherit; }
+.assign-retreat { margin-top: 22px; }
+.assign-layout { display: grid; gap: 12px; }
+.assign-people, .assign-edit { list-style: none; padding: 0; margin: 8px 0; }
+.assign-client { display: flex; justify-content: space-between; gap: 8px; align-items: center; padding: 8px; border: 1px solid var(--line); margin-bottom: 6px; background: #fff; }
+.assign-rooms { display: grid; gap: 10px; }
+.assign-room { border: 1px dashed var(--line); padding: 12px; min-height: 88px; background: #fff; }
+.assign-room header { display: flex; justify-content: space-between; gap: 8px; }
+.assign-room ul { list-style: none; padding: 0; margin: 8px 0 0; }
+.assign-warn { color: #8a5a12; }
+.assign-check { display: flex; gap: 8px; align-items: center; margin-top: 8px; }
+.assign-check input { width: auto; margin: 0; }
+.assign-guest, .assign-request { margin-top: 16px; }
+.assign-sheet { display: none; }
+.assign-sheet.on { display: block; position: fixed; left: 0; right: 0; bottom: 0; max-height: 70vh; overflow: auto; background: var(--paper); border-top: 1px solid var(--line); padding: 16px 16px 28px; z-index: 40; }
+.assign-sheet header { display: flex; justify-content: space-between; align-items: center; }
+.assign-sheet ul { list-style: none; padding: 0; }
+.assign-sheet li { margin-top: 8px; }
+.assign-sheet .btn { width: 100%; }
+.roomalloc-filters { display: flex; flex-wrap: wrap; gap: 12px; align-items: end; }
+.roomalloc-filters label { min-width: 140px; }
+.roomalloc-scroll { overflow: auto; margin-top: 12px; }
+.roomalloc-grid { border-collapse: collapse; font-size: 12px; min-width: 720px; }
+.roomalloc-grid th, .roomalloc-grid td { border: 1px solid var(--line); padding: 6px; vertical-align: top; text-align: left; }
+.roomalloc-grid th small { display: block; font-weight: 400; color: var(--ink-2); }
+.roomalloc-grid td.is-conflict { outline: 2px solid var(--brick); }
+.roomalloc-conflicts { list-style: none; padding: 0; }
+.roomalloc-conflicts li { background: var(--brick-soft); color: var(--brick); padding: 6px 8px; margin-top: 6px; }
+.roomalloc-holds { display: flex; flex-wrap: wrap; gap: 8px 14px; margin-top: 10px; align-items: center; }
+.roomalloc-holds label { display: flex; gap: 6px; align-items: center; }
+@media (min-width: 900px) {
+  .assign-layout { grid-template-columns: 240px 1fr; }
+  .assign-rooms { grid-template-columns: 1fr 1fr; }
+  .assign-open { display: none; }
+  .assign-sheet, .assign-sheet.on { display: none; }
+}

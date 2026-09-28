@@ -29,13 +29,14 @@ export default function OrganiserForm() {
 
   if (err && !info) return <div className="pub"><div className="pubcard"><h1>Booking form</h1><div className="note">{err}</div></div></div>;
   if (!info) return <div className="pub"><div className="pubcard">Loading…</div></div>;
-  if (done) return <div className="pub"><div className="pubcard"><h1>Thank you</h1><p>We have {done.created + done.updated} guest{done.created + done.updated === 1 ? "" : "s"} on the list for <b>{info.name}</b>. The kitchen has the dietary needs. You can reopen this link to add or change names.</p></div></div>;
+  if (done) return <div className="pub"><div className="pubcard"><h1>Thank you</h1><p>We have {done.created + done.updated} guest{done.created + done.updated === 1 ? "" : "s"} on the list for <b>{info.name}</b>. The kitchen has the dietary needs. You can reopen this link to add or change names.</p>{token && <p><a href={`/assign/?t=${encodeURIComponent(token)}`}>Arrange rooms</a></p>}</div></div>;
   return (
     <div className="pub">
       <div className="pubcard">
         <div className="pubbrand">The Vedanta Way<br /><span>Retreat Center</span></div>
         <h1>Guest list for {info.name}</h1>
         <p className="m">{fmt(info.arrival, { weekday: "long", day: "numeric", month: "long" })} {info.arrival_slot}{info.arrival_time ? ` (${info.arrival_time.slice(0, 5)})` : ""} → {fmt(info.departure, { weekday: "long", day: "numeric", month: "long" })} {info.departure_slot}{info.departure_time ? ` (${info.departure_time.slice(0, 5)})` : ""}{info.package_name ? ` · ${info.package_name}` : ""}{info.expected_guests ? ` · ${info.expected_guests} guests expected` : ""}</p>
+        {token && <p><a href={`/assign/?t=${encodeURIComponent(token)}`}>Arrange rooms</a></p>}
         {info.attendees > 0 && <div className="note">You already sent {info.attendees} name{info.attendees === 1 ? "" : "s"}. Names you enter again will be updated, new ones added.</div>}
         <p>Please give us everyone who is staying, with any dietary needs or allergies. We take allergies seriously — the kitchen sees exactly what you write here.</p>
         <div className="fgrid">
