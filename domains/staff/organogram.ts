@@ -69,6 +69,25 @@ export const HOUSE_POSITIONS: HousePosition[] = [
   { code: "FINANCE_HR", name: "Finance and HR", department: "FINANCE", hod: false, sort: 10 },
 ];
 
+/** A sub-section sits inside a department. It is not a department of its own. */
+export type HouseSection = {
+  code: string;
+  name: string;
+  department: string;
+  note?: string;
+};
+
+export const HOUSE_SECTIONS: HouseSection[] = [
+  {
+    code: "GYMS",
+    name: "Gyms",
+    department: "RESTAURANT",
+    note: "Sub-section of Restaurant. The name is editable — it may have been mis-heard.",
+  },
+];
+
+export const KITCHEN_ROLES = ["HEAD_CHEF", "SOUS_CHEF", "CHEF_DE_PARTIE", "KITCHEN_PORTER", "KITCHEN_ASSISTANT"] as const;
+
 export const ROLE_NAMES: Record<string, string> = Object.fromEntries(HOUSE_POSITIONS.map(p => [p.code, p.name]));
 
 export const HOD_ROLES = new Set(HOUSE_POSITIONS.filter(p => p.hod).map(p => p.code));

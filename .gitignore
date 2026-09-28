@@ -9,5 +9,7 @@ out/
 dist/
 *.tsbuildinfo
 db/import/*.sql
+db/import/*.local.json
+db/import/staff-teams.local.json
 *.log
 .DS_Store
