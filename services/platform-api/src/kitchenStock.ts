@@ -80,12 +80,13 @@ function view(row: any) {
   };
 }
 
-async function selectItems(propertyId: string) {
+async function selectItems(propertyId: string): Promise<{ rows: any[] }> {
   const base = `select i.id, i.name, i.unit, i.quantity, i.low_threshold, i.supplier, i.supplier_id, i.notes, i.example, i.active, i.low_alerted_at, i.updated_at,
               s.name supplier_name, s.contact_phone supplier_phone, s.contact_email supplier_email`;
   const from = `from kitchen_stock_item i left join supplier s on s.id = i.supplier_id where i.property_id=$1 and i.active order by i.name`;
   try {
-    return await pool.query(`${base}, i.par_level, i.reorder_at, i.pack_size ${from}`, [propertyId]);
+    const rich = await pool.query(`${base}, i.par_level, i.reorder_at, i.pack_size ${from}`, [propertyId]);
+    return { rows: rich.rows };
   } catch {
     const plain = await pool.query(`${base} ${from}`, [propertyId]);
     return { rows: plain.rows.map((row: Record<string, unknown>) => ({ ...row, par_level: 0, reorder_at: null, pack_size: 1 })) };
