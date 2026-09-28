@@ -35,8 +35,8 @@ const STEPS: { id: Step; label: string }[] = [
   { id: "room", label: "Room" },
   { id: "details", label: "Your details" },
   { id: "needs", label: "Diet & access" },
-  { id: "pay", label: "Deposit" },
-  { id: "done", label: "Confirmation" },
+  { id: "pay", label: "Review" },
+  { id: "done", label: "Enquiry sent" },
 ];
 
 const photo = (file: string) => `/book/images/${file}`;
@@ -476,7 +476,7 @@ export default function Book() {
               <div><b>Price & deposit</b><span>The house will quote the full price and deposit before payment. Sending an enquiry does not charge you.</span></div>
               <div><b>Cancellation</b><span>The house will provide the applicable refund and cancellation terms before you make a payment.</span></div>
               <div><b>Meals & diet</b><span>The restaurant is buffet-only and pure vegetarian: no eggs, and no onion, garlic or other onion-family ingredients. Tell us vegan, Jain, gluten-free or allergies on the form.</span></div>
-              <div><b>Accessibility</b><span>Ask for a ground-floor or accessible room when you save your place.</span></div>
+              <div><b>Accessibility</b><span>Tell us if you need a ground-floor or accessible room when you send your enquiry.</span></div>
               <div><b>Privacy & support</b><span>Your stay is private. Write to reception at the house, or use access-code help if you cannot sign in.</span></div>
             </div>
           </section>
