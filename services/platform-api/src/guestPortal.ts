@@ -205,7 +205,7 @@ export default async function guestPortal(f: FastifyInstance) {
       where r.property_id=$1 and not r.staff_only
       order by r.section, r.number`, [prop.id]);
     const rooms = r.rows.map(x => shapePublicRoom({ ...x, available: free.has(x.number) }));
-    const types = groupPublicTypes(rooms).filter(t => !people || t.sleeps >= people || t.available > 0);
+    const types = groupPublicTypes(rooms).filter(t => t.available > 0 && (!people || t.sleeps >= people));
     return {
       arrival,
       departure,
@@ -647,4 +647,3 @@ export default async function guestPortal(f: FastifyInstance) {
     return { ok: true }; // Always return ok to prevent email enumeration
   });
 }
-
