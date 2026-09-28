@@ -30,7 +30,7 @@ cd services/platform-api && npm install && npm run migrate && npm run dev
 cd apps/web-admin && npm install && npm run dev
 ```
 
-Open http://localhost:3000 and pick a user (development sign-in). The live trial also accepts **`shyam_1@hotmail.co.uk`** with no password until Microsoft 365 is connected.
+Open http://localhost:3000 and pick a user (development sign-in). Production staff sign in through Microsoft 365 or a one-time email code when SMTP delivery is configured. An email address alone never grants production access.
 
 The production web bundle uses one origin: `/` redirects guests to `/book/`, house operations remain at `/house/`, and staff use `/pocket/`. Run `npm run build:web-bundle` to create `dist-web/` for static hosting.
 
