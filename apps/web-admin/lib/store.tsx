@@ -7,7 +7,7 @@ export type User = { name: string; email: string; role: string; role_name?: stri
 type ApiGroup = Record<string, unknown>;
 type ApiRoom = { id: string; number: string; section: string; type: string; beds_single: number; beds_double: number; beds_king: number; mattresses: number; max_capacity: number; features: string[]; staff_only: boolean; status: string };
 
-const fromApiGroup = (g: ApiGroup): Group => ({
+export function groupFromApi(g: ApiGroup): Group { return ({
   id: g.id as string, name: g.name as string, organisation: (g.organisation as string) ?? "", contact: (g.contact_email as string) ?? "",
   arrival: g.arrival as string, arrivalSlot: g.arrival_slot as Slot, arrivalTime: fmtTime(g.arrival_time as string | null),
   departure: g.departure as string, departureSlot: g.departure_slot as Slot, departureTime: fmtTime(g.departure_time as string | null),
@@ -18,7 +18,7 @@ const fromApiGroup = (g: ApiGroup): Group => ({
   feedback: ((g.feedback_form_status as string) ?? "NOT_SENT") as Group["feedback"], notes: (g.notes as string) ?? undefined, dietaryNotes: (g.dietary_notes as string) ?? undefined, mealsFrom: (g.meals_from as string) ?? undefined, mealsTo: (g.meals_to as string) ?? undefined,
   colour: (g.colour as string) ?? "#1F3A32", version: Number(g.version), source: g.source as string,
   openOnGuestBook: !!g.open_for_guests,
-});
+}); }
 const fmtTime = (t: string | null) => { if (!t) return ""; const [h, m] = t.split(":").map(Number); return `${h % 12 || 12}${m ? ":" + String(m).padStart(2, "0") : ""}${h >= 12 ? "pm" : "am"}`; };
 const fromApiRoom = (r: ApiRoom): Room => ({
   id: r.id, number: r.number, section: r.section, type: r.type, max: r.max_capacity,
@@ -57,7 +57,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     setLoading(true); setError(null);
     try {
       const [r, g] = await Promise.all([api<{ items: ApiRoom[] }>("/v1/rooms"), api<{ items: ApiGroup[] }>("/v1/groups")]);
-      setRooms(r.items.map(fromApiRoom)); setGroups(g.items.map(fromApiGroup));
+      setRooms(r.items.map(fromApiRoom)); setGroups(g.items.map(groupFromApi));
       if (range) { const o = await api<{ items: Occupancy[] }>(`/v1/occupancy?from=${range.from}&to=${range.to}`); setOcc(o.items.map(x => ({ ...x, groupId: (x as unknown as { group_id: string }).group_id }))); }
     } catch (e) { setError(e instanceof ApiError ? e.problem.detail : "Cannot reach the API. Is platform-api running on port 4000?"); }
     finally { setLoading(false); }
@@ -84,7 +84,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       try { if (token.get()) await api("/auth/logout", { method: "POST" }); } catch { /* local cleanup still happens */ }
       token.set(null); setUser(null); setGroups([]); setOcc([]);
     },
-    addGroup: async (g) => { const r = await api<ApiGroup>("/v1/groups", { method: "POST", body: JSON.stringify(g) }); await reload(); return fromApiGroup(r); },
+    addGroup: async (g) => { const r = await api<ApiGroup>("/v1/groups", { method: "POST", body: JSON.stringify(g) }); await reload(); return groupFromApi(r); },
     updateGroup: async (id, patch) => { const cur = groups.find(x => x.id === id)!; await api(`/v1/groups/${id}`, { method: "PATCH", body: JSON.stringify(patch), version: cur.version }); await reload(); },
     command: async (id, cmd, reason) => { const cur = groups.find(x => x.id === id)!; await api(`/v1/groups/${id}/commands/${cmd}`, { method: "POST", body: JSON.stringify({ reason }), version: cur.version }); await reload(); },
     placeOccupant: async (room, groupId, label) => { try { await api("/v1/occupancy/place", { method: "POST", body: JSON.stringify({ room, group_id: groupId, label }) }); await reload(); return null; } catch (e) { return e instanceof ApiError ? e.problem.detail : String(e); } },

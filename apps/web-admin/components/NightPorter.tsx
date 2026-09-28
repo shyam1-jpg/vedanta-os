@@ -44,7 +44,7 @@ export default function NightPorter() {
           <h1>Night porter</h1>
           <p>The house after the day team has gone home. Lock-up, the late door, the tea station, then a note for morning.</p>
         </div>
-        <Link className="btn" href="/manual/?slug=night-porter">Open the night chapter</Link>
+        <Link className="btn" href="/manual/?slug=security-and-emergency">Open the night chapter</Link>
       </div>
 
       <div className="manual-flow" style={{ marginBottom: 18 }}>

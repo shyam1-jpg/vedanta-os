@@ -10,6 +10,8 @@ import {
   chapterToPocketBody,
   HOUSE_MANUALS,
   MANUAL_KIND_LABEL,
+  missingManualChapters,
+  parseManualCatalogue,
   parseManualStatus,
 } from "../../../domains/ops/manual.ts";
 
@@ -35,21 +37,19 @@ function shape(row: any) {
     steps: row.steps ?? [],
     diagram: row.diagram ?? [],
     status: row.status,
+    catalogue: parseManualCatalogue(row.catalogue),
     sort_order: row.sort_order,
     updated_at: row.updated_at,
   };
 }
 
 async function ensureDefaults(tenantId: string, propertyId: string) {
-  const have = new Set(
-    (await pool.query(`select slug from house_manual where property_id=$1`, [propertyId])).rows.map((r: { slug: string }) => r.slug),
-  );
-  for (const ch of HOUSE_MANUALS) {
-    if (have.has(ch.slug)) continue;
+  const have = (await pool.query(`select slug from house_manual where property_id=$1`, [propertyId])).rows.map((r: { slug: string }) => r.slug);
+  for (const ch of missingManualChapters(have, HOUSE_MANUALS)) {
     await pool.query(
       `insert into house_manual (
-         tenant_id, property_id, slug, department, kind, title, summary, body, steps, diagram, sort_order
-       ) values ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11)
+         tenant_id, property_id, slug, department, kind, title, summary, body, steps, diagram, sort_order, catalogue
+       ) values ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,'current')
        on conflict (property_id, slug) do nothing`,
       [tenantId, propertyId, ch.slug, ch.department, ch.kind, ch.title, ch.summary, ch.body, JSON.stringify(ch.steps), JSON.stringify(ch.diagram), ch.sort_order],
     );
@@ -60,16 +60,20 @@ export default async function manuals(f: FastifyInstance) {
   f.get("/v1/manuals", async (req: any, reply) => {
     const a = await requireManualReader(req, reply); if (!a) return;
     await ensureDefaults(a.tenantId, a.propertyId);
-    const withdrawn = String(req.query?.include ?? "") === "withdrawn" && a.perms.has("sop.manage");
+    const include = new Set(String(req.query?.include ?? "").split(",").map((s: string) => s.trim()).filter(Boolean));
+    const canManage = a.perms.has("sop.manage");
+    const withdrawn = include.has("withdrawn") && canManage;
+    const archive = include.has("archive") && canManage;
     const dept = String(req.query?.department ?? "").trim();
     const r = await pool.query(
-      `select id, slug, department, kind, title, summary, body, steps, diagram, status, sort_order, updated_at
+      `select id, slug, department, kind, title, summary, body, steps, diagram, status, catalogue, sort_order, updated_at
        from house_manual
        where property_id=$1
          and ($2 = '' or department=$2)
          and ($3 or status='live')
+         and ($4 or catalogue='current')
        order by sort_order, title`,
-      [a.propertyId, dept, withdrawn],
+      [a.propertyId, dept, withdrawn, archive],
     );
     return { items: r.rows.map(shape), can_edit: a.perms.has("sop.manage") };
   });
@@ -78,13 +82,13 @@ export default async function manuals(f: FastifyInstance) {
     const a = await requireManualReader(req, reply); if (!a) return;
     await ensureDefaults(a.tenantId, a.propertyId);
     const row = (await pool.query(
-      `select id, slug, department, kind, title, summary, body, steps, diagram, status, sort_order, updated_at
+      `select id, slug, department, kind, title, summary, body, steps, diagram, status, catalogue, sort_order, updated_at
        from house_manual where property_id=$1 and slug=$2`,
       [a.propertyId, req.params.slug],
     )).rows[0];
     if (!row) return reply.code(404).send(problem(404, "not_found", "No such chapter"));
-    if (row.status === "withdrawn" && !a.perms.has("sop.manage")) {
-      return reply.code(404).send(problem(404, "not_found", "That chapter has been withdrawn"));
+    if ((row.status === "withdrawn" || row.catalogue === "archive") && !a.perms.has("sop.manage")) {
+      return reply.code(404).send(problem(404, "not_found", row.status === "withdrawn" ? "That chapter has been withdrawn" : "That chapter is not in the current manual"));
     }
     return shape(row);
   });
