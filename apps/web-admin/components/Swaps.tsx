@@ -59,6 +59,7 @@ function Violations({ items }: { items: Violation[] }) {
 
 export default function Swaps() {
   const [items, setItems] = useState<Item[]>([]);
+  const [boardNote, setBoardNote] = useState("A manager approves before the rota changes.");
   const [status, setStatus] = useState("");
   const [kind, setKind] = useState("");
   const [openId, setOpenId] = useState<string | null>(null);
@@ -81,8 +82,9 @@ export default function Swaps() {
     if (nextStatus) query.set("status", nextStatus);
     if (nextKind) query.set("kind", nextKind);
     const suffix = query.toString();
-    const list = await api<{ items: Item[] }>(`/v1/shift-swaps${suffix ? `?${suffix}` : ""}`);
+    const list = await api<{ items: Item[]; board_note?: string }>(`/v1/shift-swaps${suffix ? `?${suffix}` : ""}`);
     setItems(list.items);
+    if (list.board_note) setBoardNote(list.board_note);
   };
 
   useEffect(() => {
@@ -156,7 +158,7 @@ export default function Swaps() {
       <div className="topbar">
         <div>
           <h1>Shift swaps</h1>
-          <p>The full history stays here. A named partner agrees first. You approve before the rota moves.</p>
+          <p>The full history stays here. A named partner agrees first. {boardNote}</p>
         </div>
       </div>
       {toast && <div className="note">{toast}</div>}

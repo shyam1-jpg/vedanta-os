@@ -66,6 +66,32 @@ export const DEFAULT_HOUSE_RULES: HouseRules = {
 const TIME = /^([01]\d|2[0-3]):[0-5]\d$/;
 const DATE = /^\d{4}-\d{2}-\d{2}$/;
 
+export type SwapBoard = {
+  /** Off keeps the existing rule: a manager approves before the rota changes. */
+  enabled: boolean;
+  /** Department name, lower case. True means that department still waits for a manager. Missing means notify only. */
+  approval: Record<string, boolean>;
+};
+
+export function parseSwapBoard(raw: unknown): SwapBoard {
+  const src = raw && typeof raw === "object" ? raw as Record<string, unknown> : {};
+  const approvalSrc = src.approval && typeof src.approval === "object" ? src.approval as Record<string, unknown> : {};
+  const approval: Record<string, boolean> = {};
+  for (const [key, value] of Object.entries(approvalSrc)) {
+    const dept = key.trim().toLowerCase().replace(/\s+/g, " ").slice(0, 40);
+    if (dept) approval[dept] = value === true;
+  }
+  return { enabled: src.board === true || src.enabled === true, approval };
+}
+
+/** Flag off always waits for a manager. Flag on waits only where that department asked for it. */
+export function managerMustApprove(board: SwapBoard, department: string | null | undefined): boolean {
+  if (!board.enabled) return true;
+  const key = String(department ?? "").trim().toLowerCase().replace(/\s+/g, " ");
+  if (!key) return false;
+  return board.approval[key] === true;
+}
+
 export function parseHouseRules(raw: unknown): HouseRules {
   const src = raw && typeof raw === "object" ? raw as Record<string, unknown> : {};
   const rest = Number(src.min_rest_hours ?? src.minRestHours);
@@ -394,6 +420,8 @@ export function noticesFor(event: "created" | "accepted" | "declined" | "approve
   managerId?: string | null;
   requesterName: string;
   when: string;
+  /** Set when both people agreed and the rota was updated without a manager decision. */
+  settled?: "applied";
 }): SwapNotice[] {
   const line = `${input.requesterName} · ${input.when}`;
   const people = new Set<string>();
@@ -405,11 +433,19 @@ export function noticesFor(event: "created" | "accepted" | "declined" | "approve
   };
   if (event === "created" && input.partnerId) add(input.partnerId, "A shift swap needs your answer", `${line} asked to swap. Accept or decline on the pocket.`);
   if (event === "created" && !input.partnerId) add(input.managerId, "An open shift is on the board", `${line} posted a shift. Eligible staff can claim it.`);
-  if (event === "claimed") {
+  if (event === "claimed" && input.settled === "applied") {
+    add(input.requesterId, "Someone claimed your shift", `A colleague claimed the shift you posted (${input.when}). The rota was updated.`);
+    add(input.claimerId, "You are on the rota", `You claimed ${input.when}. The rota was updated.`);
+    add(input.managerId, "A swap updated the rota", `${line} was agreed. The rota was updated.`);
+  } else if (event === "claimed") {
     add(input.requesterId, "Someone claimed your shift", `A colleague claimed the shift you posted (${input.when}). A manager still has to approve it.`);
     add(input.managerId, "A claimed shift needs approval", `${line} has a claim waiting.`);
   }
-  if (event === "accepted") {
+  if (event === "accepted" && input.settled === "applied") {
+    add(input.requesterId, "Your swap is on the rota", `The other person accepted (${input.when}). The rota was updated.`);
+    add(input.partnerId, "You are on the rota", `You accepted ${input.when}. The rota was updated.`);
+    add(input.managerId, "A swap updated the rota", `${line} was agreed. The rota was updated.`);
+  } else if (event === "accepted") {
     add(input.requesterId, "Your swap was accepted", `The other person accepted (${input.when}). A manager still has to approve it.`);
     add(input.managerId, "A swap needs approval", `${line} is ready for a decision.`);
   }

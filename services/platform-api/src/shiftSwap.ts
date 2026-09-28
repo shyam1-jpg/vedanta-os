@@ -13,9 +13,11 @@ import {
   createSwap,
   eligibleForBoard,
   hardBlocks,
+  managerMustApprove,
   noticesFor,
   parseConstraintFile,
   parseHouseRules,
+  parseSwapBoard,
   planAssignments,
   reviewTake,
   shouldExpire,
@@ -25,6 +27,7 @@ import {
   type HouseRules,
   type PersonRule,
   type ShiftSlot,
+  type SwapBoard,
   type SwapKind,
   type SwapNotice,
   type SwapPlan,
@@ -99,17 +102,20 @@ function fileConstraints(): ConstraintRow[] {
   return [];
 }
 
-function settingsBody(house: HouseRules) {
+function settingsBody(house: HouseRules, board: SwapBoard) {
   return {
     min_rest_hours: house.minRestHours,
     standard_week_hours: house.standardWeekHours,
     expire_hours_before: house.expireHoursBefore,
+    board: board.enabled === true,
+    approval: board.approval,
   };
 }
 
-async function loadHouse(propertyId: string): Promise<HouseRules> {
+async function loadShiftSettings(propertyId: string): Promise<{ house: HouseRules; board: SwapBoard; raw: Record<string, unknown> }> {
   const row = (await pool.query(`select settings from property where id=$1`, [propertyId])).rows[0];
-  return parseHouseRules(row?.settings?.shift_swap);
+  const raw = row?.settings?.shift_swap && typeof row.settings.shift_swap === "object" ? row.settings.shift_swap as Record<string, unknown> : {};
+  return { house: parseHouseRules(raw), board: parseSwapBoard(raw), raw };
 }
 
 async function londonNow(): Promise<{ today: string; nowMs: number }> {
@@ -121,7 +127,8 @@ async function londonNow(): Promise<{ today: string; nowMs: number }> {
 }
 
 async function loadContext(propertyId: string) {
-  const house = await loadHouse(propertyId);
+  const shiftSettings = await loadShiftSettings(propertyId);
+  const house = shiftSettings.house;
   const clockNow = await londonNow();
   const memberships = (await pool.query(
     `select u.id, u.email, u.display_name, r.code as role_code
@@ -183,7 +190,7 @@ async function loadContext(propertyId: string) {
     end: row.end,
     breakMinutes: Number(row.break_minutes ?? 0),
   }));
-  return { house, ...clockNow, people, roster };
+  return { house, board: shiftSettings.board, ...clockNow, people, roster };
 }
 
 function upcoming(slot: ShiftSlot, hoursBefore: number, nowMs: number): boolean {
@@ -341,7 +348,7 @@ async function insertEvent(c: Q, swapId: string, fromStatus: string | null, toSt
   );
 }
 
-async function applyApproval(c: Q, a: Actor, swapId: string, before: SwapRow, request: SwapRecord, note: string, ctx: Awaited<ReturnType<typeof loadContext>>) {
+async function applyApproval(c: Q, a: Actor, swapId: string, before: SwapRow, request: SwapRecord, note: string, ctx: Awaited<ReturnType<typeof loadContext>>, mode: "manager" | "auto" = "manager") {
   const shiftIds = [request.shiftId, request.partnerShiftId].filter((id): id is string => !!id);
   const locked = (await c.query(
     `select id, user_id, role_code, department, shift_date::text as date, start_time::text as start, end_time::text as end, break_minutes, status
@@ -367,7 +374,7 @@ async function applyApproval(c: Q, a: Actor, swapId: string, before: SwapRow, re
       `insert into shift_swap_assignment (swap_id, shift_id, from_user_id, to_user_id) values ($1,$2,$3,null)`,
       [swapId, request.shiftId, request.requesterId],
     );
-    await audit(c, a, "rota_shift", request.shiftId, "cancel", { from: request.requesterId, to: "cancelled", reason: note, payload: { swap_id: swapId } });
+    await audit(c, a, "rota_shift", request.shiftId, "cancel", { from: request.requesterId, to: "cancelled", reason: note, payload: { swap_id: swapId, auto: mode === "auto" } });
   }
   for (const change of plan.assignments) {
     const updated = await c.query(
@@ -379,14 +386,15 @@ async function applyApproval(c: Q, a: Actor, swapId: string, before: SwapRow, re
       `insert into shift_swap_assignment (swap_id, shift_id, from_user_id, to_user_id) values ($1,$2,$3,$4)`,
       [swapId, change.shiftId, change.fromUserId, change.toUserId],
     );
-    await audit(c, a, "rota_shift", change.shiftId, "swap", { from: change.fromUserId, to: change.toUserId, reason: note, payload: { swap_id: swapId } });
+    await audit(c, a, "rota_shift", change.shiftId, "swap", { from: change.fromUserId, to: change.toUserId, reason: note, payload: { swap_id: swapId, auto: mode === "auto" } });
   }
+  const action = mode === "auto" ? "auto_apply" : "approve";
   await c.query(
     `update shift_swap set status='approved', claimer_id=$2, manager_note=$3, decided_by=$4, decided_at=now() where id=$1`,
     [swapId, request.claimerId, note || null, a.userId],
   );
-  await insertEvent(c, swapId, before.status, "approved", "approve", note, a.userId, { assignments: plan.assignments, hours: plan.hours, warnings: plan.warnings });
-  await audit(c, a, "shift_swap", swapId, "approve", { from: before.status, to: "approved", reason: note, payload: { assignments: plan.assignments, hours: plan.hours } });
+  await insertEvent(c, swapId, before.status, "approved", action, note, a.userId, { assignments: plan.assignments, hours: plan.hours, warnings: plan.warnings, auto: mode === "auto" });
+  await audit(c, a, "shift_swap", swapId, action, { from: before.status, to: "approved", reason: note, payload: { assignments: plan.assignments, hours: plan.hours, auto: mode === "auto" } });
   return plan;
 }
 
@@ -452,17 +460,25 @@ export default async function shiftSwapRoutes(f: FastifyInstance) {
     if (!a.perms.has("shift.swap.manage") && !a.perms.has("package.manage")) {
       return reply.code(403).send(problem(403, "forbidden", "You cannot open shift swap settings"));
     }
-    return settingsBody(await loadHouse(a.propertyId));
+    const current = await loadShiftSettings(a.propertyId);
+    return settingsBody(current.house, current.board);
   });
 
   f.put("/v1/settings/shift-swap", async (req, reply) => {
     const a = await requireActor(req, reply, ["ADMIN", "STAFF"]); if (!a || !allow(a, "package.manage", reply)) return;
-    const house = parseHouseRules(req.body ?? {});
+    const body = (req.body ?? {}) as Record<string, unknown>;
+    const current = await loadShiftSettings(a.propertyId);
+    const house = parseHouseRules({ ...current.raw, ...body });
+    const board = parseSwapBoard({
+      board: Object.prototype.hasOwnProperty.call(body, "board") ? body.board : current.board.enabled,
+      approval: Object.prototype.hasOwnProperty.call(body, "approval") ? body.approval : current.board.approval,
+    });
+    const saved = settingsBody(house, board);
     await pool.query(
       `update property set settings = jsonb_set(coalesce(settings, '{}'::jsonb), '{shift_swap}', $2::jsonb, true) where id=$1`,
-      [a.propertyId, JSON.stringify(settingsBody(house))],
+      [a.propertyId, JSON.stringify(saved)],
     );
-    return settingsBody(house);
+    return saved;
   });
 
   f.get("/v1/shift-swaps/mine", async (req, reply) => {
@@ -489,6 +505,10 @@ export default async function shiftSwapRoutes(f: FastifyInstance) {
     });
     return {
       can_manage: a.perms.has("shift.swap.manage"),
+      board_on: ctx.board.enabled,
+      board_note: ctx.board.enabled
+        ? "When both people agree, the rota updates and managers are told. A department can still ask a manager to approve first."
+        : "A manager approves before the rota changes.",
       shifts: shifts.map(mine),
       colleague_shifts: colleagueShifts.map(mine),
       colleagues: [...ctx.people.values()].filter(person => person.userId !== a.userId).map(person => ({ id: person.userId, name: person.name, role: person.roleCode })),
@@ -587,7 +607,13 @@ export default async function shiftSwapRoutes(f: FastifyInstance) {
        order by created_at desc limit 200`,
       [a.propertyId, query.status || null, query.kind || null],
     )).rows as SwapRow[];
-    return { items: rows.map(row => present(row, ctx, row.status === "pending" || row.status === "accepted")) };
+    return {
+      board_on: ctx.board.enabled,
+      board_note: ctx.board.enabled
+        ? "When both people agree, the rota updates and managers are told. A department can still ask a manager to approve first."
+        : "A manager approves before the rota changes.",
+      items: rows.map(row => present(row, ctx, row.status === "pending" || row.status === "accepted")),
+    };
   });
 
   f.post("/v1/shift-swaps", async (req, reply) => {
@@ -746,8 +772,21 @@ async function decide(a: Actor, id: string, action: "accept" | "decline" | "clai
     const next = transition(current, action, a.userId, note);
     if (!next.ok) throw new Halt(422, "validation", next.error);
     if (action === "approve") {
-      const plan = await applyApproval(c, a, id, locked, next.request, note, ctx);
+      const plan = await applyApproval(c, a, id, locked, next.request, note, ctx, "manager");
       return { request: { ...next.request, status: "approved" as const }, notices: noticesFor("approved", noticeInput(ctx, next.request, managers)), warnings: plan.warnings, hours: plan.hours };
+    }
+    if (action === "accept" || action === "claim") {
+      const shift = ctx.roster.find(slot => slot.id === next.request.shiftId);
+      if (!managerMustApprove(ctx.board, shift?.department)) {
+        const plan = await applyApproval(c, a, id, locked, next.request, note || "Both agreed. The rota was updated.", ctx, "auto");
+        const event = action === "claim" ? "claimed" as const : "accepted" as const;
+        return {
+          request: { ...next.request, status: "approved" as const },
+          notices: noticesFor(event, { ...noticeInput(ctx, next.request, managers), settled: "applied" }),
+          warnings: plan.warnings,
+          hours: plan.hours,
+        };
+      }
     }
     const terminal = next.request.status === "declined" || next.request.status === "rejected" || next.request.status === "cancelled";
     await c.query(

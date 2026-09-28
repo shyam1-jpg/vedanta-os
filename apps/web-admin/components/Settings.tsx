@@ -28,7 +28,8 @@ export default function Settings() {
   const [retain, setRetain] = useState<{ allergen_days_after_departure: number; feedback_text_days: number; staff_note_days: number; profile_inactive_months: number } | null>(null);
   const [deposit, setDeposit] = useState<{ amount_gbp: number; policy: string } | null>(null);
   const [audit, setAudit] = useState<{ time: string; gm_email: string; auto_email: boolean } | null>(null);
-  const [swaps, setSwaps] = useState<{ min_rest_hours: number; standard_week_hours: number; expire_hours_before: number } | null>(null);
+  const [swaps, setSwaps] = useState<{ min_rest_hours: number; standard_week_hours: number; expire_hours_before: number; board: boolean; approval: Record<string, boolean> } | null>(null);
+  const [swapDepts, setSwapDepts] = useState("");
   const [brief, setBrief] = useState<{ severe: number; cold: number; vip: number; compliance: number; staffing: number; heads: Record<string, number> } | null>(null);
   const [orgSettings, setOrgSettings] = useState<{ allow_multiple_gm: boolean; staff_contact: "work" | "none" } | null>(null);
   const [spendSettings, setSpendSettings] = useState<{ gm_email: string; notify_heads: boolean; categories: { code: string; name: string }[] } | null>(null);
@@ -53,7 +54,11 @@ export default function Settings() {
     api<{ allergen_days_after_departure: number; feedback_text_days: number; staff_note_days: number; profile_inactive_months: number }>("/v1/settings/guest-retention").then(setRetain).catch(() => {});
     api<{ amount_gbp: number; policy: string }>("/v1/settings/deposit").then(setDeposit).catch(() => {});
     api<{ time: string; gm_email: string; auto_email: boolean }>("/v1/settings/night-audit").then(setAudit).catch(() => {});
-    api<{ min_rest_hours: number; standard_week_hours: number; expire_hours_before: number }>("/v1/settings/shift-swap").then(setSwaps).catch(() => {});
+    api<{ min_rest_hours: number; standard_week_hours: number; expire_hours_before: number; board?: boolean; approval?: Record<string, boolean> }>("/v1/settings/shift-swap").then(row => {
+      const approval = row.approval ?? {};
+      setSwaps({ ...row, board: row.board === true, approval });
+      setSwapDepts(Object.entries(approval).filter(([, on]) => on).map(([name]) => name).join(", "));
+    }).catch(() => {});
     api<{ severe: number; cold: number; vip: number; compliance: number; staffing: number; heads: Record<string, number> }>("/v1/settings/briefing").then(setBrief).catch(() => {});
     api<{ allow_multiple_gm: boolean; staff_contact: "work" | "none" }>("/v1/org/settings").then(setOrgSettings).catch(() => {});
     api<{ gm_email: string; notify_heads: boolean; categories: { code: string; name: string }[] }>("/v1/spend/settings").then(setSpendSettings).catch(() => {});
@@ -278,7 +283,11 @@ export default function Settings() {
       {swaps && (
         <div className="panel" style={{ marginTop: 14 }}>
           <h3>Shift swaps</h3>
-          <p className="m" style={{ color: "var(--ink-2)" }}>Rest is the gap between one shift ending and the next starting. Hours over the standard week are lieu. A personal cap, set on Shift swaps, is a hard block. Unanswered requests expire when the shift starts, or this many hours before it. Person-specific rules stay in the house record, not in the public code.</p>
+          <p className="m" style={{ color: "var(--ink-2)" }}>Rest is the gap between one shift ending and the next starting. Hours over the standard week are lieu. A personal cap, set on Shift swaps, is a hard block. Unanswered requests expire when the shift starts, or this many hours before it. Person-specific rules stay in the house record, not in the public code. The swap board stays off until you tick it. Then, once both people agree, the rota updates and managers are told. List a department here if that department should still wait for a manager.</p>
+          <label style={{ display: "block", marginTop: 8 }}><input type="checkbox" checked={swaps.board} onChange={e => setSwaps({ ...swaps, board: e.target.checked })} /> Swap board: update the rota when both agree</label>
+          <label style={{ display: "block", marginTop: 8 }}>Departments that still need a manager
+            <input aria-label="Departments that need manager approval" value={swapDepts} onChange={e => setSwapDepts(e.target.value)} placeholder="Kitchen" />
+          </label>
           <label style={{ display: "block", marginTop: 8 }}>Minimum rest, hours
             <input type="number" min={0} max={24} aria-label="Minimum rest hours" value={swaps.min_rest_hours} onChange={e => setSwaps({ ...swaps, min_rest_hours: Number(e.target.value) })} />
           </label>
@@ -289,7 +298,14 @@ export default function Settings() {
             <input type="number" min={0} max={168} aria-label="Expire hours before shift" value={swaps.expire_hours_before} onChange={e => setSwaps({ ...swaps, expire_hours_before: Number(e.target.value) })} />
           </label>
           <button className="btn primary" style={{ marginTop: 12 }} onClick={() => run(async () => {
-            setSwaps(await api("/v1/settings/shift-swap", { method: "PUT", body: JSON.stringify(swaps) }));
+            const approval: Record<string, boolean> = {};
+            for (const name of swapDepts.split(",")) {
+              const key = name.trim().toLowerCase();
+              if (key) approval[key] = true;
+            }
+            const saved = await api<{ min_rest_hours: number; standard_week_hours: number; expire_hours_before: number; board?: boolean; approval?: Record<string, boolean> }>("/v1/settings/shift-swap", { method: "PUT", body: JSON.stringify({ ...swaps, board: swaps.board === true, approval }) });
+            setSwaps({ ...saved, board: saved.board === true, approval: saved.approval ?? {} });
+            setSwapDepts(Object.entries(saved.approval ?? {}).filter(([, on]) => on).map(([name]) => name).join(", "));
           }, "Shift swap settings saved")}>Save shift swaps</button>
         </div>
       )}

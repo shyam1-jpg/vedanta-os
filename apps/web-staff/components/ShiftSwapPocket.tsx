@@ -21,6 +21,8 @@ type Swap = {
 type BoardItem = Swap & { warnings: Violation[] };
 type Mine = {
   can_manage: boolean;
+  board_on?: boolean;
+  board_note?: string;
   shifts: Shift[];
   colleague_shifts: Shift[];
   colleagues: Person[];
@@ -201,7 +203,7 @@ export default function ShiftSwapPocket({ canManage, onError }: { canManage: boo
 
       <div className="card" data-testid="shift-swap-board">
         <h2>Open board</h2>
-        <p className="m">Only shifts you can cover are listed.</p>
+        <p className="m">{mine?.board_note ?? "Only shifts you can cover are listed. A manager approves before the rota changes."} Only shifts you can cover are listed.</p>
         {(mine?.board.length ?? 0) === 0 && <p className="m">Nothing you can claim.</p>}
         {(mine?.board ?? []).map(item => (
           <div className="row" key={item.id} style={{ display: "block" }}>

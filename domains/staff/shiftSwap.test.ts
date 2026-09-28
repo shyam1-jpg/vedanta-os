@@ -6,9 +6,11 @@ import {
   createSwap,
   eligibleForBoard,
   filterSwaps,
+  managerMustApprove,
   noticesFor,
   parseConstraintFile,
   parseHouseRules,
+  parseSwapBoard,
   planAssignments,
   reviewTake,
   shouldExpire,
@@ -229,6 +231,23 @@ describe("expiry, filters, and the example constraint file", () => {
     if (!opened.ok) return;
     assert.equal(opened.request.status, "accepted");
     assert.equal(transition(opened.request, "approve", "manager").ok, true);
+  });
+
+  it("keeps manager approval until the swap board is switched on", () => {
+    const off = parseSwapBoard({});
+    assert.equal(off.enabled, false);
+    assert.equal(managerMustApprove(off, "Kitchen"), true);
+    const on = parseSwapBoard({ board: true, approval: { Kitchen: true, front: false } });
+    assert.equal(on.enabled, true);
+    assert.equal(managerMustApprove(on, "kitchen"), true);
+    assert.equal(managerMustApprove(on, "Front"), false);
+    assert.equal(managerMustApprove(on, "Housekeeping"), false);
+    const waiting = noticesFor("accepted", { requesterId: "chef", partnerId: "porter", managerId: "manager", requesterName: "Example Chef", when: "Tue 6 Oct 09:00" });
+    assert.match(waiting.map(note => note.body).join(" "), /manager still has to approve/);
+    const applied = noticesFor("claimed", { requesterId: "porter", claimerId: "porter-2", managerId: "manager", requesterName: "Example Porter", when: "Tue 6 Oct 12:00", settled: "applied" });
+    assert.deepEqual(applied.map(note => note.toUserId).sort(), ["manager", "porter", "porter-2"]);
+    assert.match(applied.map(note => note.body).join(" "), /rota was updated/);
+    assert.equal(/still has to approve/.test(applied.map(note => note.body).join(" ")), false);
   });
 
   it("leaves a manager's open post on the board until somebody claims it", () => {
