@@ -11,7 +11,7 @@ export const metadata: Metadata = {
 };
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
-    <html lang="en-GB">
+    <html lang="en-GB" suppressHydrationWarning>
       <head>
         <link rel="manifest" href="/manifest.json" />
         <meta name="mobile-web-app-capable" content="yes" />
@@ -20,7 +20,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
         <meta name="apple-mobile-web-app-title" content="Vedanta OS" />
         <meta name="theme-color" content="#1a3328" />
       </head>
-      <body><Shell>{children}</Shell></body>
+      <body suppressHydrationWarning><Shell>{children}</Shell></body>
     </html>
   );
 }
