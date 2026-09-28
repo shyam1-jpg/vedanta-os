@@ -31,6 +31,7 @@ export default function Settings() {
   const [swaps, setSwaps] = useState<{ min_rest_hours: number; standard_week_hours: number; expire_hours_before: number } | null>(null);
   const [brief, setBrief] = useState<{ severe: number; cold: number; vip: number; compliance: number; staffing: number; heads: Record<string, number> } | null>(null);
   const [orgSettings, setOrgSettings] = useState<{ allow_multiple_gm: boolean; staff_contact: "work" | "none" } | null>(null);
+  const [spendSettings, setSpendSettings] = useState<{ gm_email: string; notify_heads: boolean; categories: { code: string; name: string }[] } | null>(null);
   const [stayCopy, setStayCopy] = useState<Record<string, string>>({});
   useEffect(() => {
     api<{ rules: { kitchen: RouteBox; restaurant: RouteBox; front: RouteBox }; receives: Record<string, string> }>("/v1/settings/booking-routing")
@@ -52,6 +53,7 @@ export default function Settings() {
     api<{ min_rest_hours: number; standard_week_hours: number; expire_hours_before: number }>("/v1/settings/shift-swap").then(setSwaps).catch(() => {});
     api<{ severe: number; cold: number; vip: number; compliance: number; staffing: number; heads: Record<string, number> }>("/v1/settings/briefing").then(setBrief).catch(() => {});
     api<{ allow_multiple_gm: boolean; staff_contact: "work" | "none" }>("/v1/org/settings").then(setOrgSettings).catch(() => {});
+    api<{ gm_email: string; notify_heads: boolean; categories: { code: string; name: string }[] }>("/v1/spend/settings").then(setSpendSettings).catch(() => {});
   }, []);
   const load = () => { api<{ items: Pkg[] }>("/v1/packages").then(r => setPkgs(r.items)); if (can("config.manage")) api<{ items: Key[] }>("/v1/integrations/keys").then(r => setKeys(r.items)).catch(() => {}); };
   useEffect(load, []); // eslint-disable-line react-hooks/exhaustive-deps
@@ -328,6 +330,22 @@ export default function Settings() {
           <button className="btn primary" style={{ marginTop: 12 }} onClick={() => run(async () => {
             setOrgSettings(await api("/v1/org/settings", { method: "PUT", body: JSON.stringify(orgSettings) }));
           }, "Organisation settings saved")}>Save organisation settings</button>
+        </div>
+      )}
+      {spendSettings && (
+        <div className="panel" style={{ marginTop: 14 }}>
+          <h3>Spending alerts</h3>
+          <p className="m" style={{ color: "var(--ink-2)" }}>When a department reaches 80% and 100% of its monthly budget, the note goes once. Add the general manager, or Shyam, and choose whether the department head is told as well.</p>
+          <label style={{ display: "block", marginTop: 8 }}>General manager email
+            <input aria-label="Spend alert email" type="email" value={spendSettings.gm_email} onChange={e => setSpendSettings({ ...spendSettings, gm_email: e.target.value })} />
+          </label>
+          <label style={{ display: "block", marginTop: 8 }}><input type="checkbox" checked={spendSettings.notify_heads} onChange={e => setSpendSettings({ ...spendSettings, notify_heads: e.target.checked })} /> Tell the department head as well</label>
+          <label style={{ display: "block", marginTop: 8 }}>Categories, one name per line
+            <textarea aria-label="Spend categories" value={spendSettings.categories.map(item => item.name).join("\n")} onChange={e => setSpendSettings({ ...spendSettings, categories: e.target.value.split("\n").map(name => name.trim()).filter(Boolean).map(name => ({ code: name.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, ""), name })) })} />
+          </label>
+          <button className="btn primary" style={{ marginTop: 12 }} onClick={() => run(async () => {
+            setSpendSettings(await api("/v1/spend/settings", { method: "PUT", body: JSON.stringify(spendSettings) }));
+          }, "Spending alerts saved")}>Save spending alerts</button>
         </div>
       )}
       {retain && (

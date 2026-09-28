@@ -9,6 +9,7 @@ import NightAuditPocket from "@/components/NightAuditPocket";
 import ShiftSwapPocket from "@/components/ShiftSwapPocket";
 import BriefingPocket from "@/components/BriefingPocket";
 import OrgPocket from "@/components/OrgPocket";
+import SpendPocket from "@/components/SpendPocket";
 import ReturningGuests from "@/components/ReturningGuests";
 
 type Me = { name: string; email: string; role: string; role_name?: string; permissions?: string[]; property_name?: string | null; property_kicker?: string | null };
@@ -223,7 +224,7 @@ export default function Pocket() {
   const [secret, setSecret] = useState("");
   const [providers, setProviders] = useState<{ microsoft: boolean; dev: boolean } | null>(null);
   const [err, setErr] = useState<string | null>(null);
-  const [tab, setTab] = useState<"clock" | "leave" | "duty" | "sop" | "log" | "desk" | "night" | "manual" | "tasks" | "fault" | "stock" | "words" | "compliance" | "lost" | "suppliers" | "training" | "audit" | "swaps" | "brief" | "org">("clock");
+  const [tab, setTab] = useState<"clock" | "leave" | "duty" | "sop" | "log" | "desk" | "night" | "manual" | "tasks" | "fault" | "stock" | "words" | "compliance" | "lost" | "suppliers" | "training" | "audit" | "swaps" | "brief" | "org" | "spend">("clock");
   const openedHome = useRef(false);
   const [words, setWords] = useState<{ first_name: string; comment: string | null; created_at: string }[]>([]);
   const [desk, setDesk] = useState<{
@@ -357,6 +358,7 @@ export default function Pocket() {
         <div className="tabs">
           {(me.permissions ?? []).includes("briefing.read") && <button className={tab === "brief" ? "on" : ""} data-testid="pocket-briefing" onClick={() => setTab("brief")}>Briefing</button>}
           {(me.permissions ?? []).includes("org.read") && <button className={tab === "org" ? "on" : ""} data-testid="pocket-org" onClick={() => setTab("org")}>Organisation</button>}
+          {(me.permissions ?? []).includes("spend.log") && <button className={tab === "spend" ? "on" : ""} data-testid="pocket-spend-tab" onClick={() => setTab("spend")}>Spending</button>}
           <button className={tab === "clock" ? "on" : ""} onClick={() => setTab("clock")}>Clock</button>
           <button className={tab === "leave" ? "on" : ""} onClick={() => setTab("leave")}>Holiday</button>
           <button className={tab === "duty" ? "on" : ""} onClick={() => setTab("duty")}>Duty</button>
@@ -539,6 +541,7 @@ export default function Pocket() {
         )}
         {tab === "swaps" && (me.permissions ?? []).includes("shift.swap") && <ShiftSwapPocket canManage={(me.permissions ?? []).includes("shift.swap.manage")} onError={setErr} />}
         {tab === "org" && (me.permissions ?? []).includes("org.read") && <OrgPocket onError={setErr} />}
+        {tab === "spend" && (me.permissions ?? []).includes("spend.log") && <SpendPocket onError={setErr} />}
         {tab === "words" && (
           <div className="card">
             <h2>Kind words</h2>
