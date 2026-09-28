@@ -18,11 +18,18 @@ export default function Settings() {
   const [faultMail, setFaultMail] = useState<{ maintenance: string; manager: string; kitchen: string } | null>(null);
   const [faultAreas, setFaultAreas] = useState("");
   const [faultCopy, setFaultCopy] = useState<Record<string, string>>({});
+  const [handoverTags, setHandoverTags] = useState<string | null>(null);
+  const [stockMail, setStockMail] = useState<{ kitchen: string; buyer: string } | null>(null);
+  const [stockCopy, setStockCopy] = useState<Record<string, string>>({});
   useEffect(() => {
     api<{ rules: { kitchen: RouteBox; restaurant: RouteBox; front: RouteBox }; receives: Record<string, string> }>("/v1/settings/booking-routing")
       .then(r => { setRoutes(r.rules); setRouteCopy(r.receives); }).catch(() => {});
     api<{ areas: string[]; emails: { maintenance: string; manager: string; kitchen: string }; receives: Record<string, string> }>("/v1/settings/fault-routing")
       .then(r => { setFaultMail(r.emails); setFaultAreas(r.areas.join("\n")); setFaultCopy(r.receives); }).catch(() => {});
+    api<{ tags: { label: string }[] }>("/v1/settings/handover-tags")
+      .then(r => setHandoverTags(r.tags.map(t => t.label).join("\n"))).catch(() => {});
+    api<{ emails: { kitchen: string; buyer: string }; receives: Record<string, string> }>("/v1/settings/stock-alerts")
+      .then(r => { setStockMail(r.emails); setStockCopy(r.receives); }).catch(() => {});
   }, []);
   const load = () => { api<{ items: Pkg[] }>("/v1/packages").then(r => setPkgs(r.items)); if (can("config.manage")) api<{ items: Key[] }>("/v1/integrations/keys").then(r => setKeys(r.items)).catch(() => {}); };
   useEffect(load, []); // eslint-disable-line react-hooks/exhaustive-deps
@@ -100,6 +107,34 @@ export default function Settings() {
             setFaultAreas(saved.areas.join("\n"));
             setFaultMail(saved.emails);
           }, "Fault routing saved")}>Save fault routing</button>
+        </div>
+      )}
+      {handoverTags != null && (
+        <div className="panel" style={{ marginTop: 14 }}>
+          <h3>Shift handover tags</h3>
+          <p className="m" style={{ color: "var(--ink-2)" }}>One tag per line. The incoming shift sees unread notes that match their department, plus General. An empty list restores Kitchen, Front of house, Maintenance and General.</p>
+          <textarea rows={6} value={handoverTags} onChange={e => setHandoverTags(e.target.value)} style={{ display: "block", width: "100%", maxWidth: 640, marginTop: 4, padding: "7px 9px", border: "1px solid var(--line)", borderRadius: 6, font: "inherit" }} />
+          <button className="btn primary" style={{ marginTop: 12 }} onClick={() => run(async () => {
+            const saved = await api<{ tags: { label: string }[] }>("/v1/settings/handover-tags", { method: "PUT", body: JSON.stringify({ tags: handoverTags.split("\n").map(s => s.trim()).filter(Boolean) }) });
+            setHandoverTags(saved.tags.map(t => t.label).join("\n"));
+          }, "Handover tags saved")}>Save handover tags</button>
+        </div>
+      )}
+      {stockMail && (
+        <div className="panel" style={{ marginTop: 14 }}>
+          <h3>Low stock</h3>
+          <p className="m" style={{ color: "var(--ink-2)" }}>When an item drops below its line, the kitchen and the person who orders stock each get one note. It is not sent again until the item is restocked. Put the inboxes here. Do not commit a real address. If SMTP is not set, the note is logged for staff to copy.</p>
+          {(["kitchen", "buyer"] as const).map(key => (
+            <div key={key} style={{ marginTop: 14, maxWidth: 640 }}>
+              <b>{key === "buyer" ? "Person who orders stock" : "Kitchen"}</b>
+              <p className="m">{stockCopy[key]}</p>
+              <input placeholder="team@example.invalid" value={stockMail[key]} onChange={e => setStockMail({ ...stockMail, [key]: e.target.value })} />
+            </div>
+          ))}
+          <button className="btn primary" style={{ marginTop: 12 }} onClick={() => run(async () => {
+            const saved = await api<{ emails: { kitchen: string; buyer: string } }>("/v1/settings/stock-alerts", { method: "PUT", body: JSON.stringify({ emails: stockMail }) });
+            setStockMail(saved.emails);
+          }, "Stock alerts saved")}>Save stock alerts</button>
         </div>
       )}
       {toast && <div className="toast">{toast}</div>}

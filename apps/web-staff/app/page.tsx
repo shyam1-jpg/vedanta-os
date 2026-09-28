@@ -205,6 +205,51 @@ function FaultPocket({ me, canWork, onError }: { me: Me; canWork: boolean; onErr
   );
 }
 
+type StockItem = { id: string; name: string; unit: string; quantity: number; low_threshold: number; example: boolean; low: boolean };
+type HandoverTag = { code: string; label: string };
+type HandoverNote = { id: string; department?: string; department_label?: string; shift?: string; shift_label?: string; body: string; author_name: string | null; created_at?: string; tags?: string[]; acked?: boolean };
+
+function deptFromTags(tags: string[]): string {
+  if (tags.includes("kitchen")) return "KITCHEN";
+  if (tags.includes("front")) return "FRONT";
+  if (tags.includes("maintenance")) return "MAINT";
+  return "HOUSE";
+}
+
+function StockPocket({ onError }: { onError: (msg: string | null) => void }) {
+  const [items, setItems] = useState<StockItem[]>([]);
+  const [low, setLow] = useState<{ name: string; quantity: number; unit: string }[]>([]);
+  const [amount, setAmount] = useState<Record<string, string>>({});
+  const load = () => api<{ items: StockItem[]; low: { name: string; quantity: number; unit: string }[] }>("/v1/kitchen-stock").then(r => { setItems(r.items); setLow(r.low); });
+  useEffect(() => { load().catch(e => onError((e as Error).message)); }, []);
+  const count = async (item: StockItem, op: "use" | "restock" | "set") => {
+    try {
+      await api(`/v1/kitchen-stock/${item.id}/count`, { method: "POST", body: JSON.stringify({ op, amount: Number(amount[item.id] ?? "1") }) });
+      onError(null);
+      await load();
+    } catch (e) { onError((e as Error).message); }
+  };
+  return (
+    <div>
+      {low.length > 0 && <div className="note"><b>Below the line.</b> {low.map(i => `${i.name} (${i.quantity} ${i.unit})`).join(" · ")}</div>}
+      {items.map(item => (
+        <div className="card" key={item.id}>
+          <h2>{item.name}{item.example ? " · example" : ""}{item.low ? " · low" : ""}</h2>
+          <p>{item.quantity} {item.unit}</p>
+          <p className="m">Order more below {item.low_threshold} {item.unit}</p>
+          <input value={amount[item.id] ?? "1"} onChange={e => setAmount(s => ({ ...s, [item.id]: e.target.value }))} aria-label={`Amount for ${item.name}`} />
+          <div className="tabs">
+            <button className="btn" onClick={() => count(item, "use")}>Use</button>
+            <button className="btn" onClick={() => count(item, "restock")}>Restock</button>
+            <button className="btn" onClick={() => count(item, "set")}>Set count</button>
+          </div>
+        </div>
+      ))}
+      {items.length === 0 && <p className="m">No stock items yet.</p>}
+    </div>
+  );
+}
+
 export default function Pocket() {
   const [me, setMe] = useState<Me | null>(null);
   const [prop, setProp] = useState<Prop>({ name: "The Vedanta Way", kicker: "Retreat Center" });
@@ -212,7 +257,7 @@ export default function Pocket() {
   const [secret, setSecret] = useState("");
   const [providers, setProviders] = useState<{ microsoft: boolean; dev: boolean } | null>(null);
   const [err, setErr] = useState<string | null>(null);
-  const [tab, setTab] = useState<"clock" | "leave" | "duty" | "sop" | "log" | "desk" | "night" | "manual" | "tasks" | "fault">("clock");
+  const [tab, setTab] = useState<"clock" | "leave" | "duty" | "sop" | "log" | "desk" | "night" | "manual" | "tasks" | "fault" | "stock">("clock");
   const [desk, setDesk] = useState<{
     today: { weekday: string; title: string; method: string; ingredients: { name: string; qty: string }[] };
     tomorrow: { weekday: string; title: string; method: string; ingredients: { name: string; qty: string }[] };
@@ -221,12 +266,19 @@ export default function Pocket() {
   const [pay, setPay] = useState<{ hours: number; shifts: { in_at: string; out_at: string | null; hours: number }[] } | null>(null);
   const [ops, setOps] = useState<{
     progress: { done: number; total: number };
-    handover: { id: string; department: string; department_label: string; shift: string; shift_label: string; body: string; author_name: string | null }[];
+    handover: HandoverNote[];
+    handover_tags?: HandoverTag[];
     checklists: { id: string; department: string; department_label: string; title: string; due_time?: string | null; done: boolean }[];
     guest_requests: { id: string; guest_name: string | null; room_label: string | null; department_label: string; request_text: string; status: string }[];
     notices: { id: string; title: string; body: string }[];
   } | null>(null);
   const [note, setNote] = useState("");
+  const [noteShift, setNoteShift] = useState("am");
+  const [noteTags, setNoteTags] = useState<string[]>([]);
+  const [inbox, setInbox] = useState<{ label: string; unread: HandoverNote[]; tags: HandoverTag[] } | null>(null);
+  const [histOn, setHistOn] = useState(false);
+  const [histItems, setHistItems] = useState<HandoverNote[]>([]);
+  const [hf, setHf] = useState({ tag: "", shift: "", unread: false });
   const [clock, setClock] = useState<{ last: string | null; hours_this_week: number } | null>(null);
   const [leave, setLeave] = useState<{ items: { id: string; kind: string; starts_on: string; ends_on: string; status: string }[] } | null>(null);
   const [form, setForm] = useState({ kind: "HOLIDAY", starts_on: "", ends_on: "", note: "" });
@@ -248,6 +300,7 @@ export default function Pocket() {
     setSops((await api<{ items: typeof sops }>("/staff/sop")).items);
     setDuty((await api<{ items: typeof duty }>("/staff/duty")).items);
     try { setOps(await api("/v1/ops/board")); } catch { setOps(null); }
+    try { setInbox(await api("/v1/ops/handover/inbox")); } catch { setInbox(null); }
     try { setDesk(await api("/v1/service/front-desk")); } catch { setDesk(null); }
     try { setPay(await api("/staff/payroll")); } catch { setPay(null); }
     try { setManuals((await api<{ items: typeof manuals }>("/v1/manuals")).items); } catch { setManuals([]); }
@@ -314,6 +367,18 @@ export default function Pocket() {
     <>
       <div className="hero"><div className="kicker">{me.role_name ?? me.role.replace(/_/g, " ")}</div><h1>{me.name}</h1></div>
       <div className="wrap">
+        {!!inbox?.unread.length && (
+          <div className="note">
+            <b>{inbox.label}</b>
+            {inbox.unread.map(n => (
+              <div key={n.id} style={{ marginTop: 8 }}>
+                <div className="m">{n.author_name ?? "Staff"}{n.created_at ? ` · ${new Date(n.created_at).toLocaleString("en-GB")}` : ""}{(n.tags ?? []).map(code => ` · ${inbox.tags.find(t => t.code === code)?.label ?? code}`).join("")}</div>
+                <p style={{ whiteSpace: "pre-wrap" }}>{n.body}</p>
+                <button className="btn" onClick={async () => { setErr(null); try { await api(`/v1/ops/handover/${n.id}/ack`, { method: "POST", body: "{}" }); setInbox(await api("/v1/ops/handover/inbox")); } catch (e) { setErr((e as Error).message); } }}>Mark as read</button>
+              </div>
+            ))}
+          </div>
+        )}
         <div className="tabs">
           <button className={tab === "clock" ? "on" : ""} onClick={() => setTab("clock")}>Clock</button>
           <button className={tab === "leave" ? "on" : ""} onClick={() => setTab("leave")}>Holiday</button>
@@ -321,6 +386,7 @@ export default function Pocket() {
           <button className={tab === "log" ? "on" : ""} onClick={() => setTab("log")}>House log</button>
           <button className={tab === "tasks" ? "on" : ""} onClick={() => setTab("tasks")}>Tasks</button>
           <button className={tab === "fault" ? "on" : ""} onClick={() => setTab("fault")}>Fault</button>
+          {(me.permissions ?? []).includes("kitchen.stock") && <button className={tab === "stock" ? "on" : ""} onClick={() => setTab("stock")}>Stock</button>}
           <button className={tab === "desk" ? "on" : ""} onClick={() => setTab("desk")}>Front desk</button>
           <button className={tab === "night" ? "on" : ""} onClick={() => setTab("night")}>Night</button>
           <button className={tab === "manual" ? "on" : ""} onClick={() => setTab("manual")}>Manual</button>
@@ -376,9 +442,66 @@ export default function Pocket() {
             ))}
             <div className="card">
               <h2>Handover</h2>
-              {(ops?.handover ?? []).slice(0, 5).map(h => <div className="row" key={h.id} style={{ display: "block" }}><b>{h.department_label} · {h.shift_label}</b><div>{h.body}</div></div>)}
-              <textarea rows={3} value={note} onChange={e => setNote(e.target.value)} placeholder="What the next shift needs to know" />
-              <button className="btn" onClick={async () => { setErr(null); try { await api("/v1/ops/handover", { method: "POST", body: JSON.stringify({ department: "HOUSE", shift: "am", body: note }) }); setNote(""); setOps(await api("/v1/ops/board")); } catch (e) { setErr((e as Error).message); } }}>Leave a morning note</button>
+              <div className="tabs">
+                <button className={!histOn ? "on" : ""} onClick={() => setHistOn(false)}>Today</button>
+                <button className={histOn ? "on" : ""} onClick={async () => {
+                  setHistOn(true);
+                  const q = new URLSearchParams();
+                  if (hf.tag) q.set("tag", hf.tag);
+                  if (hf.shift) q.set("shift", hf.shift);
+                  if (hf.unread) q.set("unread", "1");
+                  setHistItems((await api<{ items: HandoverNote[] }>(`/v1/ops/handover?${q}`)).items);
+                }}>History</button>
+              </div>
+              {histOn && (
+                <div>
+                  <select aria-label="Filter by tag" value={hf.tag} onChange={async e => {
+                    const next = { ...hf, tag: e.target.value }; setHf(next);
+                    const q = new URLSearchParams(); if (next.tag) q.set("tag", next.tag); if (next.shift) q.set("shift", next.shift); if (next.unread) q.set("unread", "1");
+                    setHistItems((await api<{ items: HandoverNote[] }>(`/v1/ops/handover?${q}`)).items);
+                  }}>
+                    <option value="">All tags</option>
+                    {(inbox?.tags ?? ops?.handover_tags ?? []).map(t => <option key={t.code} value={t.code}>{t.label}</option>)}
+                  </select>
+                  <select aria-label="Filter by shift" value={hf.shift} onChange={async e => {
+                    const next = { ...hf, shift: e.target.value }; setHf(next);
+                    const q = new URLSearchParams(); if (next.tag) q.set("tag", next.tag); if (next.shift) q.set("shift", next.shift); if (next.unread) q.set("unread", "1");
+                    setHistItems((await api<{ items: HandoverNote[] }>(`/v1/ops/handover?${q}`)).items);
+                  }}>
+                    <option value="">All shifts</option>
+                    <option value="am">Morning</option>
+                    <option value="pm">Evening</option>
+                    <option value="night">Night</option>
+                  </select>
+                  <label className="m"><input type="checkbox" checked={hf.unread} onChange={async e => {
+                    const next = { ...hf, unread: e.target.checked }; setHf(next);
+                    const q = new URLSearchParams(); if (next.tag) q.set("tag", next.tag); if (next.shift) q.set("shift", next.shift); if (next.unread) q.set("unread", "1");
+                    setHistItems((await api<{ items: HandoverNote[] }>(`/v1/ops/handover?${q}`)).items);
+                  }} /> Unread only</label>
+                </div>
+              )}
+              {(histOn ? histItems : (ops?.handover ?? []).slice(0, 5)).map(h => (
+                <div className="row" key={h.id} style={{ display: "block" }}>
+                  <b>{h.department_label} · {h.shift_label}</b>
+                  <div className="m">{h.author_name ?? "Staff"}{h.created_at ? ` · ${new Date(h.created_at).toLocaleString("en-GB")}` : ""}{(h.tags ?? []).length ? ` · ${(h.tags ?? []).join(", ")}` : ""}</div>
+                  <div>{h.body}</div>
+                  {h.acked ? <span className="m">Read</span> : <button className="btn" onClick={async () => { await api(`/v1/ops/handover/${h.id}/ack`, { method: "POST", body: "{}" }); setOps(await api("/v1/ops/board")); setInbox(await api("/v1/ops/handover/inbox")); }}>Mark as read</button>}
+                </div>
+              ))}
+              <select value={noteShift} onChange={e => setNoteShift(e.target.value)} aria-label="Shift">
+                <option value="am">Morning</option>
+                <option value="pm">Evening</option>
+                <option value="night">Night</option>
+              </select>
+              <div>
+                {(inbox?.tags ?? ops?.handover_tags ?? []).map(t => (
+                  <label key={t.code} className="m" style={{ marginRight: 10 }}>
+                    <input type="checkbox" checked={noteTags.includes(t.code)} onChange={e => setNoteTags(e.target.checked ? [...noteTags, t.code] : noteTags.filter(c => c !== t.code))} /> {t.label}
+                  </label>
+                ))}
+              </div>
+              <textarea rows={3} value={note} onChange={e => setNote(e.target.value)} placeholder="What's running, any issues, and anything a guest needs the next shift to know" />
+              <button className="btn" onClick={async () => { setErr(null); try { await api("/v1/ops/handover", { method: "POST", body: JSON.stringify({ department: deptFromTags(noteTags), shift: noteShift, body: note, tags: noteTags }) }); setNote(""); setOps(await api("/v1/ops/board")); setInbox(await api("/v1/ops/handover/inbox")); } catch (e) { setErr((e as Error).message); } }}>Leave the note</button>
             </div>
             {(ops?.notices ?? []).map(n => <div className="card" key={n.id}><h2>{n.title}</h2><p>{n.body}</p></div>)}
           </div>
@@ -418,6 +541,7 @@ export default function Pocket() {
           </div>
         )}
         {tab === "fault" && <FaultPocket me={me} canWork={(me.permissions ?? []).includes("maintenance.work")} onError={setErr} />}
+        {tab === "stock" && (me.permissions ?? []).includes("kitchen.stock") && <StockPocket onError={setErr} />}
         {tab === "desk" && (
           <div>
             <div className="card">

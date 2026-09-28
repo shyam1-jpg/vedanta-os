@@ -15,6 +15,15 @@ import {
   routeGuestRequest,
   shiftLabel,
 } from "../../../domains/ops/board.ts";
+import {
+  chooseTags,
+  handoverWindow,
+  noteVisible,
+  staffTagCodes,
+  tagsOrDefault,
+  windowLabel,
+  type HandoverTag,
+} from "../../../domains/ops/handover.ts";
 
 async function londonDate(): Promise<string> {
   const r = await pool.query(`select (timezone('Europe/London', now()))::date::text t`);
@@ -73,6 +82,8 @@ function shapeBoard(
       body: row.body,
       author_name: row.author_name,
       created_at: row.created_at,
+      tags: row.tags ?? [],
+      acked: !!row.acked,
     })),
     notices: notices.map(row => ({
       id: row.id,
@@ -98,15 +109,21 @@ function shapeBoard(
   };
 }
 
-async function loadBoard(propertyId: string, date: string) {
-  const [handover, notices, checks, ticks, requests] = await Promise.all([
+async function loadTagList(propertyId: string): Promise<HandoverTag[]> {
+  const row = (await pool.query(`select settings from property where id=$1`, [propertyId])).rows[0];
+  return tagsOrDefault(row?.settings?.handover_tags);
+}
+
+async function loadBoard(propertyId: string, date: string, userId: string) {
+  const [handover, notices, checks, ticks, requests, tagList] = await Promise.all([
     pool.query(
-      `select id, department, shift, for_date::text, body, author_name, created_at
+      `select id, department, shift, for_date::text, body, author_name, created_at, tags,
+              exists(select 1 from ops_handover_ack k where k.handover_id = ops_handover.id and k.user_id = $3) as acked
        from ops_handover
        where property_id = $1 and for_date >= $2::date - 1
        order by created_at desc
        limit 40`,
-      [propertyId, date],
+      [propertyId, date, userId],
     ),
     pool.query(
       `select id, department, title, body, author_name, pinned, created_at
@@ -137,27 +154,116 @@ async function loadBoard(propertyId: string, date: string) {
        limit 40`,
       [propertyId],
     ),
+    loadTagList(propertyId),
   ]);
-  return shapeBoard(date, handover.rows, notices.rows, checks.rows, ticks.rows, requests.rows);
+  return { ...shapeBoard(date, handover.rows, notices.rows, checks.rows, ticks.rows, requests.rows), handover_tags: tagList };
 }
 
 export default async function ops(f: FastifyInstance) {
   f.get("/v1/ops/board", async (req, reply) => {
     const a = await requireLogActor(req, reply); if (!a) return;
-    return loadBoard(a.propertyId, await londonDate());
+    return loadBoard(a.propertyId, await londonDate(), a.userId);
+  });
+
+  f.get("/v1/settings/handover-tags", async (req, reply) => {
+    const a = await requireLogActor(req, reply); if (!a) return;
+    return { tags: await loadTagList(a.propertyId) };
+  });
+
+  f.put("/v1/settings/handover-tags", async (req: any, reply) => {
+    const a = await requireLogActor(req, reply); if (!a) return;
+    if (!a.perms.has("package.manage")) return reply.code(403).send(problem(403, "forbidden", "You cannot change the handover tags"));
+    const tags = tagsOrDefault(req.body?.tags);
+    await pool.query(
+      `update property set settings = jsonb_set(coalesce(settings, '{}'::jsonb), '{handover_tags}', $2::jsonb, true) where id=$1`,
+      [a.propertyId, JSON.stringify(tags)],
+    );
+    return { tags };
+  });
+
+  f.get("/v1/ops/handover/inbox", async (req, reply) => {
+    const a = await requireLogActor(req, reply); if (!a) return;
+    const shift = (await pool.query(
+      `select (s.shift_date + s.start_time) at time zone 'Europe/London' as start_at
+       from rota_shift s
+       where s.property_id=$1 and s.user_id=$2
+         and s.shift_date = (timezone('Europe/London', now()))::date
+         and s.status <> 'cancelled'
+       order by s.start_time limit 1`,
+      [a.propertyId, a.userId],
+    )).rows[0];
+    const previous = (await pool.query(
+      `select created_at from session where user_id=$1 and property_id=$2 order by created_at desc offset 1 limit 1`,
+      [a.userId, a.propertyId],
+    )).rows[0];
+    const window = handoverWindow({
+      shiftStart: shift?.start_at ? new Date(shift.start_at) : null,
+      previousLogin: previous?.created_at ? new Date(previous.created_at) : null,
+    });
+    const tags = await loadTagList(a.propertyId);
+    const rows = (await pool.query(
+      `select id, department, shift, for_date::text, body, author_name, created_at, tags
+       from ops_handover
+       where property_id=$1 and created_at >= $2
+         and not exists (select 1 from ops_handover_ack k where k.handover_id = ops_handover.id and k.user_id = $3)
+       order by created_at desc limit 40`,
+      [a.propertyId, window.since, a.userId],
+    )).rows;
+    const staff = staffTagCodes(a.department, a.role);
+    const unread = rows.filter((row: { tags: string[] | null; department: string }) => noteVisible({ tags: row.tags ?? [], department: row.department }, staff));
+    return { since: window.since.toISOString(), reason: window.reason, label: windowLabel(window.reason), tags, unread };
+  });
+
+  f.get("/v1/ops/handover", async (req: any, reply) => {
+    const a = await requireLogActor(req, reply); if (!a) return;
+    const tag = String(req.query?.tag ?? "").trim().toLowerCase();
+    const shift = String(req.query?.shift ?? "").trim().toLowerCase();
+    const unread = req.query?.unread === "1";
+    const rows = (await pool.query(
+      `select id, department, shift, for_date::text, body, author_name, created_at, tags,
+              exists(select 1 from ops_handover_ack k where k.handover_id = ops_handover.id and k.user_id = $2) as acked
+       from ops_handover
+       where property_id=$1
+       order by created_at desc limit 200`,
+      [a.propertyId, a.userId],
+    )).rows;
+    const items = rows.filter((row: any) => {
+      if (shift && row.shift !== shift) return false;
+      if (unread && row.acked) return false;
+      if (!tag) return true;
+      const tags = row.tags ?? [];
+      if (tags.includes(tag)) return true;
+      return tags.length === 0 && noteVisible({ tags: [], department: row.department }, [tag]);
+    });
+    return { items, tags: await loadTagList(a.propertyId) };
+  });
+
+  f.post("/v1/ops/handover/:id/ack", async (req: any, reply) => {
+    const a = await requireLogActor(req, reply); if (!a) return;
+    const row = (await pool.query(`select id from ops_handover where id=$1 and property_id=$2`, [req.params.id, a.propertyId])).rows[0];
+    if (!row) return reply.code(404).send(problem(404, "not_found", "No such handover note"));
+    await pool.query(
+      `insert into ops_handover_ack (handover_id, user_id, tenant_id, property_id)
+       values ($1,$2,$3,$4) on conflict do nothing`,
+      [row.id, a.userId, a.tenantId, a.propertyId],
+    );
+    return { ok: true };
   });
 
   f.post("/v1/ops/handover", async (req: any, reply) => {
     const a = await requireLogWriter(req, reply); if (!a) return;
     const note = String(req.body?.body ?? "").trim();
     if (!note) return reply.code(422).send(problem(422, "validation", "Write the handover note"));
+    const allowed = await loadTagList(a.propertyId);
+    const chosen = chooseTags(req.body?.tags, allowed);
+    if (!chosen.ok) return reply.code(422).send(problem(422, "validation", chosen.error));
     const department = parseDepartment(req.body?.department, "HOUSE");
     const shift = parseShift(req.body?.shift);
     const r = await pool.query(
-      `insert into ops_handover (tenant_id, property_id, department, shift, for_date, body, author_user_id, author_name)
-       values ($1, $2, $3, $4, (timezone('Europe/London', now()))::date, $5, $6, $7)
+      `insert into ops_handover (tenant_id, property_id, department, shift, for_date, body, author_user_id, author_name, tags)
+       values ($1, $2, $3, $4, (timezone('Europe/London', now()))::date, $5, $6, $7, $8)
        returning id`,
-      [a.tenantId, a.propertyId, department, shift, note, a.userId, a.name],
+      [a.tenantId, a.propertyId, department, shift, note.slice(0, 4000), a.userId, a.name, chosen.tags],
     );
     return { id: r.rows[0].id };
   });

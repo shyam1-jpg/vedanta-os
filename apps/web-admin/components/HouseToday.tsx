@@ -3,7 +3,7 @@ import { useEffect, useState } from "react";
 import Link from "next/link";
 import { api } from "@/lib/api";
 import { fmt } from "@/lib/format";
-import OpsBoard from "@/components/OpsBoard";
+import OpsBoard, { HandoverBanner } from "@/components/OpsBoard";
 import { useStore } from "@/lib/store";
 
 type Estate = {
@@ -76,6 +76,7 @@ export default function HouseToday() {
           <Link className="btn primary" href="/groups/">Open the book</Link>
         </div>
       </div>
+      <HandoverBanner />
       <div className="pulse pulse-wide">
         <article><div className="k">Occupancy</div><b>{p.rooms_tonight} / {p.guest_rooms}</b><div className="s">rooms tonight</div></article>
         <article><div className="k">Arrivals</div><b>{p.arriving}</b><div className="s">groups due today</div></article>

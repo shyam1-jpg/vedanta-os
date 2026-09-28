@@ -16,6 +16,7 @@ const modules = [
   ["SOPs & manuals", "Open approved house procedures and operating guidance.", "/manual/", "↗"],
   ["Purchasing", "Supplier orders, approvals, deliveries and buying workflow.", "/purchasing/", "↗"],
   ["Maintenance", "Report equipment faults and follow repairs to completion.", "/maintenance/", "↗"],
+  ["Kitchen stock", "Key ingredients and consumables. Log a use or a delivery from the list.", "/stock/", "↗"],
   ["Staff & rota", "Kitchen staffing, labour and operational coverage.", "/staff-corner/", "↗"],
   ["Reports", "Review operational performance and management reporting.", "/reports/", "↗"],
 ] as const;
