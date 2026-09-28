@@ -15,6 +15,7 @@ import { pool } from "./db.ts";
 import { requireActor, allow } from "./auth.ts";
 import { sendEmail } from "./email.ts";
 import { ORGANISER_NAME_SQL, plannedComms, PROPERTY_WEBSITE_SQL, staffAlertAddresses, staffNewEnquiryLetter } from "../../../domains/comms/auto.ts";
+import { legacyPreArrivalOwned, runGuestJourney } from "./journey.ts";
 
 const fmtDate = (d: string) =>
   new Date(d + "T00:00:00").toLocaleDateString("en-GB", { weekday: "long", day: "numeric", month: "long", year: "numeric" });
@@ -210,6 +211,8 @@ async function deliverAutoEmail(
 
 // Process due auto comms — call this on a timer (every 15 mins)
 export async function processAutoComms(propertyId: string) {
+  await runGuestJourney(propertyId);
+  const journeyPreArrival = await legacyPreArrivalOwned(propertyId);
   const due = (await pool.query(
     `SELECT ac.id, ac.kind, ac.group_id, ac.enquiry_id, ac.tenant_id, ac.property_id
      FROM auto_comm ac
@@ -230,6 +233,12 @@ export async function processAutoComms(propertyId: string) {
 
   for (const comm of due) {
     let email: { to: string; subject: string; body: string } | null = null;
+
+    if (comm.kind === "pre_arrival" && journeyPreArrival) {
+      await pool.query(`UPDATE auto_comm SET cancelled_at=now(), cancel_reason='guest_journey' WHERE id=$1`, [comm.id]);
+      results.push({ id: comm.id, kind: comm.kind, status: "guest_journey" });
+      continue;
+    }
 
     if (comm.kind === "feedback") {
       await pool.query(`UPDATE auto_comm SET cancelled_at=now(), cancel_reason='feedback_form' WHERE id=$1`, [comm.id]);

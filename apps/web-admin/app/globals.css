@@ -449,3 +449,4 @@ td.mark-dep { box-shadow: inset 3px 0 0 var(--marigold); }
   .assign-layout { grid-template-columns: minmax(240px, 320px) 1fr; }
   .assign-rooms { grid-template-columns: 1fr 1fr; }
 }
+.journey-log { list-style: none; padding: 0; }

@@ -34,6 +34,7 @@ export default function Settings() {
   const [spendSettings, setSpendSettings] = useState<{ gm_email: string; notify_heads: boolean; categories: { code: string; name: string }[] } | null>(null);
   const [roomSettings, setRoomSettings] = useState<{ cutoff_days: number; staff_email: string; reminder_days: number[] } | null>(null);
   const [roomReminders, setRoomReminders] = useState("14, 7, 2");
+  const [journey, setJourney] = useState<Record<string, unknown> | null>(null);
   const [stayCopy, setStayCopy] = useState<Record<string, string>>({});
   useEffect(() => {
     api<{ rules: { kitchen: RouteBox; restaurant: RouteBox; front: RouteBox }; receives: Record<string, string> }>("/v1/settings/booking-routing")
@@ -57,6 +58,7 @@ export default function Settings() {
     api<{ allow_multiple_gm: boolean; staff_contact: "work" | "none" }>("/v1/org/settings").then(setOrgSettings).catch(() => {});
     api<{ gm_email: string; notify_heads: boolean; categories: { code: string; name: string }[] }>("/v1/spend/settings").then(setSpendSettings).catch(() => {});
     api<{ cutoff_days: number; staff_email: string; reminder_days?: number[] }>("/v1/room-assign/settings").then(next => { setRoomSettings({ ...next, reminder_days: next.reminder_days ?? [14, 7, 2] }); setRoomReminders((next.reminder_days ?? [14, 7, 2]).join(", ")); }).catch(() => {});
+    api<Record<string, unknown>>("/v1/guest-journey/settings").then(setJourney).catch(() => {});
   }, []);
   const load = () => { api<{ items: Pkg[] }>("/v1/packages").then(r => setPkgs(r.items)); if (can("config.manage")) api<{ items: Key[] }>("/v1/integrations/keys").then(r => setKeys(r.items)).catch(() => {}); };
   useEffect(load, []); // eslint-disable-line react-hooks/exhaustive-deps
@@ -370,6 +372,39 @@ export default function Settings() {
             setRoomSettings(saved);
             setRoomReminders(saved.reminder_days.join(", "));
           }, "Room assignment lock saved")}>Save room assignment lock</button>
+        </div>
+      )}
+      {journey && (
+        <div className="panel" style={{ marginTop: 14 }}>
+          <h3>Guest journey</h3>
+          <p className="m" style={{ color: "var(--ink-2)" }}>Pre-arrival, the thank-you, and a later rebook note share one mail job. Service letters go without marketing consent. Digital check-in stays off until it is ticked. Wording is edited on Guest journey.</p>
+          <label style={{ display: "block", marginTop: 8 }}>Days before arrival
+            <input type="number" min={1} max={30} aria-label="Journey pre-arrival days" value={Number(journey.pre_arrival_days ?? 5)} onChange={e => setJourney({ ...journey, pre_arrival_days: Number(e.target.value) })} />
+          </label>
+          <label style={{ display: "block", marginTop: 8 }}>Check-in opens
+            <input aria-label="Journey check-in time" value={String(journey.check_in_time ?? "08:00")} onChange={e => setJourney({ ...journey, check_in_time: e.target.value })} />
+          </label>
+          <label style={{ display: "block", marginTop: 8 }}>Rebook delay, days
+            <input type="number" min={1} aria-label="Journey rebook days" value={Number(journey.rebook_days ?? 30)} onChange={e => setJourney({ ...journey, rebook_days: Number(e.target.value) })} />
+          </label>
+          {([
+            ["pre_arrival", "Pre-arrival"],
+            ["see_you_tomorrow", "See you tomorrow"],
+            ["check_in", "Digital check-in"],
+            ["post_stay", "Thank-you"],
+            ["rebook", "Rebook, marketing only"],
+          ] as const).map(([key, label]) => {
+            const sequences = (journey.sequences ?? {}) as Record<string, boolean>;
+            return (
+              <label key={key} className="assign-check">
+                <input type="checkbox" checked={!!sequences[key]} onChange={e => setJourney({ ...journey, sequences: { ...sequences, [key]: e.target.checked } })} />
+                {label}
+              </label>
+            );
+          })}
+          <button className="btn primary" style={{ marginTop: 12 }} onClick={() => run(async () => {
+            setJourney(await api("/v1/guest-journey/settings", { method: "PUT", body: JSON.stringify(journey) }));
+          }, "Guest journey saved")}>Save guest journey</button>
         </div>
       )}
       {retain && (

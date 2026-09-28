@@ -40,6 +40,7 @@ export const MERGE_FIELDS = [
   "directions",
   "arrival_window",
   "retreats",
+  "guest_lines",
   "key_instructions",
 ] as const;
 
@@ -195,6 +196,8 @@ export type PlanInput = {
   rebooked: boolean;
   openComplaint: boolean;
   feedbackReady: boolean;
+  stayThankYouSent?: boolean;
+  skipThankYou?: boolean;
 };
 
 export type MessagePlan = { kind: JourneyKind; variant: "collect" | "confirm" | "tomorrow" | "thanks" | "return" };
@@ -209,11 +212,11 @@ export function planGuestMessages(input: PlanInput): MessagePlan[] {
   const tomorrowDue = tomorrowWindow && !sent.has("see_you_tomorrow");
   if (preDue) plans.push({ kind: "pre_arrival", variant: input.detailsComplete ? "confirm" : "collect" });
   if (tomorrowDue) plans.push({ kind: "see_you_tomorrow", variant: "tomorrow" });
-  if (input.settings.sequences.post_stay && input.feedbackReady && !sent.has("thank_you")) {
+  if (input.settings.sequences.post_stay && input.feedbackReady && !sent.has("thank_you") && !input.skipThankYou && !input.stayThankYouSent) {
     plans.push({ kind: "thank_you", variant: "thanks" });
   }
   const rebookDay = addDays(input.departure, input.settings.rebook_days);
-  const thankYouDone = sent.has("thank_you");
+  const thankYouDone = sent.has("thank_you") || !!input.stayThankYouSent;
   if (
     input.settings.sequences.rebook
     && input.today >= rebookDay
@@ -235,6 +238,12 @@ export function planGuestMessages(input: PlanInput): MessagePlan[] {
           : input.settings.sequences.rebook;
     return maySend(plan.kind, input, sequenceOn).ok;
   });
+}
+
+export function summaryWave(today: string, arrival: string, settings: JourneySettings): "pre_arrival" | "see_you_tomorrow" | null {
+  if (settings.sequences.see_you_tomorrow && inWindow(today, arrival, 1)) return "see_you_tomorrow";
+  if (settings.sequences.pre_arrival && inWindow(today, arrival, settings.pre_arrival_days)) return "pre_arrival";
+  return null;
 }
 
 export function organiserSummaryDue(input: { wave: "pre_arrival" | "see_you_tomorrow"; alreadySent: boolean; sequenceOn: boolean }): boolean {
@@ -301,7 +310,7 @@ ${sign}`,
 
 The house has written to the guests on {{group_name}} ({{arrival}} to {{departure}}).
 
-{{retreats}}
+{{guest_lines}}
 
 Guests without an email address are still on the list. You can add an address, or invite them to fill in their own diet and access details.
 
@@ -374,6 +383,7 @@ export function previewFields(): Record<string, string> {
     directions: DEFAULT_DIRECTIONS,
     arrival_window: "Arrival is from 15:00.",
     retreats: "Example Spring Retreat — 2 November 2026",
+    guest_lines: "Test Client 01 — letter sent\nTest Client 03 — no email address",
     key_instructions: DEFAULT_KEYS,
   };
 }
