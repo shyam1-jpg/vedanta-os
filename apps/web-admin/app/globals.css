@@ -166,7 +166,7 @@ button { font: inherit; cursor: pointer; }
 .signin { max-width: 720px; margin: 40px auto; }
 .signin p { color: var(--ink-2); }
 .arrive { min-height: 100vh; display: grid; grid-template-columns: 1.05fr 0.95fr; }
-.arrive-hero { background: var(--forest) linear-gradient(105deg, rgba(17,38,31,.9), rgba(17,38,31,.54)), url('/book/images/house-daffodils.jpg') center/cover; color: #F7F1E6; padding: 56px 52px; display: flex; flex-direction: column; justify-content: space-between; position: relative; overflow: hidden; }
+.arrive-hero { background-color: var(--forest); background-image: linear-gradient(105deg, rgba(17,38,31,.9), rgba(17,38,31,.54)), url('/book/images/house-daffodils.jpg'); background-position: center; background-size: cover; color: #F7F1E6; padding: 56px 52px; display: flex; flex-direction: column; justify-content: space-between; position: relative; overflow: hidden; }
 .arrive-hero::after { content: ""; position: absolute; inset: 28px; border: 1px solid rgba(196,165,116,.35); pointer-events: none; }
 .arrive-kicker { font-size: 11px; letter-spacing: 0.32em; text-transform: uppercase; color: var(--gold); }
 .arrive-hero h1 { font-size: 64px; line-height: 0.92; margin: 18px 0 16px; color: #F7F1E6; }
