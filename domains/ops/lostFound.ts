@@ -1,4 +1,7 @@
-/** Lost and found. Guest contact is personal data and is cleared once the item is closed. */
+/** Lost and found. Guest contact is personal data and is cleared once the item is closed.
+ *  The matcher (suggest, tell the guest on confirm, purge after the hold) stays off until the house switches it on.
+ *  A score never confirms a match. Photos stay in the house log and are not returned on a public page. */
+import { phoneOk } from "../guest/feedback.ts";
 
 export const LOST_CATEGORIES = [
   { code: "clothing", label: "Clothing" },
@@ -10,7 +13,7 @@ export const LOST_CATEGORIES = [
   { code: "other", label: "Other" },
 ] as const;
 
-export const LOST_STATUSES = ["logged", "matched", "claimed", "returned", "disposed", "donated"] as const;
+export const LOST_STATUSES = ["logged", "matched", "claimed", "returned", "disposed", "donated", "expired"] as const;
 export type LostStatus = (typeof LOST_STATUSES)[number];
 
 export const RETURN_METHODS = [
@@ -25,7 +28,12 @@ const NEXT: Record<LostStatus, LostStatus[]> = {
   returned: [],
   disposed: [],
   donated: [],
+  expired: [],
 };
+
+export const LOST_CONSENT = "I agree the house may contact me about this item.";
+export const MATCH_DATE_NEAR_DAYS = 2;
+export const MATCH_DATE_WINDOW_DAYS = 14;
 
 const DATE = /^\d{4}-\d{2}-\d{2}$/;
 
@@ -39,11 +47,15 @@ export function categoryOk(value: unknown): boolean {
   return LOST_CATEGORIES.some(c => c.code === value);
 }
 
-export function parseLostSettings(raw: unknown): { hold_days: number; disposal_days: number; postage_note: string; link_days: number; manager: string } {
+export function parseLostSettings(raw: unknown): {
+  hold_days: number; disposal_days: number; postage_note: string; link_days: number; manager: string;
+  matcher: boolean; purge_days: number;
+} {
   const src = raw && typeof raw === "object" ? raw as Record<string, unknown> : {};
   const days = Math.round(Number(src.hold_days ?? 90));
   const disposal = Math.round(Number(src.disposal_days ?? 30));
   const linkDays = Math.round(Number(src.link_days ?? 14));
+  const purge = Math.round(Number(src.purge_days ?? 90));
   const postage = String(src.postage_note ?? "Postage cost TBC").trim().slice(0, 80);
   return {
     hold_days: Number.isFinite(days) ? Math.min(3650, Math.max(7, days)) : 90,
@@ -51,6 +63,8 @@ export function parseLostSettings(raw: unknown): { hold_days: number; disposal_d
     postage_note: postage || "Postage cost TBC",
     link_days: Number.isFinite(linkDays) ? Math.min(60, Math.max(1, linkDays)) : 14,
     manager: emailOrNull(src.manager ?? src.gm),
+    matcher: src.matcher === true,
+    purge_days: Number.isFinite(purge) ? Math.min(3650, Math.max(7, purge)) : 90,
   };
 }
 
@@ -61,7 +75,13 @@ export function nextLostStatus(from: string, to: string): LostStatus | null {
 }
 
 export function closedStatus(status: string): boolean {
-  return status === "returned" || status === "disposed" || status === "donated";
+  return status === "returned" || status === "disposed" || status === "donated" || status === "expired";
+}
+
+/** Personal details come off after the purge period. Nothing is removed while the matcher is off. */
+export function retentionDue(openedOn: string, today: string, purgeDays: number, enabled: boolean): boolean {
+  if (!enabled) return false;
+  return heldTooLong(openedOn, today, purgeDays, "logged");
 }
 
 export function heldTooLong(foundOn: string, today: string, holdDays: number, status: string): boolean {
@@ -103,18 +123,25 @@ function roomHit(place: string, rooms: string[]): boolean {
   });
 }
 
+/** Shared words, or a close stem when the words are not the same. */
+export function textSimilarity(left: string, right: string): { overlap: string[]; close: boolean } {
+  const wanted = words(left);
+  const found = words(right);
+  const wantedSet = new Set(wanted);
+  const overlap = [...new Set(found.filter(word => wantedSet.has(word)))];
+  const close = overlap.length === 0 && wanted.some(word => word.length >= 4 && found.some(other => other !== word && (other.startsWith(word) || word.startsWith(other))));
+  return { overlap, close };
+}
+
 export function explainMatch(report: MatchReport, item: MatchItem): { score: number; reasons: string[] } {
   if (closedStatus(item.status)) return { score: 0, reasons: [] };
   let score = 0;
   const reasons: string[] = [];
-  const wanted = words(report.description);
-  const found = words(item.description);
-  const wantedSet = new Set(wanted);
-  const overlap = found.filter(word => wantedSet.has(word));
-  if (overlap.length) {
-    score += overlap.length * 3;
-    reasons.push(`Same words: ${overlap.slice(0, 4).join(", ")}`);
-  } else if (wanted.some(word => word.length >= 4 && found.some(other => other !== word && (other.startsWith(word) || word.startsWith(other))))) {
+  const similar = textSimilarity(report.description, item.description);
+  if (similar.overlap.length) {
+    score += similar.overlap.length * 3;
+    reasons.push(`Same words: ${similar.overlap.slice(0, 4).join(", ")}`);
+  } else if (similar.close) {
     score += 1;
     reasons.push("Similar wording");
   }
@@ -132,8 +159,8 @@ export function explainMatch(report: MatchReport, item: MatchItem): { score: num
   }
   if (report.happened_on && item.found_on && DATE.test(report.happened_on) && DATE.test(item.found_on)) {
     const days = Math.abs(Date.parse(`${item.found_on}T00:00:00Z`) - Date.parse(`${report.happened_on}T00:00:00Z`)) / 86_400_000;
-    if (days <= 2) { score += 3; reasons.push("Found within 2 days"); }
-    else if (days <= 14) { score += 1; reasons.push("Found within two weeks"); }
+    if (days <= MATCH_DATE_NEAR_DAYS) { score += 3; reasons.push("Found within 2 days"); }
+    else if (days <= MATCH_DATE_WINDOW_DAYS) { score += 1; reasons.push("Found within two weeks"); }
   } else if (item.found_on && report.stay_from && report.stay_to && DATE.test(item.found_on) && DATE.test(report.stay_from) && DATE.test(report.stay_to)) {
     const foundOn = Date.parse(`${item.found_on}T00:00:00Z`);
     const from = Date.parse(`${report.stay_from}T00:00:00Z`) - 2 * 86_400_000;
@@ -161,6 +188,18 @@ export function rankMatches<T extends MatchItem>(report: MatchReport, items: T[]
 
 export function suggestMatches<T extends MatchItem>(report: MatchReport, items: T[], rejected: string[] = []): T[] {
   return rankMatches(report, items, rejected).map(row => row.item);
+}
+
+export type MatchReportRow = MatchReport & { id: string; status: string; rejected?: string[] | null };
+
+/** Likely missing reports for a found item. The list is a suggestion. Status is left as it was. */
+export function rankReportsForItem<T extends MatchReportRow>(item: MatchItem, reports: T[]): RankedMatch<T>[] {
+  return reports
+    .filter(report => report.status === "open" && !(report.rejected ?? []).includes(item.id))
+    .map(report => ({ item: report, ...explainMatch(report, item) }))
+    .filter(row => row.score > 0)
+    .sort((a, b) => b.score - a.score || a.item.id.localeCompare(b.item.id))
+    .slice(0, 5);
 }
 
 /** Eligible for disposal once the hold has run from the found date, or from the day the guest was told. */
@@ -195,6 +234,81 @@ export function lostGuestMessage(input: { house: string; item: string; link: str
   ].join("\n");
   const sms = `Possible lost property at ${input.house}: ${item}. Choose collection or postage (no payment): ${input.link}`.slice(0, 320);
   return { subject, body, sms };
+}
+
+export type LostNoticePlan =
+  | { action: "skip"; reason: string }
+  | { action: "send"; channel: "email" | "sms"; to: string; subject: string; body: string };
+
+/** One channel. Operational, and only if the guest agreed to be contacted about this item. */
+export function planLostNotice(input: {
+  consent: boolean;
+  email: string;
+  phone: string;
+  prefsOn: boolean;
+  operationalChannel: "email" | "sms" | "none";
+  subject: string;
+  body: string;
+  sms: string;
+}): LostNoticePlan {
+  if (!input.consent) return { action: "skip", reason: "The guest did not agree to be contacted about this item" };
+  const email = input.email.trim();
+  const phone = input.phone.trim();
+  if (!email && !phone) return { action: "skip", reason: "There is no email or phone on this report" };
+  const channel = input.prefsOn ? input.operationalChannel : (email ? "email" : "sms");
+  if (channel === "none") return { action: "skip", reason: "The guest asked not to be contacted by email or text" };
+  if (channel === "email" && !email) return { action: "skip", reason: "The guest asked for email, and there is no email on this report" };
+  if (channel === "sms" && !phone) return { action: "skip", reason: "The guest asked for a text, and there is no phone on this report" };
+  if (channel === "email") return { action: "send", channel, to: email, subject: input.subject, body: input.body };
+  return { action: "send", channel: "sms", to: phone, subject: input.subject, body: input.sms };
+}
+
+export type LostNoticeDraft = {
+  channel: "email" | "sms";
+  to: string;
+  subject: string;
+  body: string;
+  kind: "lost_found_guest";
+  email?: string;
+  tenantId: string;
+  propertyId: string;
+  userId: string | null;
+  relatedId: string;
+};
+
+export type LostNoticeSender = (draft: LostNoticeDraft) => Promise<{ status: string; id?: string | null }>;
+
+/** Records the letter locally. SMTP and SMS are not configured, so nothing leaves the house. */
+export function stubLostNoticeSender(log: LostNoticeDraft[] = []): LostNoticeSender {
+  return async draft => {
+    log.push({ ...draft });
+    return { status: "LOGGED", id: null };
+  };
+}
+
+export async function dispatchNotice(
+  plan: LostNoticePlan,
+  sender: LostNoticeSender,
+  ctx: { email: string; tenantId: string; propertyId: string; userId: string | null; relatedId: string },
+): Promise<{ channel: "email" | "sms" | "none"; status: string; reason: string | null }> {
+  if (plan.action === "skip") return { channel: "none", status: "SKIPPED", reason: plan.reason };
+  try {
+    const sent = await sender({
+      channel: plan.channel,
+      to: plan.to,
+      subject: plan.subject,
+      body: plan.body,
+      kind: "lost_found_guest",
+      email: ctx.email || undefined,
+      tenantId: ctx.tenantId,
+      propertyId: ctx.propertyId,
+      userId: ctx.userId,
+      relatedId: ctx.relatedId,
+    });
+    return { channel: plan.channel, status: sent.status || "LOGGED", reason: null };
+  } catch {
+    return { channel: plan.channel, status: "FAILED", reason: "The message could not be sent" };
+  }
 }
 
 export function staffChoiceNote(input: { reference: string; choice: string; detail: string }): { subject: string; body: string } {
@@ -368,7 +482,7 @@ export function parseFoundItem(raw: unknown): {
 }
 
 export function parseMissingReport(raw: unknown): {
-  ok: true; description: string; category: string; place: string; happenedOn: string; contactName: string; contactEmail: string; contactPhone: string;
+  ok: true; description: string; category: string; place: string; happenedOn: string; contactName: string; contactEmail: string; contactPhone: string; contactConsent: boolean;
 } | { ok: false; error: string } {
   const src = raw && typeof raw === "object" ? raw as Record<string, unknown> : {};
   const description = String(src.description ?? "").trim().slice(0, 500);
@@ -389,7 +503,27 @@ export function parseMissingReport(raw: unknown): {
     contactName: String(src.contact_name ?? "").trim().slice(0, 80),
     contactEmail,
     contactPhone: String(src.contact_phone ?? "").trim().slice(0, 30),
+    contactConsent: src.consent === true || src.contact_consent === true,
   };
+}
+
+/** Public report during or after a stay. Contact and a tick to be told about this item are required. */
+export function parseGuestReport(raw: unknown): {
+  ok: true; description: string; category: string; place: string; happenedOn: string; contactName: string; contactEmail: string; contactPhone: string; contactConsent: true; bookingRef: string;
+} | { ok: false; error: string } {
+  const parsed = parseMissingReport(raw);
+  if (!parsed.ok) return parsed;
+  if (/https?:\/\//i.test(parsed.description)) return { ok: false, error: "Leave out links" };
+  if (!parsed.place) return { ok: false, error: "Say where you last had it" };
+  if (!parsed.happenedOn) return { ok: false, error: "Say when you lost it" };
+  const src = raw && typeof raw === "object" ? raw as Record<string, unknown> : {};
+  const phoneRaw = String(src.contact_phone ?? "").trim();
+  const phone = phoneOk(phoneRaw);
+  if (phoneRaw && !phone) return { ok: false, error: "That phone number is not valid" };
+  if (!parsed.contactEmail && !phone) return { ok: false, error: "Leave an email or a phone number" };
+  if (!parsed.contactConsent) return { ok: false, error: "Tick the box to agree the house may contact you about this item" };
+  const bookingRef = String(src.booking_ref ?? "").trim().slice(0, 40);
+  return { ...parsed, contactPhone: phone || parsed.contactPhone, contactConsent: true, bookingRef };
 }
 
 export function parseStatusChange(raw: unknown, from: string): {

@@ -80,6 +80,8 @@ input, textarea { width: 100%; margin-top: 4px; padding: 10px; border: 1px solid
 .trust .facts { grid-template-columns: repeat(3, 1fr); }
 .trust .facts b { font-size: 18px; margin-bottom: 6px; }
 .gallery { margin: 12px 0 36px; }
+.lost-report { margin: 12px 0 36px; }
+.lost-report form { display: grid; gap: 8px; max-width: 480px; }
 .gallery-filters { display: flex; flex-wrap: wrap; gap: 8px; margin: 0 0 14px; }
 .gallery-filters button { border: 1px solid var(--line); background: #fff; color: var(--ink); padding: 8px 12px; cursor: pointer; }
 .gallery-filters button.on { background: var(--forest); color: var(--ivory); }

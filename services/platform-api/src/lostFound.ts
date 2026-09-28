@@ -1,5 +1,7 @@
 /** Lost and found. Contact details are sealed and removed when a case closes.
- *  A missing report never messages the guest. Staff preview, then send. */
+ *  A missing report never messages the guest on its own. Staff confirm a match.
+ *  When the matcher is on, that confirmation tells the guest on one channel.
+ *  The sender is the house mail helper, which only logs until SMTP or SMS is configured. */
 import { createHash, randomBytes } from "node:crypto";
 import type { FastifyInstance } from "fastify";
 import { pool, tx } from "./db.ts";
@@ -10,26 +12,35 @@ import { deliverSms } from "./sms.ts";
 import { openText, sealText } from "./fieldCrypto.ts";
 import { cleanPhoto, parseAreas } from "../../../domains/ops/fault.ts";
 import { phoneOk, smsConfigured } from "../../../domains/guest/feedback.ts";
+import { parseCommsFlag } from "../../../domains/guest/commsPrefs.ts";
 import {
   LOST_CATEGORIES,
   closedStatus,
+  dispatchNotice,
   disposalDue,
   disposalNotice,
   heldTooLong,
   lostGuestMessage,
   lostReference,
   parseFoundItem,
+  parseGuestReport,
   parseKeep,
   parseLostSettings,
   parseMissingReport,
   parseReturnChoice,
   parseSignature,
   parseStatusChange,
+  planLostNotice,
   rankMatches,
+  rankReportsForItem,
   renderSlipPdf,
+  retentionDue,
   retentionNotice,
   slipLines,
   staffChoiceNote,
+  type LostNoticeDraft,
+  type MatchItem,
+  type MatchReportRow,
   type ReturnSlip,
 } from "../../../domains/ops/lostFound.ts";
 
@@ -108,6 +119,8 @@ type StayReport = {
   rejected_ids: string[] | null;
   guest_choice: string | null;
   guest_choice_detail: string | null;
+  contact_consent?: boolean | null;
+  has_photo?: boolean | null;
   rooms?: string[];
   stay_from?: string | null;
   stay_to?: string | null;
@@ -219,7 +232,209 @@ async function closeReport(c: { query: Function }, itemId: string, propertyId: s
   );
 }
 
+async function deliverLostNotice(draft: LostNoticeDraft): Promise<{ status: string; id: string | null }> {
+  if (draft.channel === "sms") {
+    const status = await deliverSms(smsEnv(), {
+      to: draft.to,
+      body: draft.body,
+      kind: draft.kind,
+      email: draft.email,
+      tenantId: draft.tenantId,
+      propertyId: draft.propertyId,
+    });
+    return { status, id: null };
+  }
+  const result = await sendEmail(
+    { tenantId: draft.tenantId, propertyId: draft.propertyId, userId: draft.userId },
+    { to: draft.to, subject: draft.subject, body: draft.body, kind: draft.kind, related_type: "lost_item", related_id: draft.relatedId },
+  );
+  return { status: result.status, id: result.id };
+}
+
+async function recordNotice(
+  a: { tenantId: string; propertyId: string },
+  itemId: string | null,
+  reportId: string | null,
+  notice: { channel: string; status: string; reason: string | null },
+) {
+  try {
+    await pool.query(
+      `insert into lost_notice (tenant_id, property_id, item_id, report_id, channel, status, reason)
+       values ($1,$2,$3,$4,$5,$6,$7)`,
+      [a.tenantId, a.propertyId, itemId, reportId, notice.channel, notice.status, notice.reason],
+    );
+  } catch {
+    console.warn("[lost-found] notice was not recorded");
+  }
+}
+
+async function openReturnLink(a: { tenantId: string; propertyId: string }, reportId: string, itemId: string, linkDays: number): Promise<string> {
+  const token = randomBytes(24).toString("base64url");
+  const expires = new Date(Date.now() + linkDays * 86_400_000).toISOString();
+  await tx(async c => {
+    await c.query(`update lost_link set expires_at=now() where report_id=$1 and expires_at > now()`, [reportId]);
+    await c.query(
+      `insert into lost_link (tenant_id, property_id, report_id, item_id, token_hash, expires_at)
+       values ($1,$2,$3,$4,$5,$6)`,
+      [a.tenantId, a.propertyId, reportId, itemId, tokenHash(token), expires],
+    );
+  });
+  return `${publicWeb()}/lost-return/?t=${encodeURIComponent(token)}`;
+}
+
+function asReportRow(report: StayReport): MatchReportRow {
+  return {
+    id: report.id,
+    description: report.description || "",
+    category: report.category,
+    place: report.place,
+    happened_on: report.happened_on,
+    rooms: report.rooms ?? [],
+    stay_from: report.stay_from,
+    stay_to: report.stay_to,
+    status: report.status,
+    rejected: report.rejected_ids ?? [],
+  };
+}
+
+function asItem(item: { id: string; description: string; category?: string | null; place?: string | null; found_on?: string | null; status: string }): MatchItem {
+  return { id: item.id, description: item.description, category: item.category, place: item.place, found_on: item.found_on, status: item.status };
+}
+
+async function houseRow() {
+  return (await pool.query(`select id, tenant_id, name, settings from property order by created_at limit 1`)).rows[0] ?? null;
+}
+
+export async function purgeLostFound(propertyId: string): Promise<number> {
+  const settings = await loadSettings(propertyId);
+  if (!settings.matcher) return 0;
+  const today = await londonToday();
+  const prop = await propertyName(propertyId);
+  if (!prop) return 0;
+  const items = (await pool.query(
+    `select id, found_on::text, status, disposal_hold_until::text hold_until
+     from lost_item where property_id=$1 and purged_at is null`,
+    [propertyId],
+  )).rows.filter((row: { found_on: string }) => retentionDue(row.found_on, today, settings.purge_days, true));
+  let n = 0;
+  for (const row of items as { id: string; status: string; hold_until: string | null }[]) {
+    const keep = !!(row.hold_until && row.hold_until > today && !closedStatus(row.status));
+    const expire = !keep && !closedStatus(row.status);
+    await pool.query(
+      `update lost_item set
+         status = case when $3 then 'expired' else status end,
+         closed_at = case when $3 then coalesce(closed_at, now()) else closed_at end,
+         photo = null,
+         claimant_name = null,
+         signature = null,
+         purged_at = now(),
+         disposal_reason = case when $3 then 'Closed after the retention period. Personal details removed.' else disposal_reason end,
+         retention_alerted_at = coalesce(retention_alerted_at, now()),
+         disposal_alerted_at = coalesce(disposal_alerted_at, now())
+       where id=$1 and property_id=$2 and purged_at is null`,
+      [row.id, propertyId, expire],
+    );
+    await pool.query(
+      `update lost_report set status='closed', contact_name=null, contact_email=null, contact_phone=null, guest_choice_detail=null, photo=null, purged_at=coalesce(purged_at, now())
+       where matched_item_id=$1 and property_id=$2`,
+      [row.id, propertyId],
+    );
+    await pool.query(
+      `insert into lost_event (item_id, tenant_id, property_id, from_status, to_status, note, by_name)
+       values ($1,$2,$3,$4,$5,$6,'House')`,
+      [row.id, prop.tenant_id, propertyId, row.status, expire ? "expired" : row.status, expire
+        ? "Closed after the retention period. Personal details and the photo were removed."
+        : "Personal details and the photo were removed after the retention period."],
+    );
+    n += 1;
+  }
+  const reports = (await pool.query(
+    `select id, (timezone('Europe/London', created_at))::date::text opened
+     from lost_report where property_id=$1 and purged_at is null`,
+    [propertyId],
+  )).rows.filter((row: { opened: string }) => retentionDue(row.opened, today, settings.purge_days, true));
+  for (const row of reports as { id: string }[]) {
+    await pool.query(
+      `update lost_report set status='closed', contact_name=null, contact_email=null, contact_phone=null, guest_choice_detail=null, photo=null, purged_at=now()
+       where id=$1 and property_id=$2 and purged_at is null`,
+      [row.id, propertyId],
+    );
+    await pool.query(
+      `insert into lost_event (report_id, tenant_id, property_id, to_status, note, by_name)
+       values ($1,$2,$3,'closed','Personal details and the photo were removed after the retention period.','House')`,
+      [row.id, prop.tenant_id, propertyId],
+    );
+    n += 1;
+  }
+  return n;
+}
+
+async function guestChannel(propertyId: string, email: string): Promise<{ prefsOn: boolean; operationalChannel: "email" | "sms" | "none" }> {
+  try {
+    const raw = (await pool.query(`select settings from property where id=$1`, [propertyId])).rows[0]?.settings;
+    const prefsOn = parseCommsFlag(raw?.comms_prefs);
+    if (!prefsOn || !email) return { prefsOn, operationalChannel: "email" };
+    const pref = (await pool.query(
+      `select operational_channel from guest_comms_pref where property_id=$1 and email=$2`,
+      [propertyId, email],
+    )).rows[0];
+    const channel = pref?.operational_channel;
+    if (channel === "email" || channel === "sms" || channel === "none") return { prefsOn, operationalChannel: channel };
+    return { prefsOn, operationalChannel: "email" };
+  } catch {
+    return { prefsOn: false, operationalChannel: "email" };
+  }
+}
+
+async function notifyConfirmedMatch(
+  a: { tenantId: string; propertyId: string; userId: string; name: string },
+  reportId: string,
+  itemId: string,
+): Promise<{ channel: "email" | "sms" | "none"; status: string; reason: string | null }> {
+  const settings = await loadSettings(a.propertyId);
+  const report = (await pool.query(`select * from lost_report where id=$1 and property_id=$2`, [reportId, a.propertyId])).rows[0];
+  const item = (await pool.query(`select id, description from lost_item where id=$1 and property_id=$2`, [itemId, a.propertyId])).rows[0];
+  if (!settings.matcher || !report || !item) {
+    return { channel: "none", status: "SKIPPED", reason: "Matching notices are switched off" };
+  }
+  const email = openText(report.contact_email) || "";
+  const phone = phoneOk(openText(report.contact_phone)) || "";
+  const chosen = await guestChannel(a.propertyId, email);
+  const prop = await propertyName(a.propertyId);
+  const blank = lostGuestMessage({ house: prop?.name || "The house", item: item.description, link: "" });
+  let plan = planLostNotice({
+    consent: report.contact_consent === true,
+    email,
+    phone,
+    prefsOn: chosen.prefsOn,
+    operationalChannel: chosen.operationalChannel,
+    subject: blank.subject,
+    body: blank.body,
+    sms: blank.sms,
+  });
+  if (plan.action === "send") {
+    const link = await openReturnLink(a, report.id, item.id, settings.link_days);
+    const message = lostGuestMessage({ house: prop?.name || "The house", item: item.description, link });
+    plan = { ...plan, subject: message.subject, body: plan.channel === "email" ? message.body : message.sms };
+  }
+  const notice = await dispatchNotice(plan, deliverLostNotice, {
+    email, tenantId: a.tenantId, propertyId: a.propertyId, userId: a.userId, relatedId: item.id,
+  });
+  await recordNotice(a, item.id, report.id, notice);
+  await pool.query(
+    `insert into lost_event (item_id, report_id, tenant_id, property_id, note, by_user_id, by_name)
+     values ($1,$2,$3,$4,$5,$6,$7)`,
+    [item.id, report.id, a.tenantId, a.propertyId, notice.reason ? `Guest not told: ${notice.reason}` : `Guest told by ${notice.channel} (${notice.status})`, a.userId, a.name],
+  );
+  if (notice.status === "LOGGED" || notice.status === "SENT" || notice.status === "sent") {
+    await pool.query(`update lost_item set notified_at=coalesce(notified_at, now()) where id=$1`, [item.id]);
+    await pool.query(`update lost_report set notified_at=coalesce(notified_at, now()) where id=$1`, [report.id]);
+  }
+  return notice;
+}
+
 export async function remindLostFound(propertyId: string): Promise<number> {
+  await purgeLostFound(propertyId);
   const settings = await loadSettings(propertyId);
   if (!settings.manager) return 0;
   const today = await londonToday();
@@ -332,13 +547,25 @@ export default async function lostFoundRoutes(f: FastifyInstance) {
       }),
       events: row.events ?? [],
     }));
-    const rawReports = (await pool.query(
-      `select id, description, category, place, happened_on::text, guest_account_id, group_id, booking_ref,
-              contact_name, contact_email, contact_phone, status, matched_item_id, rejected_ids,
-              guest_choice, guest_choice_detail, choice_at, created_at
-       from lost_report where property_id=$1 order by created_at desc limit 100`,
-      [a.propertyId],
-    )).rows as StayReport[];
+    let rawReports: StayReport[];
+    try {
+      rawReports = (await pool.query(
+        `select id, description, category, place, happened_on::text, guest_account_id, group_id, booking_ref,
+                contact_name, contact_email, contact_phone, contact_consent, (photo is not null) has_photo,
+                status, matched_item_id, rejected_ids,
+                guest_choice, guest_choice_detail, choice_at, created_at
+         from lost_report where property_id=$1 order by created_at desc limit 100`,
+        [a.propertyId],
+      )).rows as StayReport[];
+    } catch {
+      rawReports = (await pool.query(
+        `select id, description, category, place, happened_on::text, guest_account_id, group_id, booking_ref,
+                contact_name, contact_email, contact_phone, status, matched_item_id, rejected_ids,
+                guest_choice, guest_choice_detail, choice_at, created_at
+         from lost_report where property_id=$1 order by created_at desc limit 100`,
+        [a.propertyId],
+      )).rows as StayReport[];
+    }
     const opened = await attachStays(a.propertyId, rawReports);
     const linked = new Map<string, StayReport>();
     for (const report of opened) {
@@ -357,6 +584,7 @@ export default async function lostFoundRoutes(f: FastifyInstance) {
     });
     const reports = opened.map(report => ({
       ...report,
+      photo: undefined,
       suggestions: report.status === "open"
         ? rankMatches({
           description: report.description || "",
@@ -377,11 +605,22 @@ export default async function lostFoundRoutes(f: FastifyInstance) {
         }))
         : [],
     }));
+    const listed = withGuest.map((item: any) => ({
+      ...item,
+      suggestions: item.status === "logged"
+        ? rankReportsForItem(asItem(item), opened.map(asReportRow)).map(row => ({
+          id: row.item.id,
+          description: row.item.description,
+          score: row.score,
+          reasons: row.reasons,
+        }))
+        : [],
+    }));
     const q = String(req.query?.q ?? "").trim().toLowerCase();
     const category = String(req.query?.category ?? "");
     const status = String(req.query?.status ?? "");
     const place = String(req.query?.place ?? "");
-    let filtered = withGuest;
+    let filtered = listed;
     if (category) filtered = filtered.filter((item: { category: string }) => item.category === category);
     if (status) filtered = filtered.filter((item: { status: string }) => item.status === status);
     if (place) filtered = filtered.filter((item: { place: string }) => item.place === place);
@@ -391,7 +630,8 @@ export default async function lostFoundRoutes(f: FastifyInstance) {
     }));
     return {
       items: filtered, reports, rooms, areas, categories: LOST_CATEGORIES,
-      hold_days: settings.hold_days, disposal_days: settings.disposal_days, postage_note: settings.postage_note, disposal,
+      hold_days: settings.hold_days, disposal_days: settings.disposal_days, postage_note: settings.postage_note,
+      matcher: settings.matcher, purge_days: settings.purge_days, disposal,
     };
   });
 
@@ -415,10 +655,23 @@ export default async function lostFoundRoutes(f: FastifyInstance) {
         [row.id, a.tenantId, a.propertyId, a.userId, a.name],
       );
       await audit(c, a, "lost_item", row.id, "lostfound.add", { payload: { place: parsed.place, reference } });
-      return { id: row.id, reference };
+      return { id: row.id, reference, description: parsed.description, category: parsed.category, place: parsed.place, found_on: parsed.foundOn, status: "logged" };
     });
+    const reports = (await pool.query(
+      `select id, description, category, place, happened_on::text, guest_account_id, group_id, booking_ref,
+              contact_name, contact_email, contact_phone, status, matched_item_id, rejected_ids
+       from lost_report where property_id=$1 and status='open' order by created_at desc limit 100`,
+      [a.propertyId],
+    )).rows as StayReport[];
+    const opened = await attachStays(a.propertyId, reports);
+    const suggestions = rankReportsForItem(asItem(saved), opened.map(asReportRow)).map(row => ({
+      id: row.item.id,
+      description: row.item.description,
+      score: row.score,
+      reasons: row.reasons,
+    }));
     reply.code(201);
-    return saved;
+    return { id: saved.id, reference: saved.reference, suggestions };
   });
 
   f.post("/v1/lost-found/reports", async (req: any, reply) => {
@@ -440,17 +693,48 @@ export default async function lostFoundRoutes(f: FastifyInstance) {
     }
     // A missing report is saved only. The guest is not told until staff send the message.
     const saved = await tx(async c => {
-      const row = (await c.query(
-        `insert into lost_report (tenant_id, property_id, description, category, place, happened_on, guest_account_id, group_id, booking_ref, contact_name, contact_email, contact_phone, created_by_user_id)
-         values ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13) returning id`,
-        [a.tenantId, a.propertyId, sealText(parsed.description), parsed.category, parsed.place || null, parsed.happenedOn || null, guest || null, group || null, bookingRef || null,
-          sealText(parsed.contactName || null), sealText(parsed.contactEmail || null), sealText(parsed.contactPhone || null), a.userId],
-      )).rows[0];
+      const sealed = [a.tenantId, a.propertyId, sealText(parsed.description), parsed.category, parsed.place || null, parsed.happenedOn || null, guest || null, group || null, bookingRef || null,
+        sealText(parsed.contactName || null), sealText(parsed.contactEmail || null), sealText(parsed.contactPhone || null)];
+      await c.query("SAVEPOINT lost_report_insert");
+      let row;
+      try {
+        row = (await c.query(
+          `insert into lost_report (tenant_id, property_id, description, category, place, happened_on, guest_account_id, group_id, booking_ref, contact_name, contact_email, contact_phone, contact_consent, consent_at, created_by_user_id)
+           values ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,case when $13 then now() else null end,$14) returning id`,
+          [...sealed, parsed.contactConsent, a.userId],
+        )).rows[0];
+      } catch {
+        await c.query("ROLLBACK TO SAVEPOINT lost_report_insert");
+        row = (await c.query(
+          `insert into lost_report (tenant_id, property_id, description, category, place, happened_on, guest_account_id, group_id, booking_ref, contact_name, contact_email, contact_phone, created_by_user_id)
+           values ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13) returning id`,
+          [...sealed, a.userId],
+        )).rows[0];
+      }
       await audit(c, a, "lost_report", row.id, "lostfound.report", {});
       return row;
     });
+    const items = (await pool.query(
+      `select id, description, category, place, found_on::text, status, reference from lost_item
+       where property_id=$1 and status in ('logged','matched') order by found_on desc limit 200`,
+      [a.propertyId],
+    )).rows;
+    const stay = (await attachStays(a.propertyId, [{
+      id: saved.id, description: parsed.description, contact_name: parsed.contactName, contact_email: parsed.contactEmail, contact_phone: parsed.contactPhone,
+      guest_account_id: guest || null, group_id: group || null, booking_ref: bookingRef || null, matched_item_id: null, status: "open",
+      category: parsed.category, place: parsed.place || null, happened_on: parsed.happenedOn || null, rejected_ids: [], guest_choice: null, guest_choice_detail: null,
+    }]))[0];
+    const suggestions = rankMatches(asReportRow(stay), items.map(asItem)).map(row => ({
+      id: row.item.id,
+      reference: (row.item as { reference?: string }).reference || lostReference(row.item.id),
+      description: row.item.description,
+      place: row.item.place,
+      found_on: row.item.found_on,
+      score: row.score,
+      reasons: row.reasons,
+    }));
     reply.code(201);
-    return { id: saved.id };
+    return { id: saved.id, suggestions };
   });
 
   f.post("/v1/lost-found/reports/:id/decision", async (req: any, reply) => {
@@ -459,7 +743,7 @@ export default async function lostFoundRoutes(f: FastifyInstance) {
     const action = String(req.body?.action ?? "");
     if (!UUID.test(itemId)) return reply.code(422).send(problem(422, "validation", "Choose an item from the list"));
     if (action !== "confirm" && action !== "reject") return reply.code(422).send(problem(422, "validation", "Confirm or reject the match"));
-    // Confirming a match does not tell the guest.
+    // A score never confirms a match. The guest is told only after this confirm, and only when the matcher is on.
     const saved = await tx(async c => {
       const report = (await c.query(`select * from lost_report where id=$1 and property_id=$2 for update`, [req.params.id, a.propertyId])).rows[0];
       if (!report) { reply.code(404); return problem(404, "not_found", "That report is not in the log"); }
@@ -495,8 +779,15 @@ export default async function lostFoundRoutes(f: FastifyInstance) {
         [item.id, report.id, a.tenantId, a.propertyId, item.status, a.userId, a.name],
       );
       await audit(c, a, "lost_item", item.id, "lostfound.match", { payload: { report_id: report.id } });
-      return { ok: true, action: "confirm" };
+      return { ok: true, action: "confirm" as const, report_id: report.id, item_id: item.id };
     });
+    if (saved && "action" in saved && saved.action === "confirm") {
+      const settings = await loadSettings(a.propertyId);
+      if (settings.matcher) {
+        const notice = await notifyConfirmedMatch(a, saved.report_id, saved.item_id);
+        return { ok: true, action: "confirm", notice };
+      }
+    }
     return saved;
   });
 
@@ -632,17 +923,7 @@ export default async function lostFoundRoutes(f: FastifyInstance) {
     if (!email && !ready) return reply.code(422).send(problem(422, "validation", "Text messages are not set up, and there is no email on this report"));
     const settings = await loadSettings(a.propertyId);
     const prop = await propertyName(a.propertyId);
-    const token = randomBytes(24).toString("base64url");
-    const expires = new Date(Date.now() + settings.link_days * 86_400_000).toISOString();
-    await tx(async c => {
-      await c.query(`update lost_link set expires_at=now() where report_id=$1 and expires_at > now()`, [report.id]);
-      await c.query(
-        `insert into lost_link (tenant_id, property_id, report_id, item_id, token_hash, expires_at)
-         values ($1,$2,$3,$4,$5,$6)`,
-        [a.tenantId, a.propertyId, report.id, row.id, tokenHash(token), expires],
-      );
-    });
-    const link = `${publicWeb()}/lost-return/?t=${encodeURIComponent(token)}`;
+    const link = await openReturnLink(a, report.id, row.id, settings.link_days);
     const message = lostGuestMessage({ house: prop?.name || "The house", item: row.description, link });
     let emailStatus = "skipped";
     if (email) {
@@ -657,6 +938,8 @@ export default async function lostFoundRoutes(f: FastifyInstance) {
     if (!told) return reply.code(502).send(problem(502, "delivery_failed", "The message could not be sent"));
     await pool.query(`update lost_item set notified_at=coalesce(notified_at, now()) where id=$1`, [row.id]);
     await pool.query(`update lost_report set notified_at=coalesce(notified_at, now()) where id=$1`, [report.id]);
+    await recordNotice(a, row.id, report.id, { channel: email ? "email" : "sms", status: email ? emailStatus : smsStatus, reason: null });
+    if (email && phone) await recordNotice(a, row.id, report.id, { channel: "sms", status: smsStatus, reason: null });
     await pool.query(
       `insert into lost_event (item_id, report_id, tenant_id, property_id, note, by_user_id, by_name)
        values ($1,$2,$3,$4,$5,$6,$7)`,
@@ -688,6 +971,56 @@ export default async function lostFoundRoutes(f: FastifyInstance) {
       return { ok: true, until: parsed.until };
     });
     return saved;
+  });
+
+  f.get("/v1/lost-found/reports/:id/photo", async (req: any, reply) => {
+    const a = await actor(req, reply); if (!a || !allow(a, "lostfound.log", reply)) return;
+    const row = (await pool.query(`select photo from lost_report where id=$1 and property_id=$2`, [req.params.id, a.propertyId])).rows[0];
+    const photo = typeof row?.photo === "string" && row.photo.startsWith("data:image/") ? row.photo : null;
+    if (!photo) return reply.code(404).send(problem(404, "not_found", "There is no photo on this report"));
+    return { photo };
+  });
+
+  f.get("/public/lost-report", async (req, reply) => {
+    const house = await houseRow();
+    if (!house) return reply.code(503).send(problem(503, "unavailable", "The house is not ready for reports"));
+    const settings = parseLostSettings(house.settings?.lost_found);
+    return { enabled: settings.matcher, categories: settings.matcher ? LOST_CATEGORIES : [] };
+  });
+
+  f.post("/public/lost-report", async (req: any, reply) => {
+    if (!rateOk(`lostrep:${req.ip || "x"}`)) return reply.code(429).send(problem(429, "rate_limited", "Please wait a minute"));
+    const house = await houseRow();
+    if (!house) return reply.code(503).send(problem(503, "unavailable", "The house is not ready for reports"));
+    const settings = parseLostSettings(house.settings?.lost_found);
+    if (!settings.matcher) return reply.code(404).send(problem(404, "not_found", "Lost property reports are not open"));
+    const parsed = parseGuestReport(req.body);
+    if (!parsed.ok) return reply.code(422).send(problem(422, "validation", parsed.error));
+    const photo = cleanPhoto(req.body?.photo);
+    if (!photo.ok) return reply.code(422).send(problem(422, "validation", photo.error));
+    let group: string | null = null;
+    if (parsed.bookingRef) {
+      const reservation = (await pool.query(
+        `select group_id from reservation where property_id=$1 and lower(confirmation_code)=lower($2) limit 1`,
+        [house.id, parsed.bookingRef],
+      )).rows[0];
+      if (reservation?.group_id) group = reservation.group_id;
+    }
+    await tx(async c => {
+      const row = (await c.query(
+        `insert into lost_report (tenant_id, property_id, description, category, place, happened_on, group_id, booking_ref, contact_name, contact_email, contact_phone, contact_consent, consent_at, photo)
+         values ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,true,now(),$12) returning id`,
+        [house.tenant_id, house.id, sealText(parsed.description), parsed.category, parsed.place, parsed.happenedOn, group, parsed.bookingRef || null,
+          sealText(parsed.contactName || null), sealText(parsed.contactEmail || null), sealText(parsed.contactPhone || null), photo.photo],
+      )).rows[0];
+      await c.query(
+        `insert into lost_event (report_id, tenant_id, property_id, note, by_name)
+         values ($1,$2,$3,'Guest reported a missing item and agreed to be contacted about it.','Guest')`,
+        [row.id, house.tenant_id, house.id],
+      );
+    });
+    reply.code(201);
+    return { ok: true };
   });
 
   f.get("/public/lost-property/:token", async (req: any, reply) => {

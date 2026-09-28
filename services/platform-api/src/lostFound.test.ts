@@ -5,6 +5,7 @@ import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 
 const src = readFileSync(join(dirname(fileURLToPath(import.meta.url)), "lostFound.ts"), "utf8");
+const server = readFileSync(join(dirname(fileURLToPath(import.meta.url)), "server.ts"), "utf8");
 
 describe("lost and found wiring", () => {
   it("seals guest contact, emails through the helper, and records who handled it", () => {
@@ -15,6 +16,7 @@ describe("lost and found wiring", () => {
     assert.match(src, /lost_link/);
     assert.match(src, /disposal_days/);
     assert.match(src, /rankMatches/);
+    assert.match(src, /rankReportsForItem/);
     assert.match(src, /renderSlipPdf/);
     assert.match(src, /cleanPhoto/);
     assert.match(src, /a\.userId/);
@@ -27,5 +29,24 @@ describe("lost and found wiring", () => {
     const reports = src.slice(src.indexOf('"/v1/lost-found/reports"'), src.indexOf('"/v1/lost-found/reports/:id/decision"'));
     assert.equal(reports.includes("sendEmail"), false);
     assert.equal(reports.includes("lostGuestMessage"), false);
+    assert.equal(src.includes("setInterval"), false);
+    assert.equal(server.match(/setInterval\(runComms/)?.length, 1);
+  });
+
+  it("suggests matches, tells the guest only after a confirm when the matcher is on, and keeps photos off the public page", () => {
+    const remind = src.slice(src.indexOf("export async function remindLostFound"), src.indexOf("async function loadPublic"));
+    assert.match(remind, /purgeLostFound/);
+    assert.match(src, /if \(!settings\.matcher\) return 0/);
+    assert.match(src, /planLostNotice/);
+    assert.match(src, /deliverLostNotice/);
+    assert.match(src, /lost_notice/);
+    assert.match(src, /kind: draft\.kind/);
+    assert.match(src, /if \(settings\.matcher\)/);
+    const guest = src.slice(src.indexOf('"/public/lost-report"'), src.indexOf('"/public/lost-property/:token"'));
+    assert.match(guest, /parseGuestReport/);
+    assert.match(guest, /return \{ ok: true \}/);
+    assert.equal(guest.includes("return { ok: true, photo"), false);
+    assert.equal(guest.includes("suggestions"), false);
+    assert.match(src, /photo: undefined/);
   });
 });

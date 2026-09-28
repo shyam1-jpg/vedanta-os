@@ -2,21 +2,28 @@ import { describe, it } from "node:test";
 import assert from "node:assert/strict";
 import {
   disposalDue,
+  dispatchNotice,
   heldTooLong,
   lostGuestMessage,
   matchScore,
   nextLostStatus,
   parseFoundItem,
+  parseGuestReport,
   parseKeep,
   parseLostSettings,
   parseMissingReport,
   parseReturnChoice,
   parseSignature,
   parseStatusChange,
+  planLostNotice,
   rankMatches,
+  rankReportsForItem,
   renderSlipPdf,
+  retentionDue,
   slipLines,
+  stubLostNoticeSender,
   suggestMatches,
+  textSimilarity,
 } from "./lostFound.ts";
 
 describe("lost and found status", () => {
@@ -49,6 +56,12 @@ describe("lost and found retention", () => {
     assert.equal(heldTooLong("2026-01-01", "2026-09-28", 90, "returned"), false);
     assert.equal(parseLostSettings({ hold_days: 2, manager: "not an email" }).hold_days, 7);
     assert.equal(parseLostSettings({}).hold_days, 90);
+    assert.equal(parseLostSettings({}).matcher, false);
+    assert.equal(parseLostSettings({}).purge_days, 90);
+    assert.equal(parseLostSettings({ matcher: true, purge_days: 3 }).purge_days, 7);
+    assert.equal(retentionDue("2026-06-01", "2026-09-28", 90, false), false);
+    assert.equal(retentionDue("2026-06-01", "2026-09-28", 90, true), true);
+    assert.equal(retentionDue("2026-09-01", "2026-09-28", 90, true), false);
   });
 
   it("asks for a description and a place", () => {
@@ -99,6 +112,79 @@ describe("lost and found ranking", () => {
       [{ id: "c", description: "chargers left in the lounge", status: "logged", found_on: "2026-09-01" }],
     );
     assert.equal(ranked[0].reasons.includes("Similar wording"), true);
+    assert.equal(textSimilarity("charger cable", "chargers left in the lounge").close, true);
+  });
+
+  it("ranks by category, a date window, the place, and the words, and does not confirm", () => {
+    const item = { id: "found", description: "Black wool scarf", category: "clothing", place: "Room 12", found_on: "2026-09-21", status: "logged" };
+    const near = { id: "near", description: "Black scarf", category: "clothing", place: "Room 12", happened_on: "2026-09-20", status: "open" };
+    const later = { id: "later", description: "Black scarf", category: "clothing", place: "Room 12", happened_on: "2026-09-10", status: "open" };
+    const other = { id: "other", description: "Phone charger", category: "electronics", place: "Halls", happened_on: "2026-01-01", status: "open" };
+    const closed = { ...near, id: "closed", status: "closed" };
+    const ranked = rankReportsForItem(item, [other, later, closed, near]);
+    assert.deepEqual(ranked.map(row => row.item.id), ["near", "later"]);
+    assert.equal(ranked[0].score > ranked[1].score, true);
+    assert.equal(ranked[0].reasons.includes("Same category"), true);
+    assert.equal(ranked[0].reasons.includes("Same place"), true);
+    assert.equal(ranked[0].reasons.includes("Found within 2 days"), true);
+    assert.equal(ranked[1].reasons.includes("Found within two weeks"), true);
+    assert.equal(item.status, "logged");
+    assert.equal(rankReportsForItem(item, [{ ...near, rejected: ["found"] }]).length, 0);
+  });
+});
+
+describe("lost property matcher", () => {
+  it("asks a guest for where, when, a way to reply, and consent", () => {
+    const missing = { description: "Black scarf", category: "clothing", place: "Room 12", happened_on: "2026-09-20" };
+    assert.equal(parseGuestReport({ ...missing, contact_email: "guest@example.invalid" }).ok, false);
+    assert.equal(parseGuestReport({ ...missing, contact_email: "guest@example.invalid", consent: false }).ok, false);
+    assert.equal(parseGuestReport({ description: "Black scarf", category: "clothing", consent: true, contact_email: "guest@example.invalid" }).ok, false);
+    const saved = parseGuestReport({ ...missing, contact_email: "guest@example.invalid", consent: true, booking_ref: "VG10001" });
+    assert.equal(saved.ok, true);
+    if (saved.ok) {
+      assert.equal(saved.contactConsent, true);
+      assert.equal(saved.contactEmail, "guest@example.invalid");
+      assert.equal(saved.bookingRef, "VG10001");
+    }
+    const phone = parseGuestReport({ ...missing, contact_phone: "+447700900123", consent: true });
+    assert.equal(phone.ok, true);
+    assert.equal(parseGuestReport({ ...missing, contact_phone: "123", consent: true }).ok, false);
+    assert.equal(parseGuestReport({ ...missing, description: "See https://example.invalid", contact_email: "guest@example.invalid", consent: true }).ok, false);
+  });
+
+  it("tells the guest on one channel after staff confirm, and records a stub send", async () => {
+    const message = lostGuestMessage({ house: "The Vedanta", item: "Black scarf", link: "https://example.invalid/lost-return/?t=abc" });
+    const skipped = planLostNotice({
+      consent: false, email: "guest@example.invalid", phone: "", prefsOn: false, operationalChannel: "email",
+      subject: message.subject, body: message.body, sms: message.sms,
+    });
+    assert.equal(skipped.action, "skip");
+    const quiet = planLostNotice({
+      consent: true, email: "guest@example.invalid", phone: "+447700900123", prefsOn: true, operationalChannel: "none",
+      subject: message.subject, body: message.body, sms: message.sms,
+    });
+    assert.equal(quiet.action, "skip");
+    const text = planLostNotice({
+      consent: true, email: "guest@example.invalid", phone: "+447700900123", prefsOn: true, operationalChannel: "sms",
+      subject: message.subject, body: message.body, sms: message.sms,
+    });
+    assert.equal(text.action, "send");
+    if (text.action === "send") assert.equal(text.channel, "sms");
+    const log: Parameters<typeof stubLostNoticeSender>[0] = [];
+    const sender = stubLostNoticeSender(log);
+    const sent = await dispatchNotice(text, sender, {
+      email: "guest@example.invalid", tenantId: "t", propertyId: "p", userId: null, relatedId: "item",
+    });
+    assert.equal(sent.status, "LOGGED");
+    assert.equal(sent.channel, "sms");
+    assert.equal(log.length, 1);
+    assert.equal(log[0].kind, "lost_found_guest");
+    assert.match(log[0].body, /no payment/);
+    const held = await dispatchNotice(skipped, sender, {
+      email: "guest@example.invalid", tenantId: "t", propertyId: "p", userId: null, relatedId: "item",
+    });
+    assert.equal(held.status, "SKIPPED");
+    assert.equal(log.length, 1);
   });
 });
 

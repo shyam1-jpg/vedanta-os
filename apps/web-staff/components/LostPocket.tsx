@@ -6,6 +6,7 @@ type Item = {
   id: string; reference: string; description: string; place: string; found_on: string; status: string;
   held_long: boolean; disposal_due: boolean; has_photo: boolean; guest_name: string; booking_ref: string;
   guest_choice_detail: string | null; report_id: string | null; claimant_name: string | null;
+  suggestions?: { id: string; description: string; reasons: string[] }[];
 };
 type Suggestion = { id: string; reference: string; description: string; place: string; reasons: string[] };
 type Report = { id: string; description: string | null; status: string; suggestions: Suggestion[]; guest_choice_detail: string | null };
@@ -71,6 +72,7 @@ export default function LostPocket({ onError }: { onError: (msg: string | null) 
   const [photo, setPhoto] = useState("");
   const [missing, setMissing] = useState("");
   const [booking, setBooking] = useState("");
+  const [consent, setConsent] = useState(false);
   const [slip, setSlip] = useState<Slip | null>(null);
   const [slipId, setSlipId] = useState<string | null>(null);
   const [collector, setCollector] = useState("");
@@ -82,7 +84,7 @@ export default function LostPocket({ onError }: { onError: (msg: string | null) 
   useEffect(() => { load().catch(e => onError((e as Error).message)); }, []);
   if (!board) return <p className="m">Opening lost and found…</p>;
   const places = [...board.rooms.map(n => `Room ${n}`), ...board.areas];
-  const open = board.items.filter(i => !["returned", "disposed", "donated"].includes(i.status));
+  const open = board.items.filter(i => !["returned", "disposed", "donated", "expired"].includes(i.status));
   const fail = (e: unknown) => onError((e as Error).message);
   const openPdf = async (size: "a4" | "a5") => {
     if (!slipId) return;
@@ -140,9 +142,9 @@ export default function LostPocket({ onError }: { onError: (msg: string | null) 
         <input type="file" accept="image/*" aria-label="Photo" onChange={async e => { const file = e.target.files?.[0]; if (!file) return; try { setPhoto(await shrinkPhoto(file)); } catch (err) { onError((err as Error).message); } }} />
         <button className="btn" type="button" onClick={async () => {
           try {
-            await api("/v1/lost-found", { method: "POST", body: JSON.stringify({ description, category, place, found_on: foundOn, storage, photo }) });
+            const saved = await api<{ suggestions?: { description: string; reasons: string[] }[] }>("/v1/lost-found", { method: "POST", body: JSON.stringify({ description, category, place, found_on: foundOn, storage, photo }) });
             setDescription(""); setStorage(""); setPhoto("");
-            onError(null); setNote("Logged");
+            onError(null); setNote(saved.suggestions?.length ? `Logged. Possible match: ${saved.suggestions[0].description}. Confirm it yourself.` : "Logged");
             await load();
           } catch (e) { fail(e); }
         }}>Log it</button>
@@ -152,6 +154,7 @@ export default function LostPocket({ onError }: { onError: (msg: string | null) 
           <h2>{item.reference}</h2>
           <p>{item.description}</p>
           <p className="m">{item.place} · {item.found_on} · {item.status}{item.held_long ? " · held too long" : ""}{item.disposal_due ? " · eligible for disposal" : ""}{item.has_photo ? " · photo" : ""}</p>
+          {(item.suggestions ?? []).map(match => <p key={match.id} className="m">Possible report: {match.description}. {match.reasons.join(" · ")}</p>)}
           {(item.guest_name || item.guest_choice_detail) && <p className="m">{item.guest_name}{item.booking_ref ? ` · ${item.booking_ref}` : ""}{item.guest_choice_detail ? ` · ${item.guest_choice_detail}` : ""}</p>}
           <div className="tabs">
             <button type="button" onClick={async () => {
@@ -213,10 +216,11 @@ export default function LostPocket({ onError }: { onError: (msg: string | null) 
         <h2>Guest is missing something</h2>
         <textarea rows={2} aria-label="What is missing" value={missing} onChange={e => setMissing(e.target.value)} />
         <input aria-label="Booking reference" placeholder="Booking reference" value={booking} onChange={e => setBooking(e.target.value)} />
+        <label><input type="checkbox" checked={consent} onChange={e => setConsent(e.target.checked)} /> Guest agreed to be contacted about this item</label>
         <button className="btn" type="button" onClick={async () => {
           try {
-            await api("/v1/lost-found/reports", { method: "POST", body: JSON.stringify({ description: missing, category: "other", booking_ref: booking }) });
-            setMissing(""); setBooking(""); setNote("Report saved"); onError(null); await load();
+            await api("/v1/lost-found/reports", { method: "POST", body: JSON.stringify({ description: missing, category: "other", booking_ref: booking, contact_consent: consent }) });
+            setMissing(""); setBooking(""); setConsent(false); setNote("Report saved"); onError(null); await load();
           } catch (e) { fail(e); }
         }}>Save report</button>
         {board.reports.filter(r => r.status === "open").map(r => (
@@ -229,7 +233,11 @@ export default function LostPocket({ onError }: { onError: (msg: string | null) 
                 <p className="m">{match.reasons.join(" · ")}</p>
                 <div className="tabs">
                   <button type="button" onClick={async () => {
-                    try { await api(`/v1/lost-found/reports/${r.id}/decision`, { method: "POST", body: JSON.stringify({ item_id: match.id, action: "confirm" }) }); setNote("Match confirmed"); onError(null); await load(); }
+                    try {
+                      const saved = await api<{ notice?: { reason: string | null } }>(`/v1/lost-found/reports/${r.id}/decision`, { method: "POST", body: JSON.stringify({ item_id: match.id, action: "confirm" }) });
+                      setNote(saved.notice?.reason || (saved.notice ? "Match confirmed. The guest has been told." : "Match confirmed"));
+                      onError(null); await load();
+                    }
                     catch (e) { fail(e); }
                   }}>Confirm match</button>
                   <button type="button" onClick={async () => {

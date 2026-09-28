@@ -23,7 +23,7 @@ export default function Settings() {
   const [stockCopy, setStockCopy] = useState<Record<string, string>>({});
   const [stay, setStay] = useState<{ delay_label: string; delay_hours: number | null; retention_days: number; open_maintenance: boolean; emails: { kitchen: string; front: string; housekeeping: string; manager: string } } | null>(null);
   const [comply, setComply] = useState<{ leads: number[]; manager: string } | null>(null);
-  const [lostHold, setLostHold] = useState<{ hold_days: number; disposal_days: number; postage_note: string; link_days: number; manager: string } | null>(null);
+  const [lostHold, setLostHold] = useState<{ hold_days: number; disposal_days: number; postage_note: string; link_days: number; manager: string; matcher: boolean; purge_days: number } | null>(null);
   const [train, setTrain] = useState<{ leads: number[]; manager: string } | null>(null);
   const [retain, setRetain] = useState<{ allergen_days_after_departure: number; feedback_text_days: number; staff_note_days: number; profile_inactive_months: number } | null>(null);
   const [deposit, setDeposit] = useState<{ amount_gbp: number; policy: string } | null>(null);
@@ -48,7 +48,7 @@ export default function Settings() {
     api<{ delay_label: string; delay_hours: number | null; retention_days: number; open_maintenance: boolean; emails: { kitchen: string; front: string; housekeeping: string; manager: string }; receives: Record<string, string> }>("/v1/settings/feedback")
       .then(r => { setStay(r); setStayCopy(r.receives); }).catch(() => {});
     api<{ leads: number[]; manager: string }>("/v1/settings/compliance").then(setComply).catch(() => {});
-    api<{ hold_days: number; disposal_days: number; postage_note: string; link_days: number; manager: string }>("/v1/settings/lost-found").then(setLostHold).catch(() => {});
+    api<{ hold_days: number; disposal_days: number; postage_note: string; link_days: number; manager: string; matcher?: boolean; purge_days?: number }>("/v1/settings/lost-found").then(row => setLostHold({ ...row, matcher: row.matcher === true, purge_days: row.purge_days ?? 90 })).catch(() => {});
     api<{ leads: number[]; manager: string }>("/v1/settings/training").then(setTrain).catch(() => {});
     api<{ allergen_days_after_departure: number; feedback_text_days: number; staff_note_days: number; profile_inactive_months: number }>("/v1/settings/guest-retention").then(setRetain).catch(() => {});
     api<{ amount_gbp: number; policy: string }>("/v1/settings/deposit").then(setDeposit).catch(() => {});
@@ -214,7 +214,9 @@ export default function Settings() {
       {lostHold && (
         <div className="panel" style={{ marginTop: 14 }}>
           <h3>Lost property</h3>
-          <p className="m" style={{ color: "var(--ink-2)" }}>Items still held after the hold are flagged, and the general manager is told once. Unclaimed items are also flagged for disposal after the disposal period, counted from the found date, or from the day the guest was told. Postage is a note only. No payment is taken. Guest contact and a postage address are removed when an item is returned, disposed of, or donated. Leave the address blank to skip the email. Do not commit a real address.</p>
+          <p className="m" style={{ color: "var(--ink-2)" }}>Items still held after the hold are flagged, and the general manager is told once. Unclaimed items are also flagged for disposal after the disposal period, counted from the found date, or from the day the guest was told. Postage is a note only. No payment is taken. Guest contact and a postage address are removed when an item is returned, disposed of, or donated. Leave the address blank to skip the email. Do not commit a real address. The matcher stays off until you tick it. Then a confirmed match tells the guest, and personal details and photos are removed after the purge period.</p>
+          <label style={{ display: "block", marginTop: 8 }}><input type="checkbox" checked={lostHold.matcher} onChange={e => setLostHold({ ...lostHold, matcher: e.target.checked })} /> Suggest matches and tell the guest when staff confirm</label>
+          <label style={{ display: "block", marginTop: 8 }}>Days before personal details are removed<input type="number" min={7} max={3650} value={lostHold.purge_days} onChange={e => setLostHold({ ...lostHold, purge_days: Number(e.target.value) })} /></label>
           <label style={{ display: "block", marginTop: 8 }}>Days to hold<input type="number" min={7} max={3650} value={lostHold.hold_days} onChange={e => setLostHold({ ...lostHold, hold_days: Number(e.target.value) })} /></label>
           <label style={{ display: "block", marginTop: 8 }}>Days until disposal<input type="number" min={1} max={3650} value={lostHold.disposal_days} onChange={e => setLostHold({ ...lostHold, disposal_days: Number(e.target.value) })} /></label>
           <label style={{ display: "block", marginTop: 8 }}>Postage note<input value={lostHold.postage_note} onChange={e => setLostHold({ ...lostHold, postage_note: e.target.value })} /></label>

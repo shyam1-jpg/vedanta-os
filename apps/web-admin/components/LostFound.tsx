@@ -7,20 +7,21 @@ type Item = {
   id: string; reference: string; description: string; category: string; place: string; found_on: string; found_by_name: string | null;
   storage: string | null; status: string; claimant_name: string | null; return_method: string | null;
   handled_by_name: string | null; held_long: boolean; disposal_due: boolean; has_photo: boolean; has_signature: boolean;
-  events: Event[]; report_id: string | null; guest_name: string; booking_ref: string;
+  events: Event[]; report_id: string | null; guest_name: string; booking_ref: string; suggestions?: Suggestion[];
   guest_choice: string | null; guest_choice_detail: string | null; donate_to: string | null; disposal_reason: string | null;
   notified_on: string | null; hold_until: string | null;
 };
-type Suggestion = { id: string; reference: string; description: string; place: string; found_on: string; score: number; reasons: string[] };
+type Suggestion = { id: string; reference?: string; description: string; place?: string; found_on?: string; score: number; reasons: string[] };
 type Report = {
   id: string; description: string | null; category: string; place: string | null; happened_on: string | null;
   contact_name: string | null; contact_email: string | null; status: string; guest_name: string; booking_code: string;
   guest_choice: string | null; guest_choice_detail: string | null; suggestions: Suggestion[];
+  contact_consent?: boolean; has_photo?: boolean;
 };
 type Disposal = { id: string; reference: string; description: string; found_on: string; status: string };
 type Board = {
   items: Item[]; reports: Report[]; rooms: string[]; areas: string[]; categories: { code: string; label: string }[];
-  hold_days: number; disposal_days: number; postage_note: string; disposal: Disposal[];
+  hold_days: number; disposal_days: number; postage_note: string; matcher?: boolean; purge_days?: number; disposal: Disposal[];
 };
 type Slip = {
   reference: string; description: string; foundPlace: string; foundOn: string; guestName: string; bookingRef: string;
@@ -29,7 +30,8 @@ type Slip = {
 type Preview = { subject: string; body: string; sms: string; to_email: string; to_phone: string; sms_ready: boolean; can_send: boolean; warning: string };
 type Draft = { id: string; kind: "dispose" | "donate" | "keep"; reason: string; recipient: string; until: string };
 
-const STATUS: Record<string, string> = { logged: "Logged", matched: "Matched", claimed: "Claimed", returned: "Returned", disposed: "Disposed", donated: "Donated" };
+const STATUS: Record<string, string> = { logged: "Logged", matched: "Matched", claimed: "Claimed", returned: "Returned", disposed: "Disposed", donated: "Donated", expired: "Closed" };
+const CLOSED = ["returned", "disposed", "donated", "expired"];
 
 function SignaturePad({ onChange }: { onChange: (data: string, ink: boolean) => void }) {
   const ref = useRef<HTMLCanvasElement>(null);
@@ -108,7 +110,9 @@ export default function LostFound() {
   const [board, setBoard] = useState<Board | null>(null);
   const [filter, setFilter] = useState({ q: "", category: "", status: "", place: "" });
   const [found, setFound] = useState({ description: "", category: "other", place: "", found_on: "", storage: "", photo: "" });
-  const [missing, setMissing] = useState({ description: "", category: "other", place: "", happened_on: "", contact_name: "", contact_email: "", contact_phone: "", booking_ref: "" });
+  const [missing, setMissing] = useState({ description: "", category: "other", place: "", happened_on: "", contact_name: "", contact_email: "", contact_phone: "", booking_ref: "", contact_consent: false });
+  const [loggedMatches, setLoggedMatches] = useState<Suggestion[]>([]);
+  const [reportPhoto, setReportPhoto] = useState<string | null>(null);
   const [toast, setToast] = useState<string | null>(null);
   const [draft, setDraft] = useState<Draft | null>(null);
   const [slip, setSlip] = useState<Slip | null>(null);
@@ -177,7 +181,7 @@ export default function LostFound() {
   );
   return (
     <>
-      <div className="topbar"><div><h1>Lost and found</h1><p>What was found, what a guest is missing, and what should not be held past {board.hold_days} days. Unclaimed items become eligible for disposal after {board.disposal_days} days.</p></div></div>
+      <div className="topbar"><div><h1>Lost and found</h1><p>What was found, what a guest is missing, and what should not be held past {board.hold_days} days. Unclaimed items become eligible for disposal after {board.disposal_days} days. Likely matches are suggestions. Staff confirm them.{board.matcher ? ` Confirming a match tells the guest. Open cases close after ${board.purge_days ?? 90} days and personal details are removed.` : " Telling the guest on confirm is switched off."}</p></div></div>
       <div className="panel">
         <h3>Eligible for disposal</h3>
         <p className="m">Counted from the found date, or from the day the guest was told. Choose disposed, donated, or keep longer.</p>
@@ -217,12 +221,14 @@ export default function LostFound() {
           <input type="file" accept="image/*" aria-label="Photo" onChange={async e => { const file = e.target.files?.[0]; if (!file) return; try { setFound({ ...found, photo: await shrink(file) }); } catch (err) { say((err as Error).message); } }} />
           <button className="btn primary" type="button" onClick={async () => {
             try {
-              await api("/v1/lost-found", { method: "POST", body: JSON.stringify(found) });
+              const saved = await api<{ suggestions?: Suggestion[] }>("/v1/lost-found", { method: "POST", body: JSON.stringify(found) });
               setFound({ description: "", category: "other", place: "", found_on: "", storage: "", photo: "" });
-              say("Logged");
+              setLoggedMatches(saved.suggestions ?? []);
+              say(saved.suggestions?.length ? "Logged. Likely matches are listed below." : "Logged");
               load();
             } catch (e) { say(e instanceof ApiError ? e.problem.detail : "Could not log it"); }
           }}>Log found item</button>
+          {loggedMatches.length > 0 && <div data-testid="found-suggestions">{loggedMatches.map(match => <p key={match.id} className="m">{match.description}. {match.reasons.join(" · ")}. Confirm it from the missing report. Nothing is confirmed on its own.</p>)}</div>}
         </div>
         <h3 style={{ marginTop: 18 }}>A guest reports something missing</h3>
         <div style={{ display: "grid", gap: 8, maxWidth: 640 }}>
@@ -237,10 +243,11 @@ export default function LostFound() {
           <input aria-label="Contact name" placeholder="Name" value={missing.contact_name} onChange={e => setMissing({ ...missing, contact_name: e.target.value })} />
           <input aria-label="Contact email" placeholder="Email" value={missing.contact_email} onChange={e => setMissing({ ...missing, contact_email: e.target.value })} />
           <input aria-label="Contact phone" placeholder="Phone" value={missing.contact_phone} onChange={e => setMissing({ ...missing, contact_phone: e.target.value })} />
+          <label><input type="checkbox" checked={missing.contact_consent} onChange={e => setMissing({ ...missing, contact_consent: e.target.checked })} /> The guest agreed to be contacted about this item</label>
           <button className="btn" type="button" onClick={async () => {
             try {
               await api("/v1/lost-found/reports", { method: "POST", body: JSON.stringify(missing) });
-              setMissing({ description: "", category: "other", place: "", happened_on: "", contact_name: "", contact_email: "", contact_phone: "", booking_ref: "" });
+              setMissing({ description: "", category: "other", place: "", happened_on: "", contact_name: "", contact_email: "", contact_phone: "", booking_ref: "", contact_consent: false });
               say("Report saved");
               load();
             } catch (e) { say(e instanceof ApiError ? e.problem.detail : "Could not save the report"); }
@@ -323,8 +330,14 @@ export default function LostFound() {
               {item.status === "claimed" && <button className="btn" type="button" onClick={() => move(item, "returned", { claimant_name: item.claimant_name ?? item.guest_name, return_method: "posted" })}>Posted</button>}
               {["logged", "matched"].includes(item.status) && <button className="btn" type="button" onClick={() => setDraft({ id: item.id, kind: "dispose", reason: "", recipient: "", until: "" })}>Dispose</button>}
               {["logged", "matched"].includes(item.status) && <button className="btn" type="button" onClick={() => setDraft({ id: item.id, kind: "donate", reason: "", recipient: "", until: "" })}>Donate</button>}
-              {!["returned", "disposed", "donated"].includes(item.status) && <button className="btn" type="button" onClick={() => setDraft({ id: item.id, kind: "keep", reason: "", recipient: "", until: "" })}>Keep longer</button>}
+              {!CLOSED.includes(item.status) && <button className="btn" type="button" onClick={() => setDraft({ id: item.id, kind: "keep", reason: "", recipient: "", until: "" })}>Keep longer</button>}
             </div>
+            {(item.suggestions ?? []).map(match => (
+              <div key={match.id} style={{ marginTop: 8 }}>
+                <div className="m">Possible report: {match.description}</div>
+                <div className="m">{match.reasons.join(" · ")}</div>
+              </div>
+            ))}
             {outcome(item)}
             {(item.events ?? []).length > 0 && <ul className="m">{item.events.map((ev, i) => <li key={i}>{ev.to_status || "Note"}{ev.by_name ? ` · ${ev.by_name}` : ""}{ev.note ? ` · ${ev.note}` : ""}</li>)}</ul>}
           </div>
@@ -336,7 +349,11 @@ export default function LostFound() {
         {board.reports.map(report => (
           <div className="ops-card" key={report.id}>
             <div className="ops-card-top"><b>{report.description}</b><span className="m">{report.status}</span></div>
-            <div className="m">{report.place || "Place not given"}{report.happened_on ? ` · ${report.happened_on}` : ""}{report.guest_name ? ` · ${report.guest_name}` : ""}{report.booking_code ? ` · ${report.booking_code}` : ""}</div>
+            <div className="m">{report.place || "Place not given"}{report.happened_on ? ` · ${report.happened_on}` : ""}{report.guest_name ? ` · ${report.guest_name}` : ""}{report.booking_code ? ` · ${report.booking_code}` : ""}{report.contact_consent ? " · agreed to be contacted" : ""}{report.has_photo ? " · photo on file" : ""}</div>
+            {report.has_photo && <button className="btn" type="button" onClick={async () => {
+              try { setReportPhoto((await api<{ photo: string }>(`/v1/lost-found/reports/${report.id}/photo`)).photo); }
+              catch (e) { fail(e); }
+            }}>View photo</button>}
             {report.guest_choice_detail && <div className="m">{report.guest_choice_detail}</div>}
             {report.suggestions.map(match => (
               <div key={match.id} style={{ marginTop: 8 }}>
@@ -346,8 +363,8 @@ export default function LostFound() {
                   <div className="tabs">
                     <button className="btn" type="button" onClick={async () => {
                       try {
-                        await api(`/v1/lost-found/reports/${report.id}/decision`, { method: "POST", body: JSON.stringify({ item_id: match.id, action: "confirm" }) });
-                        say("Match confirmed");
+                        const saved = await api<{ notice?: { reason: string | null; status: string } }>(`/v1/lost-found/reports/${report.id}/decision`, { method: "POST", body: JSON.stringify({ item_id: match.id, action: "confirm" }) });
+                        say(saved.notice?.reason || (saved.notice ? "Match confirmed. The guest has been told." : "Match confirmed"));
                         load();
                       } catch (e) { fail(e); }
                     }}>Confirm match</button>
@@ -365,6 +382,7 @@ export default function LostFound() {
             {report.status === "open" && report.suggestions.length === 0 && <p className="m">No likely matches in the found log.</p>}
           </div>
         ))}
+        {reportPhoto && <img src={reportPhoto} alt="Photo filed with the missing report" style={{ width: 160, height: 120, objectFit: "cover" }} />}
         {board.reports.length === 0 && <p className="m">No missing reports.</p>}
       </div>
       {toast && <div className="toast">{toast}</div>}
