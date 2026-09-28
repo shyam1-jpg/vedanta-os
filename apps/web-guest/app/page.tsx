@@ -67,6 +67,8 @@ export default function Book() {
   const [busy, setBusy] = useState(false);
   const [asks, setAsks] = useState<GuestAsk[]>([]);
   const [ask, setAsk] = useState({ request_text: "", room_label: "" });
+  const [bedPreference, setBedPreference] = useState("any");
+  const [accessibleOnly, setAccessibleOnly] = useState(false);
 
   const loadPublic = async () => {
     const [p, progs] = await Promise.all([
@@ -95,7 +97,8 @@ export default function Book() {
   }, []);
 
   const searchDates = async (arrival = form.arrival, departure = form.departure) => {
-    if (!arrival || !departure || departure < arrival) { setAvail(null); return; }
+    setAvail(null);
+    if (!arrival || !departure || departure <= arrival) { setErr("Choose a departure after your arrival date."); return; }
     setBusy(true); setErr(null);
     try {
       const a = await api<Avail>(`/guest/availability?arrival=${arrival}&departure=${departure}&people=${form.people}`);
@@ -117,6 +120,11 @@ export default function Book() {
     setOk(null); setErr(null);
     searchDates(p.arrival, p.departure);
   };
+
+  const matchingTypes = (avail?.types ?? []).filter(t =>
+    t.available > 0 && t.sleeps >= Number(form.people) &&
+    (!accessibleOnly || t.accessible) && (bedPreference === "any" || t.beds.toLowerCase().includes(bedPreference))
+  );
 
   const doRegister = async () => {
     setBusy(true); setErr(null); setOk(null);
@@ -168,8 +176,8 @@ export default function Book() {
       await loadSigned();
       setStep("done");
       setOk(r.access_code
-        ? `Saved. Your private access code is ${r.access_code}. It expires in 14 days. Write it down.`
-        : sel ? `Your place on ${sel.name} is with the house.` : "Your enquiry is with the house.");
+        ? `Enquiry sent. Your private access code is ${r.access_code}. It expires in 14 days. Write it down.`
+        : "Your enquiry is with the house. They will confirm availability and terms.");
       return r;
     } catch (e) { setErr((e as Error).message); return null; } finally { setBusy(false); }
   };
@@ -259,7 +267,7 @@ export default function Book() {
           <div className="split">
             <div>
               <h2 id="open-retreats">Open retreats</h2>
-              <p className="lead">Browse programmes, dates and rooms before you create an account. Registration happens when you save a place.</p>
+              <p className="lead">Browse programmes, dates and rooms before you create an account. Send an enquiry when you are ready.</p>
               <div className="grid">
                 {programmes.length === 0 && <p className="m">No published retreats right now. Search your own dates — the house still has rooms to offer.</p>}
                 {programmes.map(p => (
@@ -272,10 +280,11 @@ export default function Book() {
               </div>
 
               <h2 style={{ marginTop: 36 }}>Availability</h2>
-              <p className="lead">Live free rooms for the next four weeks. Choose dates to see room types.</p>
+              <p className="lead">Rooms free each night for the next four weeks. Select an arrival day, then check the full stay.</p>
               <div className="cal">
                 {cal.map(d => (
-                  <button key={d.date} className={"cal-d" + (d.free_rooms === 0 ? " none" : "")} onClick={() => {
+                  <button key={d.date} type="button" aria-label={`${fmt(d.date)}: ${d.free_rooms} rooms free`} aria-pressed={form.arrival === d.date}
+                    className={"cal-d" + (d.free_rooms === 0 ? " none" : "") + (form.arrival === d.date ? " selected" : "")} onClick={() => {
                     const next = new Date(d.date + "T12:00:00"); next.setDate(next.getDate() + 2);
                     const dep = next.toISOString().slice(0, 10);
                     setSel(null);
@@ -283,8 +292,8 @@ export default function Book() {
                     setStep("room");
                     searchDates(d.date, dep);
                   }}>
-                    <b>{new Date(d.date + "T12:00:00").getDate()}</b>
-                    <span>{d.free_rooms}</span>
+                    <b>{new Date(d.date + "T12:00:00").toLocaleDateString("en-GB", { day: "numeric", month: "short" })}</b>
+                    <span>{d.free_rooms} rooms</span>
                   </button>
                 ))}
               </div>
@@ -300,21 +309,28 @@ export default function Book() {
                 {sel && <p className="m">{fmt(sel.arrival)} → {fmt(sel.departure)} · {nights(sel)}{sel.basis ? ` · ${sel.basis}` : ""}</p>}
                 {sel?.about && <p className="copy">{sel.about}</p>}
                 <label>Arrive</label>
-                <input type="date" value={form.arrival} onChange={e => { setForm({ ...form, arrival: e.target.value }); setSel(null); }} />
+                <input type="date" value={form.arrival} onChange={e => { setForm({ ...form, arrival: e.target.value, room_preference: "" }); setSel(null); setAvail(null); }} />
                 <label>Depart</label>
-                <input type="date" value={form.departure} onChange={e => setForm({ ...form, departure: e.target.value })} />
+                <input type="date" min={form.arrival || undefined} value={form.departure} onChange={e => { setForm({ ...form, departure: e.target.value, room_preference: "" }); setAvail(null); }} />
                 <label>How many people</label>
-                <input type="number" min={1} value={form.people} onChange={e => setForm({ ...form, people: e.target.value })} />
+                <input type="number" min={1} max={41} value={form.people} onChange={e => { setForm({ ...form, people: e.target.value, room_preference: "" }); setAvail(null); }} />
                 <button className="btn sec" disabled={busy} onClick={() => { setStep("room"); searchDates(); }}>Show rooms</button>
                 {avail && (
                   <div className="rooms" style={{ display: "block", marginTop: 16 }}>
                     <p className="m"><b>{avail.free_rooms}</b> rooms free · {avail.nights} {avail.nights === 1 ? "night" : "nights"}</p>
-                    {avail.types.map(t => (
+                    <label htmlFor="bed-preference">Preferred bed</label>
+                    <select id="bed-preference" value={bedPreference} onChange={e => setBedPreference(e.target.value)}>
+                      <option value="any">Any bed setup</option><option value="single">Single beds</option><option value="double">Double bed</option><option value="king">King bed</option>
+                    </select>
+                    <label className="check"><input type="checkbox" checked={accessibleOnly} onChange={e => setAccessibleOnly(e.target.checked)} /> Accessible rooms only</label>
+                    {matchingTypes.length === 0 && <p className="m">No rooms match these preferences. Try a different bed setup, number of people or dates.</p>}
+                    {matchingTypes.map(t => (
                       <button key={t.code + t.sleeps + String(t.accessible)} className={"room-type" + (form.room_preference === t.name ? " on" : "")} onClick={() => { setForm(f => ({ ...f, room_preference: t.name })); setStep("details"); }}>
                         <b>{t.name}</b>
                         <span>{t.available} of {t.total} free · sleeps {t.sleeps}{t.accessible ? " · accessible" : ""}{t.beds ? ` · ${t.beds}` : ""}</span>
                       </button>
                     ))}
+                    <p className="m">Room preference is a request until the house confirms your allocation. The total price and deposit will be confirmed by the house before payment.</p>
                   </div>
                 )}
               </div>
@@ -349,42 +365,18 @@ export default function Book() {
                 </div>
               )}
 
-              {(step === "pay" || step === "done") && (
+              {step === "pay" && (
                 <div className="card" style={{ marginTop: 18 }}>
-                  <h2 style={{ fontSize: 22 }}>Payment & deposit</h2>
-                  <p className="m">To secure your place, a deposit is required. You will be taken to a secure Stripe payment page. Your card details are never stored by us — all payments are handled securely by Stripe.</p>
-                  <div style={{ background: "var(--surface, #f5f0e8)", borderRadius: 10, padding: "14px 16px", marginBottom: 16 }}>
-                    <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 6 }}>
-                      <span className="m">Deposit amount</span>
-                      <b>£200.00</b>
-                    </div>
-                    <div style={{ display: "flex", justifyContent: "space-between" }}>
-                      <span className="m">Balance</span>
-                      <span className="m" style={{ color: "var(--ink-2, #666)" }}>Agreed with the house after acceptance</span>
-                    </div>
-                  </div>
-                  <button className="btn" disabled={busy || !form.name || !form.email.includes("@")} onClick={async () => {
-                    try {
-                      const enquiryResult = await doEnquiry();
-                      if (enquiryResult?.id) {
-                        const r = await api<{ url: string }>(`/guest-enquiries/${enquiryResult.id}/stripe/checkout`, { method: "POST" });
-                        if (r?.url) window.location.href = r.url;
-                      }
-                    } catch {
-                      // Fall back to save place without payment if Stripe not configured
-                      await doEnquiry();
-                    }
-                  }}>
-                    {busy ? "…" : "Pay deposit & save my place"}
-                  </button>
+                  <h2 style={{ fontSize: 22 }}>Review your enquiry</h2>
+                  <p className="m">The house will confirm the full price, deposit amount, payment instructions and cancellation terms before asking you to pay. Sending this enquiry does not charge you or guarantee a room.</p>
+                  <p className="m"><b>Stay:</b> {form.arrival ? fmt(form.arrival) : "—"} → {form.departure ? fmt(form.departure) : "—"} · {form.people} {Number(form.people) === 1 ? "guest" : "guests"}</p>
+                  <p className="m"><b>Room requested:</b> {form.room_preference || "House to advise"}</p>
+                  {sel?.price && <p className="m"><b>Published price note:</b> {sel.price}</p>}
                   <button className="btn sec" style={{ marginTop: 10 }} disabled={busy || !form.name || !form.email.includes("@")} onClick={doEnquiry}>
-                    Save place — pay deposit later
+                    {busy ? "…" : "Send booking enquiry"}
                   </button>
                   {ok && <div className="note">{ok}</div>}
                   {err && <div className="note">{err}</div>}
-                  <p className="m" style={{ fontSize: 12, color: "var(--ink-3, #999)", marginTop: 14 }}>
-                    🔒 Payments secured by Stripe · No card details stored · Cancel anytime before acceptance
-                  </p>
                 </div>
               )}
 
@@ -439,8 +431,8 @@ export default function Book() {
             <h2>Before you book</h2>
             <div className="facts">
               <div><b>Check-in / out</b><span>Arrive from {prop?.check_in_from ?? "15:00"}. Rooms ready for the evening. Leave by {prop?.check_out_by ?? "11:00"}.</span></div>
-              <div><b>Deposit & refunds</b><span>The house agrees the deposit and any refund when your place is accepted. Nothing is charged on this page.</span></div>
-              <div><b>Cancellation</b><span>Terms are confirmed with your booking, not guessed here.</span></div>
+              <div><b>Price & deposit</b><span>The house will quote the full price and deposit before payment. Sending an enquiry does not charge you.</span></div>
+              <div><b>Cancellation</b><span>The house will provide the applicable refund and cancellation terms before you make a payment.</span></div>
               <div><b>Meals & diet</b><span>The restaurant is buffet-only and pure vegetarian: no eggs, and no onion, garlic or other onion-family ingredients. Tell us vegan, Jain, gluten-free or allergies on the form.</span></div>
               <div><b>Accessibility</b><span>Ask for a ground-floor or accessible room when you save your place.</span></div>
               <div><b>Privacy & support</b><span>Your stay is private. Write to reception at the house, or use access-code help if you cannot sign in.</span></div>
