@@ -30,6 +30,7 @@ export default function Settings() {
   const [retain, setRetain] = useState<{ allergen_days_after_departure: number; feedback_text_days: number; staff_note_days: number; profile_inactive_months: number } | null>(null);
   const [deposit, setDeposit] = useState<{ amount_gbp: number; policy: string } | null>(null);
   const [audit, setAudit] = useState<{ time: string; gm_email: string; auto_email: boolean } | null>(null);
+  const [impact, setImpact] = useState<{ enabled: boolean; public: boolean } | null>(null);
   const [swaps, setSwaps] = useState<{ min_rest_hours: number; standard_week_hours: number; expire_hours_before: number; board: boolean; approval: Record<string, boolean> } | null>(null);
   const [swapDepts, setSwapDepts] = useState("");
   const [brief, setBrief] = useState<{ severe: number; cold: number; vip: number; compliance: number; staffing: number; heads: Record<string, number> } | null>(null);
@@ -62,6 +63,7 @@ export default function Settings() {
     api<{ allergen_days_after_departure: number; feedback_text_days: number; staff_note_days: number; profile_inactive_months: number }>("/v1/settings/guest-retention").then(setRetain).catch(() => {});
     api<{ amount_gbp: number; policy: string }>("/v1/settings/deposit").then(setDeposit).catch(() => {});
     api<{ time: string; gm_email: string; auto_email: boolean }>("/v1/settings/night-audit").then(setAudit).catch(() => {});
+    api<{ enabled?: boolean; public?: boolean }>("/v1/settings/sustainability").then(row => setImpact({ enabled: row.enabled === true, public: row.public === true })).catch(() => {});
     api<{ min_rest_hours: number; standard_week_hours: number; expire_hours_before: number; board?: boolean; approval?: Record<string, boolean> }>("/v1/settings/shift-swap").then(row => {
       const approval = row.approval ?? {};
       setSwaps({ ...row, board: row.board === true, approval });
@@ -293,6 +295,17 @@ export default function Settings() {
           <button className="btn primary" style={{ marginTop: 12 }} onClick={() => run(async () => {
             setAudit(await api("/v1/settings/night-audit", { method: "PUT", body: JSON.stringify(audit) }));
           }, "Night audit saved")}>Save night audit</button>
+        </div>
+      )}
+      {impact && (
+        <div className="panel" style={{ marginTop: 14 }}>
+          <h3>Sustainability</h3>
+          <p className="m" style={{ color: "var(--ink-2)" }}>Readings for kitchen waste, utilities, sourcing, seva hours, and goshala care. The cows are never milked, and a dairy figure is refused. Both switches stay off until you tick them. Carbon figures on the report are estimates and show the conversion factor and its source.</p>
+          <label style={{ display: "block", marginTop: 8 }}><input type="checkbox" checked={impact.enabled} onChange={e => setImpact({ ...impact, enabled: e.target.checked })} /> Keep a sustainability log</label>
+          <label style={{ display: "block", marginTop: 8 }}><input type="checkbox" checked={impact.public} onChange={e => setImpact({ ...impact, public: e.target.checked })} /> Show a short public summary for guests and funders</label>
+          <button className="btn primary" style={{ marginTop: 12 }} onClick={() => run(async () => {
+            setImpact(await api("/v1/settings/sustainability", { method: "PUT", body: JSON.stringify({ enabled: impact.enabled === true, public: impact.public === true }) }));
+          }, "Sustainability settings saved")}>Save sustainability</button>
         </div>
       )}
       {swaps && (

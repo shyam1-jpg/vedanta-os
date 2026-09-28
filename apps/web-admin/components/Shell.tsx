@@ -9,7 +9,7 @@ import { token } from "@/lib/api";
 /** Admin shell with nav. Sign-in and the organiser form stand alone. */
 export default function Shell({ children }: { children: React.ReactNode }) {
   const p = usePathname();
-  if (p?.startsWith("/form") || p?.startsWith("/assign") || p?.startsWith("/details") || p?.startsWith("/stay-note") || p?.startsWith("/lost-return") || p?.startsWith("/lost-report") || p?.startsWith("/arrive") || p?.startsWith("/opt-out") || p?.startsWith("/hear")) return <>{children}</>;
+  if (p?.startsWith("/form") || p?.startsWith("/assign") || p?.startsWith("/details") || p?.startsWith("/stay-note") || p?.startsWith("/lost-return") || p?.startsWith("/lost-report") || p?.startsWith("/impact") || p?.startsWith("/arrive") || p?.startsWith("/opt-out") || p?.startsWith("/hear")) return <>{children}</>;
   if (p?.startsWith("/sign-in")) return <StoreProvider>{children}</StoreProvider>;
   return <StoreProvider><HouseShell>{children}</HouseShell></StoreProvider>;
 }

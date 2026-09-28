@@ -3,6 +3,7 @@ import { useEffect, useState } from "react";
 import PhotoGallery from "@/components/PhotoGallery";
 import HearFromUs from "@/components/HearFromUs";
 import LostReport from "@/components/LostReport";
+import SustainabilityNote from "@/components/SustainabilityNote";
 const API = process.env.NEXT_PUBLIC_API_URL ?? "";
 const tok = {
   get: () => (typeof window === "undefined" ? null : sessionStorage.getItem("vedanta.guest.token")),
@@ -274,6 +275,7 @@ export default function Book() {
           </div>
           <PhotoGallery />
           <LostReport />
+          <SustainabilityNote />
 
           {auth !== "hidden" && !me && (
             <div className="card" style={{ maxWidth: 480, marginBottom: 28 }}>
