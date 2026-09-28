@@ -27,7 +27,7 @@ function money(n: number | null | undefined, currency = "GBP") {
 }
 
 export default function HouseToday() {
-  const { user, ready } = useStore();
+  const { user, ready, can } = useStore();
   const [e, setE] = useState<Estate | null>(null);
   const [book, setBook] = useState(0);
   const [err, setErr] = useState<string | null>(null);
@@ -76,6 +76,38 @@ export default function HouseToday() {
           <Link className="btn primary" href="/groups/">Open the book</Link>
         </div>
       </div>
+      <section className="service-hub" aria-labelledby="service-hub-title">
+        <div className="service-hub-heading">
+          <div><span className="k">THE HOUSE IN SERVICE</span><h2 id="service-hub-title">What needs attention</h2></div>
+          <p>One starting point for the next action and the next handover.</p>
+        </div>
+        <div className="service-hub-grid">
+          <article className="service-hub-card">
+            <span className="service-hub-index">01 · COORDINATE</span>
+            <h3>House log & handover</h3>
+            <p>Record guest requests, decisions and unfinished work for the next shift.</p>
+            {can("group.read") && <Link href="/ops/">Open house log <span aria-hidden>↗</span></Link>}
+          </article>
+          <article className="service-hub-card">
+            <span className="service-hub-index">02 · ASSIGN</span>
+            <h3>{p.open_tasks ?? 0} open {(p.open_tasks ?? 0) === 1 ? "task" : "tasks"}</h3>
+            <p>Give each job an owner and follow it through to completion.</p>
+            {can("group.read") && <Link href="/tasks/">Review tasks <span aria-hidden>↗</span></Link>}
+          </article>
+          <article className="service-hub-card">
+            <span className="service-hub-index">03 · PREPARE</span>
+            <h3>{p.rooms_dirty ?? "—"} rooms need a turn</h3>
+            <p>Prioritise arrival rooms, then inspect before marking them ready.</p>
+            {can("group.read") && <Link href="/housekeeping/">Open housekeeping <span aria-hidden>↗</span></Link>}
+          </article>
+          <article className="service-hub-card">
+            <span className="service-hub-index">04 · CONTINUE</span>
+            <h3>Procedures & cover</h3>
+            <p>See the steps for a department or decide what to protect if someone is absent.</p>
+            {can("group.read") && <Link href="/manual/">Open manual <span aria-hidden>↗</span></Link>}
+          </article>
+        </div>
+      </section>
       <div className="pulse pulse-wide">
         <article><div className="k">Occupancy</div><b>{p.rooms_tonight} / {p.guest_rooms}</b><div className="s">rooms tonight</div></article>
         <article><div className="k">Arrivals</div><b>{p.arriving}</b><div className="s">groups due today</div></article>
