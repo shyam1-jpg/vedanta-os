@@ -22,7 +22,8 @@ export default function Pocket() {
   const [me, setMe] = useState<Me | null>(null);
   const [prop, setProp] = useState<Prop>({ name: "The Vedanta Way", kicker: "Retreat Center" });
   const [email, setEmail] = useState("");
-  const [providers, setProviders] = useState<{ microsoft: boolean; email: boolean; dev: boolean } | null>(null);
+  const [providers, setProviders] = useState<{ microsoft: boolean; email: boolean; dev: boolean; email_code: boolean } | null>(null);
+  const [code, setCode] = useState(""); const [codeSent, setCodeSent] = useState(false); const [busy, setBusy] = useState(false); const [message, setMessage] = useState("");
   const [err, setErr] = useState<string | null>(null);
   const [tab, setTab] = useState<"clock" | "leave" | "duty" | "sop" | "log" | "desk" | "night" | "manual" | "tasks">("clock");
   const [desk, setDesk] = useState<{
@@ -67,7 +68,7 @@ export default function Pocket() {
   };
   useEffect(() => {
     api<Prop>("/guest/property").then(p => setProp({ name: p.name, kicker: p.kicker })).catch(() => {});
-    api<{ microsoft: boolean; email: boolean; dev: boolean }>("/auth/providers").then(setProviders).catch(() => setErr("Cannot reach staff sign-in right now."));
+    api<{ microsoft: boolean; email: boolean; dev: boolean; email_code: boolean }>("/auth/providers").then(setProviders).catch(() => setErr("Cannot reach staff sign-in right now."));
     const returned = window.location.hash.match(/token=([^&]+)/);
     if (returned) {
       history.replaceState(null, "", window.location.pathname);
@@ -87,6 +88,14 @@ export default function Pocket() {
       tok.set(r.token); await load();
     } catch (e) { setErr((e as Error).message); }
   };
+  const requestCode = async () => { setBusy(true); setErr(null); try {
+    const r = await api<{ message: string }>("/auth/email-code/request", { method: "POST", body: JSON.stringify({ email, surface: "staff" }) });
+    setCodeSent(true); setMessage(r.message);
+  } catch (e) { setErr((e as Error).message); } finally { setBusy(false); } };
+  const verifyCode = async () => { setBusy(true); setErr(null); try {
+    const r = await api<{ token: string }>("/auth/email-code/verify", { method: "POST", body: JSON.stringify({ email, code, surface: "staff" }) });
+    tok.set(r.token); await load();
+  } catch (e) { tok.set(null); setErr((e as Error).message); } finally { setBusy(false); } };
 
   async function orderWater(which: "today" | "tomorrow") {
     const recipe = which === "today" ? desk?.today : desk?.tomorrow;
@@ -117,7 +126,15 @@ export default function Pocket() {
             <input type="email" autoComplete="email" value={email} onChange={e => setEmail(e.target.value)} placeholder="you@thevedanta.org" />
             <button className="btn" disabled={!email} onClick={enter}>Enter the pocket</button>
           </>}
-          {providers && !providers.microsoft && !providers.email && <p className="note">Staff sign-in has not been configured. Please contact the house administrator.</p>}
+          {providers?.email_code && !providers.email && <>
+            <label htmlFor="pocket-email">Staff email</label>
+            <input id="pocket-email" type="email" autoComplete="email" value={email} onChange={e => { setEmail(e.target.value); setCodeSent(false); setCode(""); }} placeholder="you@example.com" />
+            <button className="btn" disabled={!email || busy} onClick={requestCode}>{codeSent ? "Send another code" : "Email me a code"}</button>
+            {codeSent && <><p role="status">{message}</p><label htmlFor="pocket-code">Eight-digit code</label>
+              <input id="pocket-code" inputMode="numeric" autoComplete="one-time-code" maxLength={8} value={code} onChange={e => setCode(e.target.value.replace(/\D/g, "").slice(0, 8))} />
+              <button className="btn" disabled={code.length !== 8 || busy} onClick={verifyCode}>Sign in</button></>}
+          </>}
+          {providers && !providers.microsoft && !providers.email && !providers.email_code && <p className="note">Staff sign-in is awaiting email delivery or Microsoft configuration. Please contact the house administrator.</p>}
           {err && <div className="note">{err}</div>}
         </div>
       </div>
