@@ -3,6 +3,7 @@ import { pool, tx, type Q } from "./db.ts";
 import { requireActor, allow, problem, type Actor } from "./auth.ts";
 import { openText, sealText } from "./fieldCrypto.ts";
 import { buildProgrammeSheet } from "../../../domains/retreat/sheet.ts";
+import { refreshGuestBookingForGroup, withdrawGuestBooking } from "./bookingRoute.ts";
 
 type Slot = "AM" | "PM";
 export type GroupRow = { id: string; name: string; organisation: string | null; arrival_date: string; arrival_slot: Slot; departure_date: string; departure_slot: Slot; status: string; expected_rooms: number | null; version: number };
@@ -152,6 +153,7 @@ export default async function routes(f: FastifyInstance) {
       const auditBody = { ...req.body };
       if ("dietary_notes" in auditBody) auditBody.dietary_notes = "[sealed]";
       await audit(c, a, "booking_group", req.params.id, "group.update", { version: r.rows[0].version, payload: auditBody });
+      if (datesChange) await refreshGuestBookingForGroup(c, a.tenantId, a.propertyId, req.params.id);
       return presentGroup(r.rows[0]);
     });
   });
@@ -170,7 +172,10 @@ export default async function routes(f: FastifyInstance) {
       if (!to) { reply.code(409); return problem(409, "invalid_transition", `Cannot '${req.params.cmd}' a booking that is ${g.status.toLowerCase()}`); }
       if (to === "CONFIRMED" && (g.booking_form_status !== "COMPLETE" || !g.terms_signed)) { reply.code(409); return problem(409, "paperwork_outstanding", "Booking form and signed T&Cs are needed before confirming"); }
       const r = await c.query(`update booking_group set status=$1, version=version+1 where id=$2 returning ${GROUP_COLS}`, [to, req.params.id]);
-      if (to === "CANCELLED") await c.query(`delete from room_occupancy where group_id=$1`, [req.params.id]);
+      if (to === "CANCELLED") {
+        await c.query(`delete from room_occupancy where group_id=$1`, [req.params.id]);
+        await withdrawGuestBooking(c, { tenantId: a.tenantId, propertyId: a.propertyId, bookingId: req.params.id, actorId: a.userId });
+      }
       await audit(c, a, "booking_group", req.params.id, "group." + req.params.cmd, { from: g.status, to, reason: req.body?.reason, version: r.rows[0].version });
       // Auto-schedule guest communications when confirmed
       if (to === "CONFIRMED") {

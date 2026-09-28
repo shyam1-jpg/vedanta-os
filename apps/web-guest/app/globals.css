@@ -67,6 +67,15 @@ input, textarea { width: 100%; margin-top: 4px; padding: 10px; border: 1px solid
 .room-type { display: block; width: 100%; text-align: left; background: var(--ivory); border: 1px solid var(--line); padding: 10px 12px; margin-top: 8px; cursor: pointer; color: inherit; }
 .room-type.on, .room-type:hover { border-color: var(--gold); }
 .room-type span { display: block; font-size: 13px; color: var(--ink-2); margin-top: 4px; }
+.diet-p { border-top: 1px solid var(--line); margin-top: 16px; padding-top: 8px; }
+.lbl { margin-top: 12px; font-size: 12px; color: var(--ink-2); }
+.chips { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 6px; }
+.chip { border: 1px solid var(--line); background: #fff; color: var(--ink); padding: 6px 10px; cursor: pointer; font-size: 13px; }
+.chip.on { background: var(--forest); color: var(--ivory); border-color: var(--forest); }
+.checks { display: flex; flex-direction: column; gap: 6px; margin-top: 6px; }
+.check { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; font-size: 14px; color: var(--ink); margin-top: 0; }
+.check input { width: auto; margin: 0; }
+.check select { width: auto; margin: 0; padding: 6px; }
 .trust { margin-top: 48px; }
 .trust .facts { grid-template-columns: repeat(3, 1fr); }
 .trust .facts b { font-size: 18px; margin-bottom: 6px; }

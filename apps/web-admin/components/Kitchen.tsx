@@ -5,7 +5,7 @@ import { api } from "@/lib/api";
 import { fmt, addDays } from "@/lib/format";
 
 type Day = { date: string; breakfast: number; lunch: number; dinner: number; groups: { id: string; name: string; colour: string; guests: number; meals: string[]; note?: string; dietary?: string; status: string }[] };
-type Flag = { date: string; name: string; room: string; diet: string[] | null; allergens: string[] | null; severity: string | null; notes: string | null; group_name: string | null };
+type Flag = { date: string; id?: string; name: string; room: string | null; placed?: boolean; diet: string[] | null; allergens: string[] | null; allergen_detail?: { code: string; severity: string }[]; severity: string | null; notes: string | null; group_name: string | null };
 type FohOrder = { id: string; for_date: string; items: { name: string; qty: string }[]; notes: string | null; status: string; raised_by_name: string | null };
 
 const TODAY = new Date().toISOString().slice(0, 10);
@@ -119,10 +119,17 @@ export default function Kitchen() {
                 {g.dietary && <div className="diet">{g.dietary}</div>}
                 {g.status === "PROVISIONAL" && <div className="m warn">provisional</div>}
               </div></li>))}</ul> : <div className="m" style={{ color: "var(--ink-2)" }}>No groups in house.</div>}
-            {flags.filter(f => f.date === date).length > 0 && <ul className="flags">{flags.filter(f => f.date === date).map(f => (
-              <li key={f.name + f.room} className={f.severity === "ANAPHYLAXIS" ? "sev-high" : f.severity === "ALLERGY" ? "sev-mid" : "sev-low"}>
-                <b>{f.name}</b> · room {f.room}{f.allergens?.length ? <> · <b>{f.allergens.map(a => LABEL[a] ?? a).join(", ")}</b>{f.severity === "ANAPHYLAXIS" ? " — life-threatening" : ""}</> : null}{f.diet?.length ? ` · ${f.diet.join(", ").replace(/_/g, " ")}` : ""}{f.notes ? ` · ${f.notes}` : ""}
-              </li>))}</ul>}
+            {flags.filter(f => f.date === date).length > 0 && <ul className="flags">{flags.filter(f => f.date === date).map(f => {
+              const severe = f.severity === "ANAPHYLAXIS" || f.allergen_detail?.some(a => a.severity === "ANAPHYLAXIS");
+              const allergy = f.severity === "ALLERGY" || f.allergen_detail?.some(a => a.severity === "ALLERGY");
+              const allergenText = f.allergen_detail?.length
+                ? f.allergen_detail.map(a => `${LABEL[a.code] ?? a.code} (${a.severity === "ANAPHYLAXIS" ? "severe" : a.severity.toLowerCase()})`).join(", ")
+                : f.allergens?.map(a => LABEL[a] ?? a).join(", ");
+              return (
+              <li key={(f.id ?? f.name) + (f.room ?? "wait") + date} className={severe ? "sev-high" : allergy ? "sev-mid" : "sev-low"}>
+                {severe ? <b>SEVERE · </b> : null}<b>{f.name}</b>{f.placed === false ? " · not yet in a room" : f.room ? ` · room ${f.room}` : ""}{allergenText ? <> · <b>{allergenText}</b>{severe ? " — life-threatening" : ""}</> : null}{f.diet?.length ? ` · ${f.diet.join(", ").replace(/_/g, " ")}` : ""}{f.notes ? ` · ${f.notes}` : ""}
+              </li>
+            ); })}</ul>}
           </section>); })}
       </div>
     </>

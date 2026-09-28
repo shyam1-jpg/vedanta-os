@@ -5,7 +5,7 @@
 import nodemailer from "nodemailer";
 import type { FastifyInstance } from "fastify";
 import { pool, tx } from "./db.ts";
-import { requireActor, allow, problem, type Actor } from "./auth.ts";
+import { requireActor, allow, problem } from "./auth.ts";
 import { audit } from "./groups.ts";
 import { bookingValue } from "./packages.ts";
 
@@ -13,9 +13,9 @@ const transport = process.env.SMTP_URL ? nodemailer.createTransport(process.env.
 const FROM = process.env.MAIL_FROM ?? "The Vedanta <bookings@thevedanta.org>";
 export const emailConfigured = () => !!transport;
 
-export async function sendEmail(a: Actor, m: { to: string; subject: string; body: string; kind: string; related_type?: string; related_id?: string }) {
+export async function sendEmail(a: { tenantId: string; propertyId: string; userId?: string | null }, m: { to: string; subject: string; body: string; kind: string; related_type?: string; related_id?: string }) {
   const row = (await pool.query(`insert into outbound_email (tenant_id, property_id, to_email, subject, body, kind, related_type, related_id, sent_by_user_id, status)
-    values ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10) returning id`, [a.tenantId, a.propertyId, m.to, m.subject, m.body, m.kind, m.related_type ?? null, m.related_id ?? null, a.userId, transport ? "QUEUED" : "LOGGED"])).rows[0];
+    values ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10) returning id`, [a.tenantId, a.propertyId, m.to, m.subject, m.body, m.kind, m.related_type ?? null, m.related_id ?? null, a.userId ?? null, transport ? "QUEUED" : "LOGGED"])).rows[0];
   if (!transport) return { id: row.id, status: "LOGGED" as const };
   try { await transport.sendMail({ from: FROM, to: m.to, subject: m.subject, text: m.body }); await pool.query(`update outbound_email set status='SENT', sent_at=now() where id=$1`, [row.id]); return { id: row.id, status: "SENT" as const }; }
   catch (e: any) { await pool.query(`update outbound_email set status='FAILED', error=$2 where id=$1`, [row.id, String(e.message ?? e)]); return { id: row.id, status: "FAILED" as const, error: String(e.message ?? e) }; }

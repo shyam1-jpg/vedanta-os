@@ -12,6 +12,13 @@ export default function Settings() {
   const [draft, setDraft] = useState<Record<string, Partial<Pkg>>>({}); const [add, setAdd] = useState({ code: "", name: "", price_basis: "PER_PERSON", price_twin: "", price_single: "" });
   const [newKeyName, setNewKeyName] = useState("");
   const [toast, setToast] = useState<string | null>(null); const say = (t: string) => { setToast(t); setTimeout(() => setToast(null), 3500); };
+  type RouteBox = { enabled: boolean; email: string };
+  const [routes, setRoutes] = useState<{ kitchen: RouteBox; restaurant: RouteBox; front: RouteBox } | null>(null);
+  const [routeCopy, setRouteCopy] = useState<Record<string, string>>({});
+  useEffect(() => {
+    api<{ rules: { kitchen: RouteBox; restaurant: RouteBox; front: RouteBox }; receives: Record<string, string> }>("/v1/settings/booking-routing")
+      .then(r => { setRoutes(r.rules); setRouteCopy(r.receives); }).catch(() => {});
+  }, []);
   const load = () => { api<{ items: Pkg[] }>("/v1/packages").then(r => setPkgs(r.items)); if (can("config.manage")) api<{ items: Key[] }>("/v1/integrations/keys").then(r => setKeys(r.items)).catch(() => {}); };
   useEffect(load, []); // eslint-disable-line react-hooks/exhaustive-deps
   const run = async (fn: () => Promise<unknown>, ok: string) => { try { await fn(); say(ok); load(); } catch (e) { say(e instanceof ApiError ? e.problem.detail : "Something went wrong"); } };
@@ -54,6 +61,23 @@ export default function Settings() {
           <table className="rpt"><tbody>{keys.map(k => <tr key={k.id} style={{ opacity: k.revoked_at ? .5 : 1 }}><td>{k.name}</td><td className="m">{k.scopes.join(", ")}</td><td className="m">{k.revoked_at ? "revoked" : k.last_used_at ? `last used ${new Date(k.last_used_at).toLocaleString("en-GB")}` : "never used"}</td><td>{!k.revoked_at && <button className="btn danger" onClick={() => { if (confirm(`Revoke ${k.name}? The other system will stop working immediately.`)) run(() => api(`/v1/integrations/keys/${k.id}`, { method: "DELETE" }), "Key revoked"); }}>Revoke</button>}</td></tr>)}</tbody></table>
           <div className="frow" style={{ marginTop: 10, maxWidth: 480 }}><input placeholder="Name, e.g. Parslia Kitchen OS" value={newKeyName} onChange={e => setNewKeyName(e.target.value)} /><button className="btn primary" disabled={!newKeyName.trim()} onClick={() => { if (newKeyName.trim()) run(() => api<{ key: string }>("/v1/integrations/keys", { method: "POST", body: JSON.stringify({ name: newKeyName.trim(), scopes: ["kitchen.read"] }) }).then(r => { setNewKey(r.key); setNewKeyName(""); }), "Key created"); }}>Create key</button></div>
         </div>)}
+      {routes && (
+        <div className="panel" style={{ marginTop: 14 }}>
+          <h3>Guest booking routing</h3>
+          <p className="m" style={{ color: "var(--ink-2)" }}>When a guest saves a place, each team gets only its own note. Put the department inbox here. Do not commit a real address. If SMTP is not set, the note is logged for staff to copy.</p>
+          {(["kitchen", "restaurant", "front"] as const).map(key => (
+            <div key={key} style={{ marginTop: 14, maxWidth: 640 }}>
+              <label style={{ display: "flex", gap: 8, alignItems: "center" }}>
+                <input type="checkbox" checked={routes[key].enabled} onChange={e => setRoutes({ ...routes, [key]: { ...routes[key], enabled: e.target.checked } })} />
+                <b>{key === "front" ? "Front of house" : key === "kitchen" ? "Kitchen" : "Restaurant"}</b>
+              </label>
+              <p className="m">{routeCopy[key]}</p>
+              <input placeholder="team@example.invalid" value={routes[key].email} onChange={e => setRoutes({ ...routes, [key]: { ...routes[key], email: e.target.value } })} />
+            </div>
+          ))}
+          <button className="btn primary" style={{ marginTop: 12 }} onClick={() => run(() => api("/v1/settings/booking-routing", { method: "PUT", body: JSON.stringify(routes) }), "Routing saved")}>Save routing</button>
+        </div>
+      )}
       {toast && <div className="toast">{toast}</div>}
     </>
   );

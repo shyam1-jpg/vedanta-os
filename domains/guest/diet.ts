@@ -23,6 +23,8 @@ const HOUSE_DEFAULT_DIETS = new Set([
 
 export type DietFlag = { code: string; label: string };
 
+export const UK_ALLERGENS = ["celery", "cereals_gluten", "crustaceans", "eggs", "fish", "lupin", "milk", "molluscs", "mustard", "nuts", "peanuts", "sesame", "soya", "sulphites"] as const;
+
 const ALLERGEN_LABEL: Record<string, string> = {
   celery: "Celery",
   cereals_gluten: "Gluten",
@@ -46,7 +48,17 @@ const DIET_LABEL: Record<string, string> = {
   gluten_free: "Gluten-free",
   dairy_free: "Dairy-free",
   nut_free: "Nut-free",
+  halal: "Halal",
+  kosher: "Kosher",
 };
+
+export function allergenLabel(code: string): string {
+  return ALLERGEN_LABEL[code] ?? code.replace(/_/g, " ");
+}
+
+export function dietLabel(code: string): string {
+  return DIET_LABEL[code] ?? code.replace(/_/g, " ");
+}
 
 export function dietFlags(input: {
   diet?: string[] | null;

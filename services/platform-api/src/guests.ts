@@ -4,8 +4,11 @@ import { requireActor, allow, problem } from "./auth.ts";
 import { audit } from "./groups.ts";
 import { moveNameAcrossHouse } from "./people.ts";
 import { openList, openText, sealList, sealText } from "./fieldCrypto.ts";
+import { UK_ALLERGENS } from "../../../domains/guest/diet.ts";
+import { eachStayDate, mealsOn } from "../../../domains/guest/booking.ts";
+import { openAllergenDetail } from "./bookingRoute.ts";
 
-export const ALLERGENS = ["celery", "cereals_gluten", "crustaceans", "eggs", "fish", "lupin", "milk", "molluscs", "mustard", "nuts", "peanuts", "sesame", "soya", "sulphites"];
+export const ALLERGENS: string[] = [...UK_ALLERGENS];
 const SEVERITY = ["PREFERENCE", "INTOLERANCE", "ALLERGY", "ANAPHYLAXIS"];
 const COLS = `p.id, p.given_name, p.family_name, p.email, p.phone, p.organisation, p.notes, p.updated_at,
   d.diet, d.allergens, d.severity, d.notes diet_notes, d.declared_at,
@@ -86,10 +89,11 @@ export default async function routes(f: FastifyInstance) {
       const p = (await c.query(`select id from person where id=$1 and tenant_id=$2`, [req.params.id, a.tenantId])).rows[0];
       if (!p) { reply.code(404); return problem(404, "not_found", "No such guest"); }
       const prev = (await c.query(`select diet, allergens, severity from diet_profile where person_id=$1`, [p.id])).rows[0];
-      await c.query(`insert into diet_profile (tenant_id, person_id, diet, allergens, severity, notes, declared_by_user_id, declared_at, version)
-        values ($1,$2,$3,$4,$5,$6,$7, now(), 1)
-        on conflict (person_id) do update set diet=excluded.diet, allergens=excluded.allergens, severity=excluded.severity, notes=excluded.notes, declared_by_user_id=excluded.declared_by_user_id, declared_at=now(), version=diet_profile.version+1`,
-        [a.tenantId, p.id, sealList(b.diet ?? []), sealList(allergens), b.severity ?? null, sealText(b.notes ?? null), a.userId]);
+      const detail = allergens.map(code => ({ code, severity: b.severity }));
+      await c.query(`insert into diet_profile (tenant_id, person_id, diet, allergens, severity, notes, allergen_detail, declared_by_user_id, declared_at, version)
+        values ($1,$2,$3,$4,$5,$6,$7,$8, now(), 1)
+        on conflict (person_id) do update set diet=excluded.diet, allergens=excluded.allergens, severity=excluded.severity, notes=excluded.notes, allergen_detail=excluded.allergen_detail, declared_by_user_id=excluded.declared_by_user_id, declared_at=now(), version=diet_profile.version+1`,
+        [a.tenantId, p.id, sealList(b.diet ?? []), sealList(allergens), b.severity ?? null, sealText(b.notes ?? null), sealText(JSON.stringify(detail)), a.userId]);
       await audit(c, a, "person", p.id, "diet.declare", { payload: { from: prev ? "[sealed]" : null, to: { diet: "[sealed]", allergens: "[sealed]", severity: b.severity ?? null } } });
       return { ok: true };
     });
@@ -192,17 +196,31 @@ export default async function routes(f: FastifyInstance) {
   /** Who is in house with a declared allergy or diet, per day — for the kitchen. */
   f.get<{ Querystring: { from: string; to: string } }>("/guests/in-house", async (req, reply) => {
     const a = await requireActor(req, reply); if (!a || !allow(a, "diet.read", reply)) return;
-    const r = await pool.query(`select o.on_date::text date, p.id, p.given_name || ' ' || p.family_name name, r.number room, d.diet, d.allergens, d.severity, d.notes, g.name group_name
+    const r = await pool.query(`select o.on_date::text date, p.id, p.given_name || ' ' || p.family_name name, r.number room, d.diet, d.allergens, d.severity, d.notes, d.allergen_detail, g.name group_name
       from room_occupancy o join room r on r.id=o.room_id join person p on p.id=o.person_id join diet_profile d on d.person_id=p.id left join booking_group g on g.id=o.group_id
-      where r.property_id=$1 and o.on_date between $2 and $3 and (coalesce(array_length(d.allergens,1),0) > 0 or coalesce(array_length(d.diet,1),0) > 0)
-      group by o.on_date, p.id, r.number, d.diet, d.allergens, d.severity, d.notes, g.name order by o.on_date, d.severity desc nulls last, name`, [a.propertyId, req.query.from, req.query.to]);
+      where r.property_id=$1 and o.on_date between $2 and $3 and (coalesce(array_length(d.allergens,1),0) > 0 or coalesce(array_length(d.diet,1),0) > 0 or d.notes is not null)
+      group by o.on_date, p.id, r.number, d.diet, d.allergens, d.severity, d.notes, d.allergen_detail, g.name order by o.on_date, d.severity desc nulls last, name`, [a.propertyId, req.query.from, req.query.to]);
+    const unplaced = await pool.query(`select g.arrival_date::text arrival, g.departure_date::text departure, g.arrival_slot, g.departure_slot,
+        p.id, p.given_name || ' ' || p.family_name name, d.diet, d.allergens, d.severity, d.notes, d.allergen_detail, g.name group_name
+      from group_attendee ga join booking_group g on g.id=ga.group_id join person p on p.id=ga.person_id join diet_profile d on d.person_id=p.id
+      where g.property_id=$1 and g.status not in ('CANCELLED','COMPLETED') and g.departure_date >= $2 and g.arrival_date <= $3
+        and not exists (select 1 from room_occupancy o where o.person_id=p.id and o.group_id=g.id and o.on_date between $2 and $3)`, [a.propertyId, req.query.from, req.query.to]);
+    const openRow = (row: any, extra: Record<string, unknown>) => ({
+      ...row,
+      ...extra,
+      diet: openList(row.diet),
+      allergens: openList(row.allergens),
+      notes: openText(row.notes),
+      allergen_detail: openAllergenDetail(row.allergen_detail),
+    });
+    const waiting = unplaced.rows.flatMap(row => eachStayDate(row.arrival, row.departure)
+      .filter(date => date >= req.query.from && date <= req.query.to && mealsOn({ arrival: row.arrival, departure: row.departure, arrival_slot: row.arrival_slot, departure_slot: row.departure_slot }, date).length)
+      .map(date => openRow(row, { date, room: null, placed: false })));
     return {
-      items: r.rows.map(row => ({
-        ...row,
-        diet: openList(row.diet),
-        allergens: openList(row.allergens),
-        notes: openText(row.notes),
-      })),
+      items: [
+        ...r.rows.map(row => openRow(row, { placed: true })),
+        ...waiting,
+      ],
     };
   });
 }

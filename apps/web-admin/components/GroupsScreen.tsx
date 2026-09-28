@@ -34,7 +34,7 @@ export default function GroupsScreen() {
   const [payDraft, setPayDraft] = useState({ kind: "deposit", method: "bank_transfer", amount: "", reference: "", note: "" });
   const [invDraft, setInvDraft] = useState({ kind: "invoice", amount: "", due_date: "" });
   const [comms, setComms] = useState<{ id: string; kind: string; scheduled_for: string; sent_at: string | null; cancelled_at: string | null; email_status: string | null; to_email: string | null }[]>([]);
-  const [enquiries, setEnquiries] = useState<{ id: string; name: string; email: string; people: number; arrival: string; departure: string; notes: string | null; programme_name?: string | null; dietary_notes?: string | null; accessibility_notes?: string | null; room_preference?: string | null; arrival_time_note?: string | null; travel_notes?: string | null }[]>([]);
+  const [enquiries, setEnquiries] = useState<{ id: string; name: string; email: string; people: number; arrival: string; departure: string; notes: string | null; programme_name?: string | null; dietary_notes?: string | null; accessibility_notes?: string | null; room_preference?: string | null; arrival_time_note?: string | null; travel_notes?: string | null; party_summary?: string | null; accept_warning?: string | null; severe?: boolean }[]>([]);
   const [sheet, setSheet] = useState<{ programme: string; guests: number | null; rooms_placed: string[]; rooms_short: number; meals: { breakfast: number; lunch: number; dinner: number } | null; dietary: string | null; departments: { code: string; work: string }[] } | null>(null);
   const [stays, setStays] = useState<{ id: string; name: string; email: string; people: number; arrival: string; departure: string; status: string; programme_name: string | null; rooms: { number: string; section: string | null }[]; booking_id: string | null }[]>([]);
   const [roomDraft, setRoomDraft] = useState<Record<string, string>>({});
@@ -99,8 +99,18 @@ export default function GroupsScreen() {
           <p className="m" style={{ color: "var(--ink-2)" }}>Guests sent these from /book. Take one into the house book to hold rooms.</p>
           {enquiries.map(e => (
             <div className="urow" key={e.id}>
-              <div><div className="t">{e.name}{e.programme_name ? ` · ${e.programme_name}` : ""}</div><div className="m">{e.email} · {e.arrival} → {e.departure} · {e.people} people{e.room_preference ? ` · ${e.room_preference}` : ""}{e.dietary_notes ? ` · diet: ${e.dietary_notes}` : ""}{e.accessibility_notes ? ` · access: ${e.accessibility_notes}` : ""}{e.travel_notes ? ` · travel: ${e.travel_notes}` : ""}{e.notes ? ` · ${e.notes}` : ""}</div></div>
-              {can("group.create") && <button className="btn primary" onClick={() => run(async () => { await api(`/v1/guest-enquiries/${e.id}/take`, { method: "POST" }); await reload(); loadGuestBook(); say("Private stay opened — assign rooms below"); })}>Take into the book</button>}
+              <div><div className="t">{e.name}{e.programme_name ? ` · ${e.programme_name}` : ""}{e.severe ? " · SEVERE allergen" : ""}</div><div className="m">{e.email} · {e.arrival} → {e.departure} · {e.people} people{e.arrival_time_note ? ` · arrives ${e.arrival_time_note}` : ""}{e.room_preference ? ` · ${e.room_preference}` : ""}{e.party_summary || e.dietary_notes ? ` · diet: ${e.party_summary || e.dietary_notes}` : ""}{e.accessibility_notes ? ` · access: ${e.accessibility_notes}` : ""}{e.travel_notes ? ` · travel: ${e.travel_notes}` : ""}{e.notes ? ` · ${e.notes}` : ""}</div>{e.accept_warning && <div className="note">{e.accept_warning}</div>}</div>
+              {can("group.create") && <button className="btn primary" onClick={() => run(async () => {
+                try {
+                  await api(`/v1/guest-enquiries/${e.id}/take`, { method: "POST", body: JSON.stringify({}) });
+                } catch (err) {
+                  if (err instanceof ApiError && err.problem.code === "accept_would_lose_data") {
+                    if (!confirm(err.problem.detail)) return;
+                    await api(`/v1/guest-enquiries/${e.id}/take`, { method: "POST", body: JSON.stringify({ acknowledge_loss: true }) });
+                  } else throw err;
+                }
+                await reload(); loadGuestBook(); say("Private stay opened — diet, access and arrival are on the booking");
+              })}>Take into the book</button>}
             </div>
           ))}
         </div>

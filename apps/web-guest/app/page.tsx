@@ -23,7 +23,20 @@ type Day = { date: string; free_rooms: number };
 type Mine = { id: string; people: number; arrival: string; departure: string; status: string; programme_name: string | null; notes: string | null; rooms: Room[] };
 type Me = { name: string; email: string };
 type GuestAsk = { id: string; room_label: string | null; department_label: string; request_text: string; status: string };
+type AllergenTick = { code: string; severity: string };
+type PartyPerson = { given_name: string; family_name: string; diet: string[]; allergens: AllergenTick[]; other: string; accessibility: string; plate: string };
 type Step = "browse" | "room" | "details" | "needs" | "pay" | "done";
+const ALLERGENS: [string, string][] = [
+  ["celery", "Celery"], ["cereals_gluten", "Gluten"], ["crustaceans", "Crustaceans"], ["eggs", "Eggs"],
+  ["fish", "Fish"], ["lupin", "Lupin"], ["milk", "Milk"], ["molluscs", "Molluscs"], ["mustard", "Mustard"],
+  ["nuts", "Tree nuts"], ["peanuts", "Peanuts"], ["sesame", "Sesame"], ["soya", "Soya"], ["sulphites", "Sulphites"],
+];
+const DIETS: [string, string][] = [["vegan", "Vegan"], ["jain", "Jain — no root vegetables"], ["gluten_free", "Gluten-free"], ["dairy_free", "Dairy-free"], ["nut_free", "Nut-free"], ["halal", "Halal"], ["kosher", "Kosher"]];
+const SEVERITIES: [string, string][] = [["PREFERENCE", "Preference"], ["INTOLERANCE", "Intolerance"], ["ALLERGY", "Allergy"], ["ANAPHYLAXIS", "Anaphylaxis — severe"]];
+function blankPerson(name = ""): PartyPerson {
+  const parts = name.trim().split(/\s+/).filter(Boolean);
+  return { given_name: parts[0] ?? "", family_name: parts.slice(1).join(" "), diet: [], allergens: [], other: "", accessibility: "", plate: "buffet" };
+}
 
 const fmt = (d: string) => {
   const x = new Date(d + "T12:00:00");
@@ -59,6 +72,8 @@ export default function Book() {
   const [paymentsOn, setPaymentsOn] = useState(false);
   const [asks, setAsks] = useState<GuestAsk[]>([]);
   const [ask, setAsk] = useState({ request_text: "", room_label: "" });
+  const [party, setParty] = useState<PartyPerson[]>([blankPerson()]);
+  const [editingId, setEditingId] = useState<string | null>(null);
 
   const loadPublic = async () => {
     const [p, progs] = await Promise.all([
@@ -95,6 +110,16 @@ export default function Book() {
     } catch (e) { setErr((e as Error).message); }
     finally { setBusy(false); }
   };
+
+  useEffect(() => {
+    const n = Math.max(1, Math.min(80, Number(form.people) || 1));
+    setParty(prev => {
+      if (prev.length === n) return prev;
+      const next = prev.slice(0, n);
+      while (next.length < n) next.push(blankPerson(next.length === 0 ? form.name : ""));
+      return next;
+    });
+  }, [form.people]); // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => {
     const from = new Date(); const to = new Date(); to.setDate(to.getDate() + 28);
@@ -145,24 +170,45 @@ export default function Book() {
     } catch (e) { setErr((e as Error).message); } finally { setBusy(false); }
   };
 
+  const readyParty = () => {
+    const n = Math.max(1, Number(form.people) || 1);
+    const rows = party.slice(0, n).map(p => ({ ...p, allergens: p.allergens.map(a => ({ ...a })) }));
+    while (rows.length < n) rows.push(blankPerson());
+    if (!rows[0].given_name.trim() && form.name.trim()) {
+      const seeded = blankPerson(form.name);
+      rows[0] = { ...rows[0], given_name: seeded.given_name, family_name: rows[0].family_name || seeded.family_name };
+    }
+    return rows;
+  };
+
   const doEnquiry = async () => {
     setBusy(true); setErr(null); setOk(null);
+    const rows = readyParty();
+    const missing = rows.findIndex(p => !p.given_name.trim() || !p.family_name.trim());
+    if (missing >= 0) { setBusy(false); setErr(`Person ${missing + 1} needs a first and last name`); return null; }
+    const ungraded = rows.find(p => p.allergens.some(a => !a.severity));
+    if (ungraded) { setBusy(false); setErr(`Say how serious each allergen is for ${ungraded.given_name}`); return null; }
+    const payload = {
+      name: form.name, email: form.email, people: rows.length, notes: form.notes,
+      accessibility_notes: form.accessibility_notes,
+      room_preference: form.room_preference, arrival_time_note: form.arrival_time_note, travel_notes: form.travel_notes,
+      party: rows.map(p => ({ ...p, other: p.other || null, accessibility: p.accessibility || null })),
+      ...(editingId ? { arrival: form.arrival, departure: form.departure } : sel ? { programme_id: sel.id } : { arrival: form.arrival, departure: form.departure }),
+    };
     try {
-      const r = await api<{ token: string; user: Me; access_code?: string | null; id: string; status: string }>("/guest/enquiries", {
-        method: "POST", body: JSON.stringify({
-          name: form.name, email: form.email, people: Number(form.people), notes: form.notes,
-          dietary_notes: form.dietary_notes, accessibility_notes: form.accessibility_notes,
-          room_preference: form.room_preference, arrival_time_note: form.arrival_time_note, travel_notes: form.travel_notes,
-          ...(sel ? { programme_id: sel.id } : { arrival: form.arrival, departure: form.departure }),
-        }),
-      });
-      tok.set(r.token);
+      const r = await api<{ token?: string; user?: Me; access_code?: string | null; id: string; status: string }>(
+        editingId ? `/guest/enquiries/${editingId}` : "/guest/enquiries",
+        { method: editingId ? "PATCH" : "POST", body: JSON.stringify(payload) },
+      );
+      if (r.token) tok.set(r.token);
       if (r.access_code) setForm(f => ({ ...f, access_code: r.access_code ?? "" }));
+      setParty(rows);
       await loadSigned();
       setStep("done");
+      setEditingId(null);
       setOk(r.access_code
-        ? `Saved. Your private access code is ${r.access_code}. It expires in 14 days. Write it down.`
-        : sel ? `Your place on ${sel.name} is with the house.` : "Your enquiry is with the house.");
+        ? `Saved. Your private access code is ${r.access_code}. It expires in 14 days. Write it down. Please check the allergens below.`
+        : sel ? `Your place on ${sel.name} is with the house. Please check the allergens below.` : "Your enquiry is with the house. Please check the allergens below.");
       return r;
     } catch (e) { setErr((e as Error).message); return null; } finally { setBusy(false); }
   };
@@ -272,11 +318,11 @@ export default function Book() {
                 {sel && <p className="m">{fmt(sel.arrival)} → {fmt(sel.departure)} · {nights(sel)}{sel.basis ? ` · ${sel.basis}` : ""}</p>}
                 {sel?.about && <p className="copy">{sel.about}</p>}
                 <label>Arrive</label>
-                <input type="date" value={form.arrival} onChange={e => { setForm({ ...form, arrival: e.target.value }); setSel(null); }} />
+                <input type="date" value={form.arrival} onChange={e => { const v = e.target.value; setForm(f => ({ ...f, arrival: v })); setSel(null); }} />
                 <label>Depart</label>
-                <input type="date" value={form.departure} onChange={e => setForm({ ...form, departure: e.target.value })} />
+                <input type="date" value={form.departure} onChange={e => { const v = e.target.value; setForm(f => ({ ...f, departure: v })); }} />
                 <label>How many people</label>
-                <input type="number" min={1} value={form.people} onChange={e => setForm({ ...form, people: e.target.value })} />
+                <input type="number" min={1} value={form.people} onChange={e => { const v = e.target.value; setForm(f => ({ ...f, people: v })); }} />
                 <button className="btn sec" disabled={busy} onClick={() => { setStep("room"); searchDates(); }}>Show rooms</button>
                 {avail && (
                   <div className="rooms" style={{ display: "block", marginTop: 16 }}>
@@ -296,26 +342,69 @@ export default function Book() {
                   <h2 style={{ fontSize: 22 }}>Guest details</h2>
                   <p className="m">This is when we open My Stay / Guest Portal for you.</p>
                   <label>Your name</label>
-                  <input autoComplete="name" value={form.name} onChange={e => setForm({ ...form, name: e.target.value })} />
+                  <input autoComplete="name" value={form.name} onChange={e => { const v = e.target.value; setForm(f => ({ ...f, name: v })); }} />
                   <label>Email</label>
-                  <input type="email" autoComplete="email" value={form.email} onChange={e => setForm({ ...form, email: e.target.value })} />
-                  <button className="btn sec" onClick={() => setStep("needs")}>Continue to diet & access</button>
+                  <input type="email" autoComplete="email" value={form.email} onChange={e => { const v = e.target.value; setForm(f => ({ ...f, email: v })); }} />
+                  <button className="btn sec" onClick={() => { setParty(readyParty()); setStep("needs"); }}>Continue to diet & access</button>
                 </div>
               )}
 
               {(step === "needs" || step === "pay" || step === "done") && (
                 <div className="card" style={{ marginTop: 18 }}>
                   <h2 style={{ fontSize: 22 }}>Diet, access and arrival</h2>
-                  <label>Dietary requirements</label>
-                  <textarea rows={2} value={form.dietary_notes} onChange={e => setForm({ ...form, dietary_notes: e.target.value })} placeholder="Vegetarian, vegan, Jain, gluten-free, allergies…" />
-                  <label>Accessibility</label>
-                  <textarea rows={2} value={form.accessibility_notes} onChange={e => setForm({ ...form, accessibility_notes: e.target.value })} />
+                  <p className="m">The kitchen is vegetarian: no eggs, and no onion or garlic. Tick an allergen only when it applies, and say how serious it is for that person.</p>
+                  {party.slice(0, Math.max(1, Number(form.people) || 1)).map((person, i) => (
+                    <div className="diet-p" key={i}>
+                      <b>Person {i + 1}</b>
+                      <label>First name</label>
+                      <input value={person.given_name} onChange={e => setParty(rows => rows.map((p, j) => j === i ? { ...p, given_name: e.target.value } : p))} />
+                      <label>Last name</label>
+                      <input value={person.family_name} onChange={e => setParty(rows => rows.map((p, j) => j === i ? { ...p, family_name: e.target.value } : p))} />
+                      <div className="lbl">Diet</div>
+                      <div className="chips">{DIETS.map(([code, label]) => (
+                        <button type="button" key={code} className={"chip" + (person.diet.includes(code) ? " on" : "")} onClick={() => setParty(rows => rows.map((p, j) => j === i ? { ...p, diet: p.diet.includes(code) ? p.diet.filter(x => x !== code) : [...p.diet, code] } : p))}>{label}</button>
+                      ))}</div>
+                      <div className="lbl">UK allergens</div>
+                      <div className="checks">{ALLERGENS.map(([code, label]) => {
+                        const tick = person.allergens.find(a => a.code === code);
+                        return (
+                          <label className="check" key={code}>
+                            <input type="checkbox" checked={!!tick} onChange={e => setParty(rows => rows.map((p, j) => {
+                              if (j !== i) return p;
+                              const allergens = e.target.checked ? [...p.allergens, { code, severity: "" }] : p.allergens.filter(a => a.code !== code);
+                              return { ...p, allergens };
+                            }))} />
+                            <span>{label}</span>
+                            {tick && <select aria-label={`${label} severity`} value={tick.severity} onChange={e => setParty(rows => rows.map((p, j) => j === i ? { ...p, allergens: p.allergens.map(a => a.code === code ? { ...a, severity: e.target.value } : a) } : p))}>
+                              <option value="">How serious?</option>
+                              {SEVERITIES.map(([value, text]) => <option key={value} value={value}>{text}</option>)}
+                            </select>}
+                          </label>
+                        );
+                      })}</div>
+                      <label>Other diet note</label>
+                      <input value={person.other} onChange={e => setParty(rows => rows.map((p, j) => j === i ? { ...p, other: e.target.value } : p))} placeholder="Anything else the kitchen should know" />
+                      <label>Plate</label>
+                      <select value={person.plate} onChange={e => setParty(rows => rows.map((p, j) => j === i ? { ...p, plate: e.target.value } : p))}>
+                        <option value="buffet">Buffet — I can serve myself</option>
+                        <option value="prepared">Please prepare a plate</option>
+                        <option value="table_service">I need table service</option>
+                      </select>
+                      <label>Help at the table</label>
+                      <input value={person.accessibility} onChange={e => setParty(rows => rows.map((p, j) => j === i ? { ...p, accessibility: e.target.value } : p))} placeholder="e.g. needs a seat near the buffet" />
+                    </div>
+                  ))}
+                  <h2 style={{ fontSize: 22, marginTop: 18 }}>Accessibility and arrival</h2>
+                  <label>Accessibility for the stay</label>
+                  <textarea rows={2} value={form.accessibility_notes} onChange={e => { const v = e.target.value; setForm(f => ({ ...f, accessibility_notes: v })); }} placeholder="Ground floor, step-free, hearing loop…" />
                   <label>Expected arrival time</label>
-                  <input value={form.arrival_time_note} onChange={e => setForm({ ...form, arrival_time_note: e.target.value })} placeholder="e.g. 16:30 from Lincoln station" />
+                  <input value={form.arrival_time_note} onChange={e => { const v = e.target.value; setForm(f => ({ ...f, arrival_time_note: v })); }} placeholder="e.g. 16:30 from Lincoln station" />
+                  <label>Room preference</label>
+                  <input value={form.room_preference} onChange={e => { const v = e.target.value; setForm(f => ({ ...f, room_preference: v })); }} />
                   <label>Travel / pickup</label>
-                  <textarea rows={2} value={form.travel_notes} onChange={e => setForm({ ...form, travel_notes: e.target.value })} placeholder="Train, taxi, self-drive…" />
-                  <label>Anything else</label>
-                  <textarea rows={2} value={form.notes} onChange={e => setForm({ ...form, notes: e.target.value })} />
+                  <textarea rows={2} value={form.travel_notes} onChange={e => { const v = e.target.value; setForm(f => ({ ...f, travel_notes: v })); }} placeholder="Train, taxi, self-drive…" />
+                  <label>Guest notes</label>
+                  <textarea rows={2} value={form.notes} onChange={e => { const v = e.target.value; setForm(f => ({ ...f, notes: v })); }} />
                   <button className="btn sec" onClick={() => setStep("pay")}>Continue to deposit</button>
                 </div>
               )}
@@ -338,14 +427,13 @@ export default function Book() {
                   </div>
                   {paymentsOn ? (
                   <button className="btn" disabled={busy || !form.name || !form.email.includes("@")} onClick={async () => {
+                    const enquiryResult = await doEnquiry();
+                    if (!enquiryResult?.id) return;
                     try {
-                      const enquiryResult = await doEnquiry();
-                      if (enquiryResult?.id) {
-                        const r = await api<{ url: string }>(`/guest-enquiries/${enquiryResult.id}/stripe/checkout`, { method: "POST" });
-                        if (r?.url) window.location.href = r.url;
-                      }
-                    } catch {
-                      await doEnquiry();
+                      const r = await api<{ url: string }>(`/guest-enquiries/${enquiryResult.id}/stripe/checkout`, { method: "POST" });
+                      if (r?.url) window.location.href = r.url;
+                    } catch (e) {
+                      setErr((e as Error).message || "Your place is saved. The card page did not open.");
                     }
                   }}>
                     {busy ? "…" : "Pay deposit & save my place"}
@@ -375,6 +463,25 @@ export default function Book() {
                       {x.rooms?.length
                         ? <div className="rooms">{x.rooms.map(r => <span key={r.number} className="room">{r.number}{r.section ? ` · ${r.section}` : ""}</span>)}</div>
                         : <p className="m" style={{ margin: "8px 0 0" }}>Rooms appear when the house assigns them.</p>}
+                      {(x.status === "ENQUIRY" || x.status === "CONVERTED") && <div style={{ display: "flex", gap: 8, marginTop: 8 }}>
+                        <button className="btn sec" onClick={async () => {
+                          setBusy(true); setErr(null);
+                          try {
+                            const detail = await api<{ people: number; arrival: string; departure: string; notes: string | null; accessibility_notes: string | null; room_preference: string | null; arrival_time_note: string | null; travel_notes: string | null; party: PartyPerson[] }>(`/guest/enquiries/${x.id}`);
+                            setForm(f => ({ ...f, people: String(detail.people), arrival: detail.arrival, departure: detail.departure, notes: detail.notes ?? "", accessibility_notes: detail.accessibility_notes ?? "", room_preference: detail.room_preference ?? "", arrival_time_note: detail.arrival_time_note ?? "", travel_notes: detail.travel_notes ?? "" }));
+                            setParty((detail.party ?? []).map(p => ({ ...blankPerson(), ...p, diet: p.diet ?? [], allergens: p.allergens ?? [], other: p.other ?? "", accessibility: p.accessibility ?? "", plate: p.plate || "buffet" })));
+                            setEditingId(x.id); setSel(null); setStep("needs");
+                          } catch (e) { setErr((e as Error).message); }
+                          finally { setBusy(false); }
+                        }}>Update diet & access</button>
+                        <button className="btn sec" onClick={async () => {
+                          if (!confirm("Cancel this place? The kitchen and desk will be told to stand down.")) return;
+                          setBusy(true); setErr(null);
+                          try { await api(`/guest/enquiries/${x.id}/cancel`, { method: "POST", body: "{}" }); await loadSigned(); setOk("Cancelled. The house has been told."); }
+                          catch (e) { setErr((e as Error).message); }
+                          finally { setBusy(false); }
+                        }}>Cancel</button>
+                      </div>}
                     </div>
                   ))}
                 </div>
