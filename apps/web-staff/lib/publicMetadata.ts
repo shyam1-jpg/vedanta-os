@@ -2,7 +2,7 @@ import type { Metadata } from "next";
 
 /** The house description. A sentence, not the page title. */
 export const PROPERTY_DESCRIPTION =
-  "A beautiful grade II-listed luxury retreat centre. Nestled amongst 75 acres of woodlands, meadows and lakes in Lincolnshire — a Grade II listed Elizabethan estate.";
+  "A Grade II listed Elizabethan estate and luxury retreat centre, set in 75 acres of woodland, meadows and lakes in Lincolnshire.";
 
 export function publicPageMetadata(title: string): Metadata {
   return {

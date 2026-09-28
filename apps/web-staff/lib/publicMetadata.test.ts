@@ -13,7 +13,8 @@ const pages: [string, string][] = [
 
 describe("public page metadata", () => {
   it("uses the property description, which is a sentence and not the title", () => {
-    assert.match(PROPERTY_DESCRIPTION, /\.\s/);
+    assert.equal(PROPERTY_DESCRIPTION, "A Grade II listed Elizabethan estate and luxury retreat centre, set in 75 acres of woodland, meadows and lakes in Lincolnshire.");
+    assert.equal(PROPERTY_DESCRIPTION.split("Grade II").length - 1, 1);
     assert.ok(PROPERTY_DESCRIPTION.endsWith("."));
     for (const [title] of pages) {
       const meta = publicPageMetadata(title);
