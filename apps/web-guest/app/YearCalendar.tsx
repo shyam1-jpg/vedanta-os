@@ -182,6 +182,12 @@ export default function YearCalendar({
         <div role="tabpanel" id="panel-rooms" aria-labelledby="tab-rooms">
           <p className="sr">Arrow keys move between days. Enter chooses an available night, which opens your dates for a two-night stay.</p>
           {rows.length === 0 && <p className="m">No guest rooms are on the book yet.</p>}
+          <ul className="year-legend">
+            <li><span className="swatch ok" aria-hidden="true" /> Available</li>
+            <li><span className="swatch few" aria-hidden="true" /> Few rooms left</li>
+            <li><span className="swatch no" aria-hidden="true" /> Unavailable — booked, held, or closed</li>
+            <li><span className="swatch past" aria-hidden="true" /> Past</li>
+          </ul>
           {rows.length > 0 && (
             <div className="year-phone-only">
               <label htmlFor="year-row">Room{data.view === "types" ? " type" : ""}</label>
@@ -231,17 +237,16 @@ export default function YearCalendar({
               </article>
             ))}
           </div>
-          <ul className="year-legend">
-            <li><span className="swatch ok" aria-hidden="true" /> Available</li>
-            <li><span className="swatch few" aria-hidden="true" /> Few rooms left</li>
-            <li><span className="swatch no" aria-hidden="true" /> Unavailable — booked, held, or closed</li>
-            <li><span className="swatch past" aria-hidden="true" /> Past</li>
-          </ul>
         </div>
       )}
 
       {mode === "retreats" && (
         <div role="tabpanel" id="panel-retreats" aria-labelledby="tab-retreats">
+          <ul className="year-legend">
+            <li><span className="space-mark available" aria-hidden="true">○</span> Spaces available</li>
+            <li><span className="space-mark limited" aria-hidden="true">◐</span> Limited spaces</li>
+            <li><span className="space-mark full" aria-hidden="true">●</span> Full</li>
+          </ul>
           {data && data.retreats.length === 0 && <p className="m">No published retreats in {year}. Rooms may still be free.</p>}
           <div className="retreat-list">
             {data?.retreats.map(retreat => {
@@ -270,11 +275,6 @@ export default function YearCalendar({
               );
             })}
           </div>
-          <ul className="year-legend">
-            <li><span className="space-mark available" aria-hidden="true">○</span> Spaces available</li>
-            <li><span className="space-mark limited" aria-hidden="true">◐</span> Limited spaces</li>
-            <li><span className="space-mark full" aria-hidden="true">●</span> Full</li>
-          </ul>
         </div>
       )}
     </section>
