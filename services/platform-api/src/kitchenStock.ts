@@ -16,6 +16,11 @@ async function actor(req: any, reply: any) {
   return requireActor(req, reply, ["ADMIN", "STAFF"]);
 }
 
+function uuidOrEmpty(value: unknown): string | null {
+  const id = String(value ?? "").trim();
+  return /^[0-9a-f-]{36}$/i.test(id) ? id : null;
+}
+
 function num(value: unknown): number {
   const n = Number(value);
   return Number.isFinite(n) ? n : 0;
@@ -24,6 +29,16 @@ function num(value: unknown): number {
 async function loadRouting(propertyId: string): Promise<StockRouting> {
   const row = (await pool.query(`select settings from property where id=$1`, [propertyId])).rows[0];
   return parseStockRouting(row?.settings?.stock_routing);
+}
+
+async function preferredSupplier(itemId: string) {
+  const row = (await pool.query(
+    `select s.name, s.contact_phone phone, s.contact_email email
+     from kitchen_stock_item i left join supplier s on s.id = i.supplier_id
+     where i.id=$1`,
+    [itemId],
+  )).rows[0];
+  return row?.name ? { name: row.name as string, phone: row.phone as string | null, email: row.email as string | null } : null;
 }
 
 async function deliver(a: { tenantId: string; propertyId: string; userId?: string | null }, notes: StockNotice[], itemId: string) {
@@ -72,8 +87,11 @@ export default async function kitchenStock(f: FastifyInstance) {
   f.get("/v1/kitchen-stock", async (req, reply) => {
     const a = await actor(req, reply); if (!a || !allow(a, "kitchen.stock", reply)) return;
     const items = await pool.query(
-      `select id, name, unit, quantity, low_threshold, supplier, notes, example, active, low_alerted_at, updated_at
-       from kitchen_stock_item where property_id=$1 and active order by name`,
+      `select i.id, i.name, i.unit, i.quantity, i.low_threshold, i.supplier, i.supplier_id, i.notes, i.example, i.active, i.low_alerted_at, i.updated_at,
+              s.name supplier_name, s.contact_phone supplier_phone, s.contact_email supplier_email
+       from kitchen_stock_item i
+       left join supplier s on s.id = i.supplier_id
+       where i.property_id=$1 and i.active order by i.name`,
       [a.propertyId],
     );
     const ids = items.rows.map((row: { id: string }) => row.id);
@@ -94,8 +112,9 @@ export default async function kitchenStock(f: FastifyInstance) {
           delta: entry.delta == null ? null : num(entry.delta),
         })),
       })),
-      low: items.rows.map(view).filter((row: { low: boolean }) => row.low).map((row: { id: string; name: string; quantity: number; unit: string }) => ({
+      low: items.rows.map(view).filter((row: { low: boolean }) => row.low).map((row: { id: string; name: string; quantity: number; unit: string; supplier_name?: string | null; supplier_phone?: string | null; supplier_email?: string | null }) => ({
         id: row.id, name: row.name, quantity: row.quantity, unit: row.unit,
+        supplier_name: row.supplier_name ?? null, supplier_phone: row.supplier_phone ?? null, supplier_email: row.supplier_email ?? null,
       })),
     };
   });
@@ -111,9 +130,9 @@ export default async function kitchenStock(f: FastifyInstance) {
     if (taken) return reply.code(409).send(problem(409, "conflict", "That item is already on the list"));
     const saved = await tx(async c => {
       const r = await c.query(
-        `insert into kitchen_stock_item (tenant_id, property_id, name, unit, quantity, low_threshold, supplier, notes)
-         values ($1,$2,$3,$4,$5,$6,$7,$8) returning id, quantity, low_threshold`,
-        [a.tenantId, a.propertyId, name, unit, quantity, low, String(req.body?.supplier ?? "").trim().slice(0, 160) || null, String(req.body?.notes ?? "").trim().slice(0, 500) || null],
+        `insert into kitchen_stock_item (tenant_id, property_id, name, unit, quantity, low_threshold, supplier, supplier_id, notes)
+         values ($1,$2,$3,$4,$5,$6,$7,$8,$9) returning id, quantity, low_threshold`,
+        [a.tenantId, a.propertyId, name, unit, quantity, low, String(req.body?.supplier ?? "").trim().slice(0, 160) || null, uuidOrEmpty(req.body?.supplier_id), String(req.body?.notes ?? "").trim().slice(0, 500) || null],
       );
       await c.query(
         `insert into kitchen_stock_log (item_id, tenant_id, property_id, action, quantity_before, quantity_after, delta, note, by_user_id, by_name)
@@ -126,7 +145,7 @@ export default async function kitchenStock(f: FastifyInstance) {
     const decision = stockAlert(low, quantity, low, false);
     if (decision === "send") {
       await pool.query(`update kitchen_stock_item set low_alerted_at=now() where id=$1`, [saved.id]);
-      await deliver(a, stockNotices({ name, quantity, unit, threshold: low }, await loadRouting(a.propertyId)), saved.id);
+      await deliver(a, stockNotices({ name, quantity, unit, threshold: low }, await loadRouting(a.propertyId), await preferredSupplier(saved.id)), saved.id);
     }
     reply.code(201);
     return { id: saved.id };
@@ -142,12 +161,13 @@ export default async function kitchenStock(f: FastifyInstance) {
       if (!name || !unit) { reply.code(422); return problem(422, "validation", "Name the item and its unit"); }
       const low = req.body?.low_threshold != null || req.body?.low != null ? Math.max(0, num(req.body.low_threshold ?? req.body.low)) : num(row.low_threshold);
       const supplier = req.body?.supplier != null ? String(req.body.supplier).trim().slice(0, 160) || null : row.supplier;
+      const supplierId = req.body?.supplier_id !== undefined ? uuidOrEmpty(req.body.supplier_id) : row.supplier_id;
       const notes = req.body?.notes != null ? String(req.body.notes).trim().slice(0, 500) || null : row.notes;
       const example = req.body?.example != null ? !!req.body.example : row.example;
       const active = req.body?.active != null ? !!req.body.active : row.active;
       await c.query(
-        `update kitchen_stock_item set name=$2, unit=$3, low_threshold=$4, supplier=$5, notes=$6, example=$7, active=$8, updated_at=now() where id=$1`,
-        [row.id, name, unit, low, supplier, notes, example, active],
+        `update kitchen_stock_item set name=$2, unit=$3, low_threshold=$4, supplier=$5, supplier_id=$6, notes=$7, example=$8, active=$9, updated_at=now() where id=$1`,
+        [row.id, name, unit, low, supplier, supplierId, notes, example, active],
       );
       await c.query(
         `insert into kitchen_stock_log (item_id, tenant_id, property_id, action, quantity_before, quantity_after, delta, note, by_user_id, by_name)
@@ -161,7 +181,7 @@ export default async function kitchenStock(f: FastifyInstance) {
     const decision = stockAlert(saved.low, saved.quantity, saved.low, saved.alerted);
     if (decision === "send") {
       await pool.query(`update kitchen_stock_item set low_alerted_at=now() where id=$1`, [saved.id]);
-      await deliver(a, stockNotices({ name: saved.name, quantity: saved.quantity, unit: saved.unit, threshold: saved.low }, await loadRouting(a.propertyId)), saved.id);
+      await deliver(a, stockNotices({ name: saved.name, quantity: saved.quantity, unit: saved.unit, threshold: saved.low }, await loadRouting(a.propertyId), await preferredSupplier(saved.id)), saved.id);
     } else if (decision === "clear") {
       await pool.query(`update kitchen_stock_item set low_alerted_at=null where id=$1`, [saved.id]);
     }
@@ -190,7 +210,7 @@ export default async function kitchenStock(f: FastifyInstance) {
     });
     if (!saved || !("decision" in saved)) return saved;
     if (saved.decision === "send") {
-      await deliver(a, stockNotices({ name: saved.name, quantity: saved.quantity, unit: saved.unit, threshold: saved.threshold }, await loadRouting(a.propertyId)), saved.id);
+      await deliver(a, stockNotices({ name: saved.name, quantity: saved.quantity, unit: saved.unit, threshold: saved.threshold }, await loadRouting(a.propertyId), await preferredSupplier(saved.id)), saved.id);
     }
     return { ok: true, quantity: saved.quantity, low: saved.quantity < saved.threshold };
   });

@@ -61,14 +61,22 @@ export function stockAlert(_before: number, after: number, threshold: number, al
   return "quiet";
 }
 
-export function stockNotices(item: { name: string; quantity: number; unit: string; threshold: number }, rules: StockRouting): StockNotice[] {
+export function stockNotices(
+  item: { name: string; quantity: number; unit: string; threshold: number },
+  rules: StockRouting,
+  supplier?: { name: string; phone?: string | null; email?: string | null } | null,
+): StockNotice[] {
+  const contact = supplier?.name
+    ? `Preferred supplier: ${supplier.name}${supplier.phone ? ` · ${supplier.phone}` : ""}${supplier.email ? ` · ${supplier.email}` : ""}.`
+    : null;
   const subject = `Low stock · ${item.name}`;
   const body = [
     `${item.name} is down to ${item.quantity} ${item.unit}.`,
     `The line for ordering more is ${item.threshold} ${item.unit}.`,
+    contact,
     "",
     "This note is sent once. It is sent again only after the item is restocked and falls below the line again.",
-  ].join("\n");
+  ].filter(line => line != null).join("\n");
   const notes: StockNotice[] = [];
   const push = (to: string, audience: StockNotice["audience"]) => {
     if (!to || notes.some(n => n.to === to)) return;
