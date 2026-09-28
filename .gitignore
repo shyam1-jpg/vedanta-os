@@ -9,6 +9,7 @@ out/
 dist/
 *.tsbuildinfo
 db/import/*.sql
+db/import/*.local.json
 config/rota-constraints.json
 *.log
 .DS_Store

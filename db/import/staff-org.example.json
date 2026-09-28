@@ -1,0 +1,32 @@
+{
+  "note": "Copy this file to db/import/staff-org.local.json (gitignored). The rota branch uses db/import/staff-teams.local.json, which this import also reads. Replace every email before loading real people. Do not commit that file. Names here are placeholders.",
+  "people": [
+    {
+      "email": "morgan.example@example.invalid",
+      "name": "Morgan Example",
+      "role": "GENERAL_MANAGER",
+      "department": "MGMT",
+      "section": null,
+      "level": "gm"
+    },
+    {
+      "email": "harper.example@example.invalid",
+      "name": "Harper Example",
+      "role": "HK_SUPERVISOR",
+      "department": "HK",
+      "section": null,
+      "level": "head",
+      "manager": "morgan.example@example.invalid",
+      "work_phone": "01632 960120"
+    },
+    {
+      "email": "harley.example@example.invalid",
+      "name": "Harley Example",
+      "role": "HK_ATTENDANT",
+      "department": "HK",
+      "section": null,
+      "level": "staff",
+      "manager": "harper.example@example.invalid"
+    }
+  ]
+}
