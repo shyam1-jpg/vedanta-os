@@ -21,6 +21,8 @@ export default function Settings() {
   const [handoverTags, setHandoverTags] = useState<string | null>(null);
   const [stockMail, setStockMail] = useState<{ kitchen: string; buyer: string } | null>(null);
   const [stockCopy, setStockCopy] = useState<Record<string, string>>({});
+  const [stay, setStay] = useState<{ delay_label: string; delay_hours: number | null; retention_days: number; open_maintenance: boolean; emails: { kitchen: string; front: string; housekeeping: string; manager: string } } | null>(null);
+  const [stayCopy, setStayCopy] = useState<Record<string, string>>({});
   useEffect(() => {
     api<{ rules: { kitchen: RouteBox; restaurant: RouteBox; front: RouteBox }; receives: Record<string, string> }>("/v1/settings/booking-routing")
       .then(r => { setRoutes(r.rules); setRouteCopy(r.receives); }).catch(() => {});
@@ -30,6 +32,8 @@ export default function Settings() {
       .then(r => setHandoverTags(r.tags.map(t => t.label).join("\n"))).catch(() => {});
     api<{ emails: { kitchen: string; buyer: string }; receives: Record<string, string> }>("/v1/settings/stock-alerts")
       .then(r => { setStockMail(r.emails); setStockCopy(r.receives); }).catch(() => {});
+    api<{ delay_label: string; delay_hours: number | null; retention_days: number; open_maintenance: boolean; emails: { kitchen: string; front: string; housekeeping: string; manager: string }; receives: Record<string, string> }>("/v1/settings/feedback")
+      .then(r => { setStay(r); setStayCopy(r.receives); }).catch(() => {});
   }, []);
   const load = () => { api<{ items: Pkg[] }>("/v1/packages").then(r => setPkgs(r.items)); if (can("config.manage")) api<{ items: Key[] }>("/v1/integrations/keys").then(r => setKeys(r.items)).catch(() => {}); };
   useEffect(load, []); // eslint-disable-line react-hooks/exhaustive-deps
@@ -135,6 +139,35 @@ export default function Settings() {
             const saved = await api<{ emails: { kitchen: string; buyer: string } }>("/v1/settings/stock-alerts", { method: "PUT", body: JSON.stringify({ emails: stockMail }) });
             setStockMail(saved.emails);
           }, "Stock alerts saved")}>Save stock alerts</button>
+        </div>
+      )}
+      {stay && (
+        <div className="panel" style={{ marginTop: 14 }}>
+          <h3>After the stay</h3>
+          <p className="m" style={{ color: "var(--ink-2)" }}>The morning after departure, the guest gets one link. It works once, then it closes. A problem goes to the team named here, and the general manager is always copied. A note about the team goes only to the general manager. Leave an address blank to skip that copy. Do not commit a real address. If SMTP is not set, the note is logged. Text messages stay off until a text service is configured, and they never include health information.</p>
+          <label style={{ display: "block", marginTop: 12 }}>When to send
+            <select value={stay.delay_label} onChange={e => setStay({ ...stay, delay_label: e.target.value, delay_hours: e.target.value === "hours" ? (stay.delay_hours ?? 2) : stay.delay_hours })}>
+              <option value="morning_after">The morning after they leave</option>
+              <option value="hours">A number of hours after checkout</option>
+            </select>
+          </label>
+          {stay.delay_label === "hours" && <label style={{ display: "block", marginTop: 8 }}>Hours after 11:00<input type="number" min={0} max={500} value={stay.delay_hours ?? 2} onChange={e => setStay({ ...stay, delay_hours: Number(e.target.value) })} /></label>}
+          <label style={{ display: "block", marginTop: 8 }}>Keep the written note for this many days, then clear it<input type="number" min={30} max={3650} value={stay.retention_days} onChange={e => setStay({ ...stay, retention_days: Number(e.target.value) })} /></label>
+          <label style={{ display: "flex", gap: 8, alignItems: "center", marginTop: 12 }}>
+            <input type="checkbox" checked={stay.open_maintenance} onChange={e => setStay({ ...stay, open_maintenance: e.target.checked })} />
+            Open a maintenance ticket when the room is the problem
+          </label>
+          {(["kitchen", "front", "housekeeping", "manager"] as const).map(key => (
+            <div key={key} style={{ marginTop: 14, maxWidth: 640 }}>
+              <b>{key === "front" ? "Front of house" : key === "housekeeping" ? "Housekeeping" : key === "manager" ? "General manager" : "Kitchen"}</b>
+              <p className="m">{stayCopy[key]}</p>
+              <input placeholder="team@example.invalid" value={stay.emails[key]} onChange={e => setStay({ ...stay, emails: { ...stay.emails, [key]: e.target.value } })} />
+            </div>
+          ))}
+          <button className="btn primary" style={{ marginTop: 12 }} onClick={() => run(async () => {
+            const saved = await api<NonNullable<typeof stay>>("/v1/settings/feedback", { method: "PUT", body: JSON.stringify({ delay: stay.delay_label, delay_hours: stay.delay_hours, retention_days: stay.retention_days, open_maintenance: stay.open_maintenance, emails: stay.emails }) });
+            setStay({ ...stay, ...saved, delay_label: saved.delay_label ?? (typeof (saved as { delay?: unknown }).delay === "string" ? "morning_after" : "hours") });
+          }, "Feedback settings saved")}>Save feedback settings</button>
         </div>
       )}
       {toast && <div className="toast">{toast}</div>}

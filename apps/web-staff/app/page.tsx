@@ -257,7 +257,8 @@ export default function Pocket() {
   const [secret, setSecret] = useState("");
   const [providers, setProviders] = useState<{ microsoft: boolean; dev: boolean } | null>(null);
   const [err, setErr] = useState<string | null>(null);
-  const [tab, setTab] = useState<"clock" | "leave" | "duty" | "sop" | "log" | "desk" | "night" | "manual" | "tasks" | "fault" | "stock">("clock");
+  const [tab, setTab] = useState<"clock" | "leave" | "duty" | "sop" | "log" | "desk" | "night" | "manual" | "tasks" | "fault" | "stock" | "words">("clock");
+  const [words, setWords] = useState<{ first_name: string; comment: string | null; created_at: string }[]>([]);
   const [desk, setDesk] = useState<{
     today: { weekday: string; title: string; method: string; ingredients: { name: string; qty: string }[] };
     tomorrow: { weekday: string; title: string; method: string; ingredients: { name: string; qty: string }[] };
@@ -387,6 +388,7 @@ export default function Pocket() {
           <button className={tab === "tasks" ? "on" : ""} onClick={() => setTab("tasks")}>Tasks</button>
           <button className={tab === "fault" ? "on" : ""} onClick={() => setTab("fault")}>Fault</button>
           {(me.permissions ?? []).includes("kitchen.stock") && <button className={tab === "stock" ? "on" : ""} onClick={() => setTab("stock")}>Stock</button>}
+          <button className={tab === "words" ? "on" : ""} onClick={async () => { setTab("words"); try { setWords((await api<{ items: typeof words }>("/v1/feedback/kind-words")).items); } catch (e) { setErr((e as Error).message); } }}>Kind words</button>
           <button className={tab === "desk" ? "on" : ""} onClick={() => setTab("desk")}>Front desk</button>
           <button className={tab === "night" ? "on" : ""} onClick={() => setTab("night")}>Night</button>
           <button className={tab === "manual" ? "on" : ""} onClick={() => setTab("manual")}>Manual</button>
@@ -542,6 +544,14 @@ export default function Pocket() {
         )}
         {tab === "fault" && <FaultPocket me={me} canWork={(me.permissions ?? []).includes("maintenance.work")} onError={setErr} />}
         {tab === "stock" && (me.permissions ?? []).includes("kitchen.stock") && <StockPocket onError={setErr} />}
+        {tab === "words" && (
+          <div className="card">
+            <h2>Kind words</h2>
+            <p className="m">What guests were glad of, by first name.</p>
+            {words.length === 0 && <p className="m">Nothing here yet.</p>}
+            {words.map((w, i) => <div className="row" key={i} style={{ display: "block" }}><b>{w.first_name}</b><div>{w.comment}</div></div>)}
+          </div>
+        )}
         {tab === "desk" && (
           <div>
             <div className="card">

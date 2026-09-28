@@ -5,7 +5,7 @@
  * - 14 days before arrival → balance reminder (if balance outstanding)
  * - 7 days before arrival → pre-arrival information
  * - Day of check-out → checkout reminder (morning)
- * - 3 days after departure → feedback request
+ * The post-stay note is a separate morning-after job with a one-time link.
  *
  * Run scheduleAutoComms() after any booking status change.
  * Run processAutoComms() on a cron/interval (every 15 mins).
@@ -141,7 +141,6 @@ export async function scheduleAutoComms(groupId: string, tenantId: string, prope
     { kind: "balance_reminder",  when: new Date(arrival.getTime() - 14 * 86400000) },
     { kind: "pre_arrival",       when: new Date(arrival.getTime() - 7  * 86400000) },
     { kind: "checkout_reminder", when: new Date(departure.getTime()) },
-    { kind: "feedback",          when: new Date(departure.getTime() + 3 * 86400000) },
   ];
 
   // Cancel any unsent comms for this group first
@@ -185,6 +184,12 @@ export async function processAutoComms(propertyId: string) {
 
   for (const comm of due) {
     let email: { to: string; subject: string; body: string } | null = null;
+
+    if (comm.kind === "feedback") {
+      await pool.query(`UPDATE auto_comm SET cancelled_at=now(), cancel_reason='feedback_form' WHERE id=$1`, [comm.id]);
+      results.push({ id: comm.id, kind: comm.kind, status: "feedback_form" });
+      continue;
+    }
 
     if (comm.group_id) {
       const g = (await pool.query(
