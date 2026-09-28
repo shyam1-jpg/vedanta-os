@@ -41,7 +41,7 @@ export async function audit(c: Q, a: Actor, entity: string, id: string, action: 
 const GROUP_COLS = `id, name, organisation, contact_email, contact_phone, arrival_date::text arrival, arrival_slot, arrival_time::text, departure_date::text departure, departure_slot, departure_time::text,
   retreat_type, use_basis, expected_guests, expected_rooms, package_name, price_basis, price_notes, spa_access, status, booking_form_status, terms_signed, terms_document, feedback_form_status,
   meals_from, meals_to, dietary_notes, notes, colour, version, source, external_ref, updated_at, review_reason, sheet_text, public_title,
-  package_id, agreed_price_twin, agreed_price_single, singles_count, agreed_total, form_token, form_sent_at, form_submitted_at, open_for_guests,
+  package_id, agreed_price_twin, agreed_price_single, singles_count, agreed_total, form_token, form_sent_at, form_submitted_at, open_for_guests, deposit_status,
   (select json_build_object('code', pk.code, 'name', pk.name, 'price_basis', pk.price_basis, 'price_twin', pk.price_twin, 'price_single', pk.price_single) from package pk where pk.id=booking_group.package_id) package,
   (select count(*) from group_attendee ga where ga.group_id=booking_group.id)::int attendees`;
 

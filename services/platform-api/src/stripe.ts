@@ -13,7 +13,10 @@ import type { FastifyInstance } from "fastify";
 import { pool } from "./db.ts";
 import { requireActor, allow, problem } from "./auth.ts";
 import { bodyHasCardData, paymentsEnabled, stripeAuditPayload } from "./payments.ts";
-import { depositLine, parseDepositSettings, stripeChargeAllowed } from "../../../domains/payments/deposit.ts";
+import { depositLine, FOOD_IS_NOT_BILLED, parseDepositSettings, stripeChargeAllowed } from "../../../domains/payments/deposit.ts";
+import { interpretStripeEvent, verifyStripeSignature, type StripeEffect } from "../../../domains/payments/stripeEvent.ts";
+import { sendEmail } from "./email.ts";
+import { scheduleAutoComms } from "./autocomms.ts";
 
 const STRIPE_KEY = process.env.STRIPE_SECRET_KEY ?? "";
 const WEBHOOK_SECRET = process.env.STRIPE_WEBHOOK_SECRET ?? "";
@@ -54,6 +57,111 @@ function refuseCard(req: any, reply: any) {
   if (!bodyHasCardData(req.body)) return false;
   reply.code(422).send(problem(422, "card_data_refused", "Do not send a card number or security code. The payment page collects the card."));
   return true;
+}
+
+async function applyStripeEffect(event: { data?: { object?: { metadata?: Record<string, string> } } }, effect: StripeEffect) {
+  const metaProperty = event.data?.object?.metadata?.property_id ?? null;
+  const enquirySql = `SELECT id, tenant_id, property_id, booking_id, email, name, deposit_status FROM guest_enquiry WHERE id=$1`;
+  let enquiry = effect.enquiryId ? (await pool.query(enquirySql, [effect.enquiryId])).rows[0] : null;
+  if (!enquiry && effect.sessionId) {
+    enquiry = (await pool.query(
+      `SELECT id, tenant_id, property_id, booking_id, email, name, deposit_status FROM guest_enquiry WHERE stripe_session_id=$1`,
+      [effect.sessionId],
+    )).rows[0] ?? null;
+  }
+  const groupSql = `SELECT id, tenant_id, property_id, name, contact_email, deposit_status FROM booking_group WHERE id=$1`;
+  let group = (effect.groupId || enquiry?.booking_id) ? (await pool.query(groupSql, [effect.groupId || enquiry.booking_id])).rows[0] : null;
+
+  let folio = effect.folioId
+    ? (await pool.query(`SELECT id, tenant_id, property_id, group_id, enquiry_id FROM folio WHERE id=$1`, [effect.folioId])).rows[0]
+    : null;
+  if (!folio && effect.intentId) {
+    folio = (await pool.query(
+      `SELECT f.id, f.tenant_id, f.property_id, f.group_id, f.enquiry_id
+       FROM payment p JOIN folio f ON f.id = p.folio_id
+       WHERE p.stripe_payment_intent_id=$1 AND p.kind <> 'refund' LIMIT 1`,
+      [effect.intentId],
+    )).rows[0] ?? null;
+  }
+  if (!folio && (group || enquiry)) {
+    folio = (await pool.query(
+      `SELECT id, tenant_id, property_id, group_id, enquiry_id FROM folio
+       WHERE ($1::uuid IS NOT NULL AND group_id=$1) OR ($2::uuid IS NOT NULL AND enquiry_id=$2)
+       ORDER BY created_at LIMIT 1`,
+      [group?.id ?? null, enquiry?.id ?? null],
+    )).rows[0] ?? null;
+  }
+  if (!group && folio?.group_id) group = (await pool.query(groupSql, [folio.group_id])).rows[0] ?? null;
+  if (!enquiry && folio?.enquiry_id) enquiry = (await pool.query(enquirySql, [folio.enquiry_id])).rows[0] ?? null;
+
+  const tenantId = enquiry?.tenant_id ?? group?.tenant_id ?? folio?.tenant_id ?? null;
+  const propertyId = enquiry?.property_id ?? group?.property_id ?? folio?.property_id ?? metaProperty;
+  if (!tenantId || !propertyId) return;
+
+  if (!folio && (group || enquiry)) {
+    folio = (await pool.query(
+      `INSERT INTO folio (tenant_id, property_id, group_id, enquiry_id, currency, total_agreed)
+       VALUES ($1,$2,$3,$4,'GBP',$5) RETURNING id, tenant_id, property_id, group_id, enquiry_id`,
+      [tenantId, propertyId, group?.id ?? null, enquiry?.id ?? null, effect.amountGbp || null],
+    )).rows[0];
+  }
+
+  const intentKey = effect.intentId ?? (effect.sessionId ? `session:${effect.sessionId}` : null);
+
+  if (effect.action === "paid" && folio && intentKey) {
+    const payment = (await pool.query(
+      `INSERT INTO payment (tenant_id, folio_id, kind, method, amount, stripe_payment_intent_id, stripe_status, paid_at, reference, note)
+       VALUES ($1,$2,'deposit','stripe',$3,$4,'succeeded',now(),$5,'Paid online via Stripe. Food is not billed.')
+       ON CONFLICT (stripe_payment_intent_id) WHERE stripe_payment_intent_id IS NOT NULL DO NOTHING
+       RETURNING id`,
+      [tenantId, folio.id, effect.amountGbp, intentKey, effect.sessionId ?? effect.intentId],
+    )).rows[0];
+    if (enquiry) {
+      await pool.query(
+        `UPDATE guest_enquiry SET deposit_status='paid', deposit_paid_at=coalesce(deposit_paid_at, now()), deposit_amount=CASE WHEN $2::numeric > 0 THEN $2 ELSE deposit_amount END WHERE id=$1`,
+        [enquiry.id, effect.amountGbp],
+      );
+    }
+    if (group) await pool.query(`UPDATE booking_group SET deposit_status='paid' WHERE id=$1`, [group.id]);
+    if (payment) {
+      const to = enquiry?.email ?? group?.contact_email;
+      const who = enquiry?.name ?? group?.name ?? "guest";
+      if (to) {
+        await sendEmail({ tenantId, propertyId }, {
+          to,
+          subject: `Deposit received — £${Number(effect.amountGbp).toFixed(2)}`,
+          body: `Dear ${who},\n\nWe have received your deposit of £${Number(effect.amountGbp).toFixed(2)}. ${FOOD_IS_NOT_BILLED}\n\nThe house will confirm your place. Reference: ${intentKey}.\n`,
+          kind: "deposit_received",
+          related_type: enquiry ? "guest_enquiry" : "booking_group",
+          related_id: enquiry?.id ?? group?.id,
+        });
+      }
+      if (group) {
+        try { await scheduleAutoComms(group.id, tenantId, propertyId); }
+        catch (err) { console.error("[stripe] confirmation schedule failed", err); }
+      }
+    }
+    return;
+  }
+
+  if (effect.action === "failed") {
+    if (enquiry) await pool.query(`UPDATE guest_enquiry SET deposit_status='failed' WHERE id=$1 AND deposit_status='unpaid'`, [enquiry.id]);
+    if (group) await pool.query(`UPDATE booking_group SET deposit_status='failed' WHERE id=$1 AND deposit_status='unpaid'`, [group.id]);
+    return;
+  }
+
+  if (effect.action === "refunded" && folio && effect.intentId) {
+    const refundKey = `${effect.intentId}:refund`;
+    await pool.query(
+      `INSERT INTO payment (tenant_id, folio_id, kind, method, amount, stripe_payment_intent_id, stripe_status, paid_at, reference, note)
+       VALUES ($1,$2,'refund','stripe',$3,$4,'refunded',now(),$5,'Deposit refunded via Stripe. Food is not billed.')
+       ON CONFLICT (stripe_payment_intent_id) WHERE stripe_payment_intent_id IS NOT NULL
+       DO UPDATE SET amount=EXCLUDED.amount, paid_at=now(), stripe_status='refunded'`,
+      [tenantId, folio.id, effect.amountGbp, refundKey, effect.intentId],
+    );
+    if (enquiry) await pool.query(`UPDATE guest_enquiry SET deposit_status='refunded' WHERE id=$1`, [enquiry.id]);
+    if (group) await pool.query(`UPDATE booking_group SET deposit_status='refunded' WHERE id=$1`, [group.id]);
+  }
 }
 
 export default async function stripe(f: FastifyInstance) {
@@ -98,6 +206,10 @@ export default async function stripe(f: FastifyInstance) {
       "metadata[folio_id]": g.folio_id ?? "",
       "metadata[kind]": kind,
       "metadata[property_id]": a.propertyId,
+      "payment_intent_data[metadata][group_id]": req.params.id,
+      "payment_intent_data[metadata][folio_id]": g.folio_id ?? "",
+      "payment_intent_data[metadata][kind]": kind,
+      "payment_intent_data[metadata][property_id]": a.propertyId,
     });
 
     return { url: session.url, session_id: session.id };
@@ -142,6 +254,8 @@ export default async function stripe(f: FastifyInstance) {
       "cancel_url": `${WEB_URL}/book/?stripe=cancelled`,
       "metadata[enquiry_id]": req.params.id,
       "metadata[property_id]": enquiry.property_id,
+      "payment_intent_data[metadata][enquiry_id]": req.params.id,
+      "payment_intent_data[metadata][property_id]": enquiry.property_id,
     });
 
     await pool.query(`UPDATE guest_enquiry SET stripe_session_id=$2, deposit_amount=$3 WHERE id=$1`, [req.params.id, session.id, depositPence / 100]);
@@ -165,51 +279,33 @@ export default async function stripe(f: FastifyInstance) {
     return { ...deposit, food_billed: false };
   });
 
-  // Stripe webhook — mark payments as received when checkout.session.completed fires
-  f.post("/webhooks/stripe", { config: { rawBody: true } }, async (req: any, reply) => {
-    const sig = req.headers["stripe-signature"] ?? "";
-    const payload = req.rawBody ?? req.body;
-
-    // Verify webhook signature (HMAC-SHA256)
-    if (WEBHOOK_SECRET && sig) {
-      try {
-        const crypto = await import("crypto");
-        const [, ts] = sig.split(",").find((p: string) => p.startsWith("t="))?.split("=") ?? [];
-        const [, v1] = sig.split(",").find((p: string) => p.startsWith("v1="))?.split("=") ?? [];
-        const expected = crypto.createHmac("sha256", WEBHOOK_SECRET).update(`${ts}.${payload}`).digest("hex");
-        if (expected !== v1) return reply.code(400).send({ error: "Invalid signature" });
-      } catch { return reply.code(400).send({ error: "Signature check failed" }); }
+  // Stripe webhook. Unsigned events are refused, including when no secret is set.
+  f.post("/webhooks/stripe", async (req: any, reply) => {
+    const sig = String(req.headers["stripe-signature"] ?? "");
+    const raw = typeof req.rawBody === "string" ? req.rawBody : "";
+    const check = verifyStripeSignature(raw, sig, WEBHOOK_SECRET);
+    if (!check.ok) {
+      if (check.reason === "unconfigured") {
+        req.log.warn("Stripe webhook rejected: STRIPE_WEBHOOK_SECRET is not set");
+        console.warn("[stripe] webhook rejected: STRIPE_WEBHOOK_SECRET is not set");
+        return reply.code(503).send(problem(503, "webhook_unconfigured", "Stripe webhooks are not configured. Set STRIPE_WEBHOOK_SECRET before accepting events."));
+      }
+      return reply.code(400).send(problem(400, "invalid_signature", "The Stripe signature did not match the raw body."));
     }
 
     let event: any;
-    try { event = typeof payload === "string" ? JSON.parse(payload) : payload; } catch { return reply.code(400).send({ error: "Invalid JSON" }); }
+    try { event = JSON.parse(raw); } catch { return reply.code(400).send(problem(400, "invalid_json", "The webhook body was not JSON.")); }
+    if (!event?.id || !event?.type) return reply.code(400).send(problem(400, "invalid_event", "The webhook had no event id."));
 
-    // Idempotency check
-    const already = (await pool.query(`SELECT id FROM stripe_event WHERE id=$1`, [event.id])).rows[0];
-    if (already) return { ok: true, duplicate: true };
-    await pool.query(`INSERT INTO stripe_event (id, kind, payload, processed_at) VALUES ($1,$2,$3,now()) ON CONFLICT DO NOTHING`, [event.id, event.type, JSON.stringify(stripeAuditPayload(event))]);
+    const inserted = (await pool.query(
+      `INSERT INTO stripe_event (id, kind, payload, processed_at) VALUES ($1,$2,$3,now()) ON CONFLICT (id) DO NOTHING RETURNING id`,
+      [event.id, event.type, JSON.stringify(stripeAuditPayload(event))],
+    )).rows[0];
+    if (!inserted) return { ok: true, duplicate: true };
     if (!paymentsEnabled()) return { ok: true, ignored: true };
 
-    if (event.type === "checkout.session.completed") {
-      const session = event.data.object;
-      const meta = session.metadata ?? {};
-      const amountGbp = (session.amount_total ?? 0) / 100;
-
-      if (meta.folio_id && meta.group_id) {
-        // Staff booking payment
-        await pool.query(`
-          INSERT INTO payment (tenant_id, folio_id, kind, method, amount, stripe_payment_intent_id, stripe_status, paid_at, reference, note)
-          SELECT f.tenant_id, f.id, $2, 'stripe', $3, $4, 'succeeded', now(), $5, 'Paid online via Stripe'
-          FROM folio f WHERE f.id = $1`,
-          [meta.folio_id, meta.kind ?? "deposit", amountGbp, session.payment_intent ?? session.id, session.id]);
-      }
-
-      if (meta.enquiry_id) {
-        // Guest portal deposit
-        await pool.query(`UPDATE guest_enquiry SET deposit_paid_at=now(), deposit_amount=$2 WHERE id=$1`, [meta.enquiry_id, amountGbp]);
-      }
-    }
-
+    const effect = interpretStripeEvent(event);
+    if (effect.action !== "ignore") await applyStripeEffect(event, effect);
     return { ok: true };
   });
 

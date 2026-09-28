@@ -19,6 +19,7 @@ const fromApiGroup = (g: ApiGroup): Group => ({
   colour: (g.colour as string) ?? "#1F3A32", version: Number(g.version), source: g.source as string,
   openOnGuestBook: !!g.open_for_guests,
   publicTitle: (g.public_title as string) ?? "",
+  depositStatus: (g.deposit_status as string) ?? "unpaid",
 });
 const fmtTime = (t: string | null) => { if (!t) return ""; const [h, m] = t.split(":").map(Number); return `${h % 12 || 12}${m ? ":" + String(m).padStart(2, "0") : ""}${h >= 12 ? "pm" : "am"}`; };
 const fromApiRoom = (r: ApiRoom): Room => ({

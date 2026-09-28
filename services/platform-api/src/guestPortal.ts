@@ -559,13 +559,15 @@ export default async function guestPortal(f: FastifyInstance) {
       status: x.status,
       programme_name: x.programme_name ? cleanName(x.programme_name) : null,
       rooms: roomsForStay(x.booking_id, rooms),
+      deposit_status: x.deposit_status ?? "unpaid",
+      deposit_amount: x.deposit_amount == null ? null : Number(x.deposit_amount),
     };
   }
 
   f.get("/guest/enquiries", async (req, reply) => {
     const g = await requireGuest(req, reply); if (!g) return;
     const r = await pool.query(`select e.id, e.people, e.arrival_date::text arrival, e.departure_date::text departure, e.notes, e.status,
-        e.programme_id, e.booking_id, bg.name programme_name
+        e.programme_id, e.booking_id, e.deposit_status, e.deposit_amount, bg.name programme_name
       from guest_enquiry e
       left join booking_group bg on bg.id = e.programme_id
       where e.guest_id=$1 order by e.created_at desc`, [g.id]);
@@ -576,7 +578,7 @@ export default async function guestPortal(f: FastifyInstance) {
   f.get("/guest/stay", async (req, reply) => {
     const g = await requireGuest(req, reply); if (!g) return;
     const r = await pool.query(`select e.id, e.people, e.arrival_date::text arrival, e.departure_date::text departure, e.notes, e.status,
-        e.programme_id, e.booking_id, bg.name programme_name
+        e.programme_id, e.booking_id, e.deposit_status, e.deposit_amount, bg.name programme_name
       from guest_enquiry e
       left join booking_group bg on bg.id = e.programme_id
       where e.guest_id=$1 order by e.arrival_date desc, e.created_at desc`, [g.id]);
@@ -587,7 +589,7 @@ export default async function guestPortal(f: FastifyInstance) {
   f.get("/v1/guest-enquiries", async (req, reply) => {
     const a = await requireActor(req, reply, "ADMIN"); if (!a || !allow(a, "group.read", reply)) return;
     const r = await pool.query(`select e.id, e.name, e.email, e.people, e.arrival_date::text arrival, e.departure_date::text departure, e.notes, e.status, e.created_at,
-        e.programme_id, e.booking_id, e.dietary_notes, e.accessibility_notes, e.room_preference, e.arrival_time_note, e.travel_notes, e.party, e.arrival_slot, e.departure_slot, bg.name programme_name
+        e.programme_id, e.booking_id, e.dietary_notes, e.accessibility_notes, e.room_preference, e.arrival_time_note, e.travel_notes, e.party, e.arrival_slot, e.departure_slot, e.deposit_status, e.deposit_amount, bg.name programme_name
       from guest_enquiry e
       left join booking_group bg on bg.id = e.programme_id
       where e.property_id=$1 and e.status='ENQUIRY' order by e.created_at desc limit 50`, [a.propertyId]);

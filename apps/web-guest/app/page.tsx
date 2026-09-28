@@ -20,7 +20,7 @@ type Room = { number: string; section: string | null };
 type RoomType = { code: string; name: string; sleeps: number; accessible: boolean; beds: string; features: string[]; total: number; available: number };
 type Avail = { arrival: string; departure: string; nights: number; free_rooms: number; types: RoomType[]; rooms: { number: string; section: string | null; type_name: string; sleeps: number; beds: string; feature_labels: string[]; accessible: boolean }[] };
 type Day = { date: string; free_rooms: number };
-type Mine = { id: string; people: number; arrival: string; departure: string; status: string; programme_name: string | null; notes: string | null; rooms: Room[] };
+type Mine = { id: string; people: number; arrival: string; departure: string; status: string; programme_name: string | null; notes: string | null; rooms: Room[]; deposit_status?: string; deposit_amount?: number | null };
 type Me = { name: string; email: string };
 type GuestAsk = { id: string; room_label: string | null; department_label: string; request_text: string; status: string };
 type AllergenTick = { code: string; severity: string };
@@ -502,6 +502,9 @@ export default function Book() {
                         <span>{x.programme_name ?? "Your dates"} · {fmt(x.arrival)} → {fmt(x.departure)} · {x.people} {Number(x.people) === 1 ? "person" : "people"}</span>
                         <span className="m">{x.status === "CONVERTED" ? "in the house book" : x.status.toLowerCase()}</span>
                       </div>
+                      {x.deposit_status === "paid" && <p className="m" style={{ margin: "8px 0 0" }}>Deposit paid{x.deposit_amount != null ? ` · £${Number(x.deposit_amount).toFixed(2)}` : ""}. Food is not billed.</p>}
+                      {x.deposit_status === "failed" && <p className="m" style={{ margin: "8px 0 0" }}>The deposit payment did not go through. The house can help.</p>}
+                      {x.deposit_status === "refunded" && <p className="m" style={{ margin: "8px 0 0" }}>The deposit was refunded. Food is not billed.</p>}
                       {x.rooms?.length
                         ? <div className="rooms">{x.rooms.map(r => <span key={r.number} className="room">{r.number}{r.section ? ` · ${r.section}` : ""}</span>)}</div>
                         : <p className="m" style={{ margin: "8px 0 0" }}>Rooms appear when the house assigns them.</p>}
