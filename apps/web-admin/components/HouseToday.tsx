@@ -63,12 +63,12 @@ export default function HouseToday() {
   const nowHm = new Date().toLocaleTimeString("en-GB", { timeZone: "Europe/London", hour: "2-digit", minute: "2-digit", hour12: false });
   return (
     <>
-      <div className="topbar">
+      <div className="house-masthead">
         <div>
           <h1>Today at the house</h1>
           <p>{d}. Check-in from {e.property.check_in_from}, departure by {e.property.check_out_by}. {e.property.dining ? `${e.property.dining.name}, ${e.property.dining.max_covers} covers.` : ""}</p>
         </div>
-        <div style={{ display: "flex", gap: 10 }}>
+        <div className="actions">
           {book > 0 && <Link className="btn" href="/groups/">{book} guest portal {book === 1 ? "enquiry" : "enquiries"}</Link>}
           <Link className="btn" href="/front/">Front desk</Link>
           <Link className="btn" href="/night/">Night porter</Link>
