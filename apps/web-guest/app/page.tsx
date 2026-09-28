@@ -70,6 +70,8 @@ export default function Book() {
   const [err, setErr] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [paymentsOn, setPaymentsOn] = useState(false);
+  const [booking, setBooking] = useState<{ open: boolean; detail: string; contact: string | null; website: string | null; deposit_gbp: number; deposit_policy: string }>({ open: true, detail: "", contact: null, website: null, deposit_gbp: 200, deposit_policy: "The house agrees the deposit when your place is accepted. Food is not billed." });
+  const [savedEnquiryId, setSavedEnquiryId] = useState<string | null>(null);
   const [asks, setAsks] = useState<GuestAsk[]>([]);
   const [ask, setAsk] = useState({ request_text: "", room_label: "" });
   const [party, setParty] = useState<PartyPerson[]>([blankPerson()]);
@@ -126,9 +128,21 @@ export default function Book() {
     const f = from.toISOString().slice(0, 10); const t = to.toISOString().slice(0, 10);
     api<{ days: Day[] }>(`/guest/calendar?from=${f}&to=${t}`).then(r => setCal(r.days)).catch(() => {});
     api<{ enabled: boolean }>("/guest/payments").then(r => setPaymentsOn(!!r.enabled)).catch(() => setPaymentsOn(false));
+    api<{ open: boolean; detail: string; contact: string | null; website: string | null; deposit_gbp: number; deposit_policy: string; payments?: boolean }>("/guest/booking-status")
+      .then(r => { setBooking({ open: r.open, detail: r.detail, contact: r.contact, website: r.website, deposit_gbp: r.deposit_gbp, deposit_policy: r.deposit_policy }); if (typeof r.payments === "boolean") setPaymentsOn(r.payments); })
+      .catch(() => setBooking(b => ({ ...b, open: false, detail: "We could not check whether booking is open. Contact the house before you fill this in." })));
   }, []);
 
+  const enquiryKey = () => {
+    const existing = sessionStorage.getItem("vedanta.enquiry.key");
+    if (existing) return existing;
+    const next = crypto.randomUUID();
+    sessionStorage.setItem("vedanta.enquiry.key", next);
+    return next;
+  };
+
   const pickProgramme = (p: Prog) => {
+    if (!booking.open) return;
     setSel(p);
     setForm(f => ({ ...f, arrival: p.arrival, departure: p.departure }));
     setStep("room");
@@ -139,9 +153,11 @@ export default function Book() {
   const doRegister = async () => {
     setBusy(true); setErr(null); setOk(null);
     try {
-      const r = await api<{ token: string; user: Me; access_code?: string | null }>("/guest/register", {
+      const r = await api<{ token?: string; user?: Me; access_code?: string | null; verification_required?: boolean; detail?: string }>("/guest/register", {
         method: "POST", body: JSON.stringify({ name: form.name, email: form.email }),
       });
+      if (r.verification_required) { setAuth("login"); setOk(r.detail ?? "Sign in with the access code we sent."); return; }
+      if (!r.token) throw new Error("Sign-in did not start");
       tok.set(r.token);
       setForm(f => ({ ...f, access_code: r.access_code ?? f.access_code ?? "" }));
       await loadSigned();
@@ -159,6 +175,8 @@ export default function Book() {
         method: "POST", body: JSON.stringify({ email: form.email, access_code: form.access_code }),
       });
       tok.set(r.token); await loadSigned(); setAuth("hidden");
+      const status = await api<{ open: boolean; detail: string; contact: string | null; website: string | null; deposit_gbp: number; deposit_policy: string }>("/guest/booking-status");
+      setBooking(status);
     } catch (e) { setErr((e as Error).message); } finally { setBusy(false); }
   };
 
@@ -181,7 +199,8 @@ export default function Book() {
     return rows;
   };
 
-  const doEnquiry = async () => {
+  const doEnquiry = async (opts?: { finish?: boolean }) => {
+    if (!booking.open) { setErr(booking.detail || "Online booking is not open."); return null; }
     setBusy(true); setErr(null); setOk(null);
     const rows = readyParty();
     const missing = rows.findIndex(p => !p.given_name.trim() || !p.family_name.trim());
@@ -199,13 +218,17 @@ export default function Book() {
     try {
       const r = await api<{ token?: string; user?: Me; access_code?: string | null; id: string; status: string }>(
         editingId ? `/guest/enquiries/${editingId}` : "/guest/enquiries",
-        { method: editingId ? "PATCH" : "POST", body: JSON.stringify(payload) },
+        { method: editingId ? "PATCH" : "POST", body: JSON.stringify(payload), headers: editingId ? undefined : { "idempotency-key": enquiryKey() } },
       );
       if (r.token) tok.set(r.token);
       if (r.access_code) setForm(f => ({ ...f, access_code: r.access_code ?? "" }));
       setParty(rows);
-      await loadSigned();
-      setStep("done");
+      setSavedEnquiryId(r.id);
+      await loadSigned().catch(() => {});
+      if (opts?.finish !== false) {
+        sessionStorage.removeItem("vedanta.enquiry.key");
+        setStep("done");
+      }
       setEditingId(null);
       setOk(r.access_code
         ? `Saved. Your private access code is ${r.access_code}. It expires in 14 days. Write it down. Please check the allergens below.`
@@ -295,6 +318,7 @@ export default function Book() {
               <div className="cal">
                 {cal.map(d => (
                   <button key={d.date} className={"cal-d" + (d.free_rooms === 0 ? " none" : "")} onClick={() => {
+                    if (!booking.open) return;
                     const next = new Date(d.date + "T12:00:00"); next.setDate(next.getDate() + 2);
                     const dep = next.toISOString().slice(0, 10);
                     setSel(null);
@@ -310,6 +334,17 @@ export default function Book() {
             </div>
 
             <aside>
+              {!booking.open && (
+                <div className="card" data-testid="booking-closed" style={{ marginBottom: 18 }}>
+                  <h2 style={{ fontSize: 22 }}>Online booking is not open</h2>
+                  <p>{booking.detail}</p>
+                  {booking.contact && <p><a href={`mailto:${booking.contact}`}>{booking.contact}</a></p>}
+                  {!booking.contact && booking.website && <p><a href={booking.website}>Contact the house</a></p>}
+                  <button className="btn" onClick={() => { setAuth("login"); setOk(null); setErr(null); }}>Sign in with an access code</button>
+                  <button className="btn sec" style={{ marginLeft: 8 }} onClick={() => { setAuth("register"); setOk(null); setErr(null); }}>Email me an access code</button>
+                </div>
+              )}
+              {booking.open && <>
               <div className="steps" aria-label="Booking steps">
                 {STEPS.map(s => <span key={s.id} className={STEPS.findIndex(x => x.id === step) >= STEPS.findIndex(x => x.id === s.id) ? "done" : ""}>{s.label}</span>)}
               </div>
@@ -454,6 +489,7 @@ export default function Book() {
                   </p>}
                 </div>
               )}
+              </>}
 
               {me && mine && mine.length > 0 && (
                 <div className="card" style={{ marginTop: 18 }}>

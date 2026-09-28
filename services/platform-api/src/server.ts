@@ -42,10 +42,19 @@ import financeRoutes from "./finance.ts";
 import emergencyRoutes from "./emergency.ts";
 import stripeRoutes from "./stripe.ts";
 import { assertFieldEncryptionReady } from "./fieldCrypto.ts";
+import { decideBookingGate } from "../../../domains/guest/bookingGate.ts";
 
 assertFieldEncryptionReady();
 
 const app = Fastify({ logger: process.env.NODE_ENV !== "test" });
+app.removeContentTypeParser("application/json");
+app.addContentTypeParser("application/json", { parseAs: "string" }, (req, body, done) => {
+  const text = typeof body === "string" ? body : "";
+  (req as { rawBody?: string }).rawBody = text;
+  if (!text) { done(null, {}); return; }
+  try { done(null, JSON.parse(text)); }
+  catch (err) { (err as { statusCode?: number }).statusCode = 400; done(err as Error, undefined); }
+});
 const isProd = process.env.NODE_ENV === "production";
 
 function truthy(v: string | undefined): boolean {
@@ -75,7 +84,7 @@ app.addHook("onRequest", async (req, reply) => {
     reply.header("access-control-allow-origin", origin);
     reply.header("vary", "Origin");
   }
-  reply.header("access-control-allow-headers", "authorization, content-type, if-match");
+  reply.header("access-control-allow-headers", "authorization, content-type, if-match, idempotency-key");
   reply.header("access-control-allow-methods", "GET,POST,PATCH,DELETE,OPTIONS");
   reply.header("access-control-expose-headers", "etag");
   reply.header("x-content-type-options", "nosniff");
@@ -100,39 +109,34 @@ app.addHook("onRequest", async (req, reply) => {
 app.addHook("preHandler", async (req: any, reply) => {
   const path = String(req.url ?? "").split("?")[0];
   if (path !== "/guest/register" && path !== "/guest/enquiries") return;
+  if (req.method !== "POST") return;
 
-  const auth = req.headers.authorization as string | undefined;
-  if (isProd && !auth?.startsWith("Bearer ") && !truthy(process.env.ALLOW_UNVERIFIED_GUEST_BOOTSTRAP)) {
-    return reply.code(503).send(problem(
-      503,
-      "guest_email_verification_required",
-      "Online booking identity verification is being configured. You can still browse programmes and availability; contact the house to save a place.",
-    ));
-  }
-
-  const email = String(req.body?.email ?? "").trim().toLowerCase();
-  if (!email || !email.includes("@")) return;
-
-  const existing = (await pool.query(
-    `select id from guest_account where lower(email)=$1 and status='ACTIVE' limit 1`,
-    [email],
-  )).rows[0];
-  if (!existing) return;
-
-  if (path === "/guest/enquiries" && auth?.startsWith("Bearer ")) {
-    const token = auth.slice(7);
-    const owned = (await pool.query(
-      `select 1 from guest_session where token=$1 and guest_id=$2 and expires_at > now() limit 1`,
-      [token, existing.id],
-    )).rowCount;
-    if (owned) return;
-  }
-
-  return reply.code(409).send(problem(
-    409,
-    "guest_identity_verification_required",
-    "For your privacy, this email must sign in to My Stay before it can be used again.",
-  ));
+  const auth = String(req.headers.authorization ?? "");
+  const tokenPresented = auth.startsWith("Bearer ") && auth.slice(7).trim().length > 0;
+  const token = tokenPresented ? auth.slice(7).trim() : "";
+  const bodyEmail = String(req.body?.email ?? "").trim().toLowerCase();
+  const sessionRow = token
+    ? (await pool.query(
+      `select lower(g.email) email, g.email_verified
+       from guest_session s
+       join guest_account g on g.id = s.guest_id
+       where s.token=$1 and s.expires_at > now() and g.status='ACTIVE'`,
+      [token],
+    )).rows[0]
+    : null;
+  const account = bodyEmail.includes("@")
+    ? (await pool.query(`select id from guest_account where lower(email)=$1 and status='ACTIVE' limit 1`, [bodyEmail])).rows[0]
+    : null;
+  const decision = decideBookingGate({
+    route: path === "/guest/register" ? "register" : "enquiry",
+    production: isProd,
+    allowUnverifiedBootstrap: truthy(process.env.ALLOW_UNVERIFIED_GUEST_BOOTSTRAP),
+    tokenPresented,
+    session: sessionRow ? { email: sessionRow.email, verified: !!sessionRow.email_verified } : null,
+    bodyEmail,
+    accountExists: !!account,
+  });
+  if (!decision.ok) return reply.code(decision.status).send(problem(decision.status, decision.code, decision.detail));
 });
 
 app.setErrorHandler((err: any, req, reply) => {
