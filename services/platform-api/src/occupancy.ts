@@ -82,6 +82,10 @@ export default async function routes(f: FastifyInstance) {
     const hds = [...halfDays(g.rows[0])];
     const clash = await c.query(`select o.occupant_label, o.on_date::text, o.slot from room_occupancy o where o.room_id=$1 and o.group_id<>$2 and (o.on_date::text,o.slot) in (select * from unnest($3::text[],$4::text[])) limit 1`, [r.id, groupId, hds.map(h => h.date), hds.map(h => h.slot)]);
     if (clash.rowCount) return { err: problem(409, "room_taken", `Room ${number} is taken by ${clash.rows[0].occupant_label} on ${clash.rows[0].on_date} ${clash.rows[0].slot}.`) };
+    const held = await c.query(`select g.name from group_room_hold h join booking_group g on g.id=h.group_id
+      where h.room_id=$1 and h.group_id<>$2 and g.status not in ('CANCELLED','COMPLETED')
+        and g.departure_date >= $3::date and g.arrival_date <= $4::date limit 1`, [r.id, groupId, g.rows[0].arrival_date, g.rows[0].departure_date]);
+    if (held.rowCount) return { err: problem(409, "room_held", `Room ${number} is held for ${held.rows[0].name}.`) };
     const cnt = await c.query(`select count(distinct occupant_label) n from room_occupancy where room_id=$1 and group_id=$2`, [r.id, groupId]);
     if (Number(cnt.rows[0].n) + adding > r.max_capacity) return { err: problem(409, "room_full", `Room ${number} sleeps ${r.max_capacity}.`) };
     return { roomId: r.id as string, hds };
