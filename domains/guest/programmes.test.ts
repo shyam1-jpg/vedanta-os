@@ -8,6 +8,8 @@ describe("public programmes", () => {
     assert.equal(isPublicProgrammeName("Rishika Shah booking"), false);
     assert.equal(isPublicProgrammeName("HOLD — kitchen"), false);
     assert.equal(isPublicProgrammeName("OPTION for Michelle Yoga"), false);
+    assert.equal(isPublicProgrammeName("TEST RETREAT, not bookable (internal test)"), false);
+    assert.equal(isPublicProgrammeName("Sample yoga workshop"), false);
     assert.equal(isPublicProgrammeName("Hoffman - Graduate Programme"), true);
     assert.equal(isPublicProgrammeName("Michelle Yoga - DAY RETREAT"), true);
   });
