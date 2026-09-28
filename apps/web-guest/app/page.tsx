@@ -40,10 +40,10 @@ const STEPS: { id: Step; label: string }[] = [
 ];
 
 const photo = (file: string) => `/book/images/${file}`;
-const GALLERY: { file: string; title: string; caption: string; alt: string; wide?: boolean }[] = [
+const GALLERY: { file: string; title: string; caption?: string; alt: string; wide?: boolean }[] = [
   { file: "house-aerial.jpg", title: "The house", caption: "The retreat house and grounds.", alt: "Aerial view of the retreat house and grounds", wide: true },
   { file: "dining-room.jpg", title: "Dining hall", caption: "Buffet-only, and pure vegetarian.", alt: "The dining hall laid for a buffet", },
-  { file: "food.jpg", title: "From the kitchen", caption: "No eggs, and no onion, garlic or other onion-family ingredients.", alt: "A vegetarian dish", },
+  { file: "food.jpg", title: "From the kitchen", alt: "A vegetarian dish", },
   { file: "lounge.jpg", title: "Guest lounge", caption: "The guest lounge.", alt: "The guest lounge", },
   { file: "lake.jpg", title: "The grounds", caption: "A lake in the grounds.", alt: "A lake in the grounds", },
 ];
@@ -257,7 +257,7 @@ export default function Book() {
                   <img src={photo(g.file)} alt={g.alt} />
                   <figcaption>
                     <strong>{g.title}</strong>
-                    <span>{g.caption}</span>
+                    {g.caption && <span>{g.caption}</span>}
                   </figcaption>
                 </figure>
               ))}
