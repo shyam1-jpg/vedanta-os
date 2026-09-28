@@ -1,5 +1,6 @@
 "use client";
 import { useEffect, useState } from "react";
+import PhotoGallery from "@/components/PhotoGallery";
 const API = process.env.NEXT_PUBLIC_API_URL ?? "";
 const tok = {
   get: () => (typeof window === "undefined" ? null : sessionStorage.getItem("vedanta.guest.token")),
@@ -269,6 +270,7 @@ export default function Book() {
             <div><b>{prop?.check_out_by ?? "11:00"}</b><span>Check-out by</span></div>
             <div><b>{prop?.rooms ?? 41}</b><span>Guest rooms</span></div>
           </div>
+          <PhotoGallery />
 
           {auth !== "hidden" && !me && (
             <div className="card" style={{ maxWidth: 480, marginBottom: 28 }}>
