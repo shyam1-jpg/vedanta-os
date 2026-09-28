@@ -11,7 +11,7 @@ import { staffEmailLoginEnabled, problem, productionOwnerAllowed } from "./auth.
 
 const cfg = () => ({ tenant: process.env.MS_TENANT_ID, client: process.env.MS_CLIENT_ID, secret: process.env.MS_CLIENT_SECRET, api: process.env.PUBLIC_URL, web: process.env.WEB_URL ?? "http://localhost:3000" });
 export const microsoftEnabled = () => !!(cfg().tenant && cfg().client && cfg().secret && cfg().api);
-const pending = new Map<string, { verifier: string; at: number }>();  // state → PKCE verifier, 10 minutes
+const pending = new Map<string, { verifier: string; at: number; surface: "ADMIN" | "STAFF" }>();  // state → PKCE verifier, 10 minutes
 
 export default async function microsoft(f: FastifyInstance) {
   f.get("/auth/providers", async () => ({ microsoft: microsoftEnabled(), dev: process.env.NODE_ENV !== "production", email: staffEmailLoginEnabled() }));
@@ -21,7 +21,8 @@ export default async function microsoft(f: FastifyInstance) {
     const c = cfg(); const state = randomBytes(16).toString("base64url"); const verifier = randomBytes(32).toString("base64url");
     const challenge = createHash("sha256").update(verifier).digest("base64url");
     for (const [k, v] of pending) if (Date.now() - v.at > 600_000) pending.delete(k);
-    pending.set(state, { verifier, at: Date.now() });
+    const surface = (req.query as { surface?: string })?.surface === "staff" ? "STAFF" : "ADMIN";
+    pending.set(state, { verifier, at: Date.now(), surface });
     const u = new URL(`https://login.microsoftonline.com/${c.tenant}/oauth2/v2.0/authorize`);
     u.search = new URLSearchParams({ client_id: c.client!, response_type: "code", redirect_uri: `${c.api}/auth/microsoft/callback`, scope: "openid profile email", state, code_challenge: challenge, code_challenge_method: "S256", prompt: "select_account" }).toString();
     return reply.redirect(u.toString());
@@ -29,9 +30,11 @@ export default async function microsoft(f: FastifyInstance) {
 
   f.get<{ Querystring: { code?: string; state?: string; error?: string; error_description?: string } }>("/auth/microsoft/callback", async (req, reply) => {
     const c = cfg(); const { code, state, error, error_description } = req.query;
-    const fail = (why: string) => reply.redirect(`${c.web}/sign-in/?error=${encodeURIComponent(why)}`);
+    const pendingState = state ? pending.get(state) : undefined;
+    const destination = pendingState?.surface === "STAFF" ? "/pocket/" : "/sign-in/";
+    const fail = (why: string) => reply.redirect(`${c.web}${destination}?error=${encodeURIComponent(why)}`);
     if (error) return fail(error_description ?? error);
-    const p = state ? pending.get(state) : undefined; if (!code || !p) return fail("Sign-in expired, please try again");
+    const p = pendingState; if (!code || !p) return fail("Sign-in expired, please try again");
     pending.delete(state!);
     const tokenRes = await fetch(`https://login.microsoftonline.com/${c.tenant}/oauth2/v2.0/token`, { method: "POST", headers: { "content-type": "application/x-www-form-urlencoded" },
       body: new URLSearchParams({ client_id: c.client!, client_secret: c.secret!, grant_type: "authorization_code", code, redirect_uri: `${c.api}/auth/microsoft/callback`, code_verifier: p.verifier }) });
@@ -54,7 +57,7 @@ export default async function microsoft(f: FastifyInstance) {
       return fail("This system-owner account is not approved in the production allowlist");
     }
     const token = randomBytes(32).toString("base64url");
-    await pool.query(`insert into session (token, user_id, property_id, audience, expires_at) values ($1,$2,$3,'ADMIN', now() + interval '12 hours')`, [token, u.id, u.property_id]);
-    return reply.redirect(`${c.web}/sign-in/#token=${token}`);
+    await pool.query(`insert into session (token, user_id, property_id, audience, expires_at) values ($1,$2,$3,$4, now() + interval '12 hours')`, [token, u.id, u.property_id, p.surface]);
+    return reply.redirect(`${c.web}${destination}#token=${token}`);
   });
 }
