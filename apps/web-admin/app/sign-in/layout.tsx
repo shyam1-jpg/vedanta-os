@@ -1,8 +1,9 @@
 import type { Metadata } from "next";
-import OrganiserForm from "@/components/OrganiserForm";
 import { publicPageMetadata } from "@/lib/publicMetadata";
 export const metadata: Metadata = {
-  ...publicPageMetadata("Guest list · The Vedanta Way"),
+  ...publicPageMetadata("Sign in · The Vedanta Way"),
   appleWebApp: { capable: true, statusBarStyle: "black-translucent", title: "The Vedanta Way" },
 };
-export default function Page() { return <OrganiserForm />; }
+export default function SignInLayout({ children }: { children: React.ReactNode }) {
+  return children;
+}
