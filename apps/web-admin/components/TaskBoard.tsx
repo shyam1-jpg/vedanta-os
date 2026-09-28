@@ -240,7 +240,8 @@ export default function TaskBoard() {
               </div>
               {(detail.location_label || detail.asset_label || detail.event_label || detail.sop_slug) && (
                 <p className="m">
-                  {[detail.location_label, detail.asset_label, detail.event_label, detail.sop_slug && `SOP ${detail.sop_slug}`].filter(Boolean).join(" · ")}
+                  {[detail.location_label, detail.asset_label, detail.event_label].filter(Boolean).join(" · ")}
+                  {detail.sop_slug && <> {(detail.location_label || detail.asset_label || detail.event_label) ? " · " : ""}<a href={`/sops/?slug=${encodeURIComponent(detail.sop_slug)}`}>SOP {detail.sop_slug}</a></>}
                 </p>
               )}
               <div className="actions" style={{ flexWrap: "wrap", gap: 8 }}>

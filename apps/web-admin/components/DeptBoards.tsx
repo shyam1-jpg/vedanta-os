@@ -21,6 +21,7 @@ export default function DeptBoards() {
   const [about, setAbout] = useState("");
   const [caption, setCaption] = useState("");
   const [toast, setToast] = useState<string | null>(null);
+  const [sops, setSops] = useState<{ slug: string | null; title: string }[]>([]);
   const say = (t: string) => { setToast(t); setTimeout(() => setToast(null), 3000); };
   const load = () => api<{ items: Board[] }>("/v1/service/boards").then(r => {
     setItems(r.items);
@@ -30,6 +31,9 @@ export default function DeptBoards() {
   useEffect(() => { load(); }, []); // eslint-disable-line
   const board = items.find(i => i.department === dept);
   useEffect(() => { if (board) setAbout(board.about); }, [dept, board?.about]); // eslint-disable-line
+  useEffect(() => {
+    api<{ items: { slug: string | null; title: string }[] }>(`/v1/sops?department=${dept}`).then(r => setSops(r.items)).catch(() => setSops([]));
+  }, [dept]);
 
   const addPhoto = async (file: File) => {
     if (file.size > 500_000) { say("Use a smaller picture (under 500 KB)"); return; }
@@ -52,7 +56,7 @@ export default function DeptBoards() {
       <div className="topbar">
         <div>
           <h1>Department boards</h1>
-          <p>Where things live — notes and photographs for housekeeping, front of house, night porter, restaurant and kitchen. A new starter should be able to find the cupboard from the picture. How to act is in the <a href="/manual/">house manual</a>.</p>
+          <p>Where things live — notes and photographs for housekeeping, front of house, night porter, restaurant and kitchen. A new starter should be able to find the cupboard from the picture. How to act is in the <a href="/manual/">house manual</a> and the <a href={`/sops/?department=${dept}`}>SOPs for this department</a>.</p>
         </div>
       </div>
       <div className="seg" style={{ marginBottom: 16 }}>
@@ -65,6 +69,9 @@ export default function DeptBoards() {
           <div className="k">{LABELS[dept]}</div>
           <h2>How this room works</h2>
           <textarea rows={10} value={about} onChange={e => setAbout(e.target.value)} style={{ width: "100%", marginTop: 8 }} />
+          {sops.length > 0 && (
+            <p className="m" style={{ marginTop: 8 }}>SOPs: {sops.map((s, i) => <span key={s.slug ?? s.title}>{i ? " · " : ""}<a href={`/sops/?slug=${encodeURIComponent(s.slug ?? "")}`}>{s.title}</a></span>)}</p>
+          )}
           <div className="actions" style={{ border: 0 }}>
             <button className="btn primary" onClick={async () => {
               try { await api(`/v1/service/boards/${dept}`, { method: "PATCH", body: JSON.stringify({ about }) }); say("Notes saved"); load(); }
