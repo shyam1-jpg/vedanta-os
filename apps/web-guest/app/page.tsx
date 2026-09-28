@@ -76,6 +76,7 @@ export default function Book() {
   const [ask, setAsk] = useState({ request_text: "", room_label: "" });
   const [party, setParty] = useState<PartyPerson[]>([blankPerson()]);
   const [editingId, setEditingId] = useState<string | null>(null);
+  const [checkIn, setCheckIn] = useState<{ href: string | null; check_in: boolean } | null>(null);
 
   const loadPublic = async () => {
     const [p, progs] = await Promise.all([
@@ -96,6 +97,7 @@ export default function Book() {
     ]);
     setMine(enqs.items);
     setAsks(reqs.items);
+    api<{ href: string | null; check_in: boolean }>("/guest/check-in").then(setCheckIn).catch(() => setCheckIn(null));
   };
 
   useEffect(() => {
@@ -496,6 +498,7 @@ export default function Book() {
                 <div className="card" style={{ marginTop: 18 }}>
                   <h2 style={{ fontSize: 22 }}>My Stay</h2>
                   <p className="m">Guest Portal — only you can see this.</p>
+                  {checkIn?.href && <p><a className="btn" href={checkIn.href}>{checkIn.check_in ? "Check in" : "Open My Stay"}</a></p>}
                   {mine.map(x => (
                     <div className="row" key={x.id} style={{ display: "block" }}>
                       <div style={{ display: "flex", justifyContent: "space-between", gap: 12 }}>

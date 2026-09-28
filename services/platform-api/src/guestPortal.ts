@@ -35,6 +35,7 @@ import { acceptWarning, captureFromStored, dietarySummary, resendAccessCode, spl
 import { applyGuestConsent, suggestContact } from "./guestHistory.ts";
 import { cleanIdempotencyKey, formatBookingReference, issueSessionOnRegister, publicBookingOpen } from "../../../domains/guest/bookingGate.ts";
 import { parseDepositSettings } from "../../../domains/payments/deposit.ts";
+import { stayLinkForEmail } from "./journey.ts";
 
 const hits = new Map<string, { n: number; t: number }>();
 function rateOk(key: string): boolean {
@@ -838,6 +839,11 @@ export default async function guestPortal(f: FastifyInstance) {
       room_label: roomLabel,
       routes: rows.map(row => ({ id: row.id, department: row.department, department_label: departmentLabel(row.department) })),
     };
+  });
+
+  f.get("/guest/check-in", async (req, reply) => {
+    const g = await requireGuest(req, reply); if (!g) return;
+    return stayLinkForEmail(g.propertyId, g.email);
   });
 
   f.get("/guest/requests", async (req, reply) => {

@@ -626,7 +626,10 @@ export default async function guestHistoryRoutes(f: FastifyInstance) {
         const bundle = await loadBundle(pool, a.propertyId, row.person_id, group.id, today);
         if (!bundle) continue;
         await logAccess(a, bundle.id, view);
-        cards.push(cardFrom(bundle, view));
+        const card = cardFrom(bundle, view) as ReturnType<typeof cardFrom> & { check_in?: string | null };
+        const check = (await pool.query(`select status from guest_check_in where group_id=$1 and person_id=$2`, [group.id, row.person_id])).rows[0];
+        if (check?.status && check.status !== "expected") card.check_in = String(check.status).replace(/_/g, " ");
+        cards.push(card);
       }
       items.push({ group_id: group.id, name: group.name, cards, prompts: view === "kitchen" ? [] : await promptsFor(pool, a.propertyId, group.id, null) });
     }

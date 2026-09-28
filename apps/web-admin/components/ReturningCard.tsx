@@ -24,6 +24,7 @@ export type ReturningCardData = {
   past_issues?: string[];
   pastIssues?: string[];
   notes?: { id?: string; body: string; author: string; at: string }[];
+  check_in?: string | null;
 };
 
 export type MatchPrompt = {
@@ -55,6 +56,7 @@ export function ReturningCards({ cards }: { cards: ReturningCardData[] }) {
           <article key={card.person_id ?? card.id ?? card.name} className="note" data-testid="returning-card" style={{ borderColor: severe ? "var(--brick)" : undefined, marginTop: 8 }}>
             <b>{card.name}</b>
             {card.returning || (stays ?? 0) > 0 ? <span> · returning guest</span> : <span> · first stay on record</span>}
+            {card.check_in ? <span> · {card.check_in}</span> : null}
             {stays != null && <div className="m">{stays} previous stay{stays === 1 ? "" : "s"}{last ? ` · last visit ${last}` : ""}</div>}
             {(card.email || card.phone) && <div className="m">{[card.email, card.phone].filter(Boolean).join(" · ")}</div>}
             {prefs && <div className="m">Preferences: {prefs}</div>}

@@ -15,6 +15,7 @@ type Card = {
   allergen_line?: string;
   this_stay?: string | null;
   diet?: string[];
+  check_in?: string | null;
 };
 
 type Arrival = { group_id: string; name: string; cards: Card[] };
@@ -39,6 +40,7 @@ export default function ReturningGuests({ surface }: { surface: "front" | "kitch
               {card.email || card.phone ? ` · ${[card.email, card.phone].filter(Boolean).join(" · ")}` : ""}
               {card.preferences ? ` · ${card.preferences}` : ""}
               {card.accessibility ? ` · access: ${card.accessibility}` : ""}
+              {card.check_in ? ` · ${card.check_in}` : ""}
             </div>
           )}
           {surface === "kitchen" && (

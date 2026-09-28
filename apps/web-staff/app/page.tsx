@@ -10,6 +10,7 @@ import ShiftSwapPocket from "@/components/ShiftSwapPocket";
 import BriefingPocket from "@/components/BriefingPocket";
 import OrgPocket from "@/components/OrgPocket";
 import SpendPocket from "@/components/SpendPocket";
+import ArrivalsPocket from "@/components/ArrivalsPocket";
 import ReturningGuests from "@/components/ReturningGuests";
 
 type Me = { name: string; email: string; role: string; role_name?: string; permissions?: string[]; property_name?: string | null; property_kicker?: string | null };
@@ -224,7 +225,7 @@ export default function Pocket() {
   const [secret, setSecret] = useState("");
   const [providers, setProviders] = useState<{ microsoft: boolean; dev: boolean } | null>(null);
   const [err, setErr] = useState<string | null>(null);
-  const [tab, setTab] = useState<"clock" | "leave" | "duty" | "sop" | "log" | "desk" | "night" | "manual" | "tasks" | "fault" | "stock" | "words" | "compliance" | "lost" | "suppliers" | "training" | "audit" | "swaps" | "brief" | "org" | "spend">("clock");
+  const [tab, setTab] = useState<"clock" | "leave" | "duty" | "sop" | "log" | "desk" | "night" | "manual" | "tasks" | "fault" | "stock" | "words" | "compliance" | "lost" | "suppliers" | "training" | "audit" | "swaps" | "brief" | "org" | "spend" | "arrivals">("clock");
   const openedHome = useRef(false);
   const [words, setWords] = useState<{ first_name: string; comment: string | null; created_at: string }[]>([]);
   const [desk, setDesk] = useState<{
@@ -373,6 +374,7 @@ export default function Pocket() {
           {(me.permissions ?? []).includes("training.self") && <button className={tab === "training" ? "on" : ""} onClick={() => setTab("training")}>My training</button>}
           {(me.permissions ?? []).includes("shift.swap") && <button className={tab === "swaps" ? "on" : ""} data-testid="pocket-swaps" onClick={() => setTab("swaps")}>Swaps</button>}
           {(me.permissions ?? []).includes("night.audit") && <button className={tab === "audit" ? "on" : ""} onClick={() => setTab("audit")}>Night audit</button>}
+          <button className={tab === "arrivals" ? "on" : ""} data-testid="pocket-arrivals-tab" onClick={() => setTab("arrivals")}>Arrivals</button>
           <button className={tab === "desk" ? "on" : ""} onClick={() => setTab("desk")}>Front desk</button>
           <button className={tab === "night" ? "on" : ""} onClick={() => setTab("night")}>Night</button>
           <button className={tab === "manual" ? "on" : ""} onClick={() => setTab("manual")}>Manual</button>
@@ -550,6 +552,7 @@ export default function Pocket() {
             {words.map((w, i) => <div className="row" key={i} style={{ display: "block" }}><b>{w.first_name}</b><div>{w.comment}</div></div>)}
           </div>
         )}
+        {tab === "arrivals" && <ArrivalsPocket />}
         {tab === "desk" && (
           <div>
             <ReturningGuests surface="front" />

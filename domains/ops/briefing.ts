@@ -20,6 +20,7 @@ export type BriefingStay = {
   vip: boolean;
   flagged: boolean;
   allergens: string[];
+  checkIn?: string;
 };
 
 export type BriefingShift = {
@@ -200,6 +201,7 @@ function stayBits(stay: BriefingStay, view: BriefingView): string {
   if (stay.severe) bits.push("severe allergen");
   if (view === "kitchen" && stay.allergens.length) bits.push(stay.allergens.join(", "));
   if (stay.access) bits.push("accessibility");
+  if (stay.checkIn) bits.push(stay.checkIn);
   return bits.join(" · ");
 }
 

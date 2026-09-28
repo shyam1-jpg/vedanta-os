@@ -11,6 +11,7 @@ import {
   type BriefingStay,
   type Mark,
 } from "../../../domains/ops/briefing.ts";
+import { checkInLabels } from "./journey.ts";
 
 const CACHE_MS = 20_000;
 const KEY = /^[\w:.-]{1,120}$/;
@@ -103,6 +104,14 @@ async function factsFor(propertyId: string, date: string): Promise<{ facts: Brie
     logAs: "briefing",
   });
   const facts = toBriefing(raw, date);
+  try {
+    const labels = await checkInLabels(propertyId, [...new Set(facts.stays.map(stay => stay.id.split(":")[0]))]);
+    for (const stay of facts.stays) {
+      if (stay.movement !== "arrival") continue;
+      const label = labels.get(stay.id.split(":")[0]);
+      if (label) stay.checkIn = label;
+    }
+  } catch { /* arrivals board is optional until its table exists */ }
   const generatedAt = new Date().toISOString();
   cache.set(key, { at: Date.now(), generatedAt, facts });
   return { facts, cached: false, generatedAt };
