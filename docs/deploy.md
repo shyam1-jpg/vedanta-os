@@ -85,7 +85,7 @@ Do not put real privileged staff emails back into public SQL seed files.
 
 ### Staff authentication
 
-Required for production staff access:
+For production staff access, configure Microsoft 365 or staff email codes. Microsoft requires:
 
 - `MS_TENANT_ID`
 - `MS_CLIENT_ID`
@@ -96,6 +96,8 @@ Keep:
 - `ALLOW_EMAIL_LOGIN=false`
 
 The API also refuses production staff email-only login at code level even if this flag is accidentally changed.
+
+Alternatively, set `SMTP_URL` and `MAIL_FROM` for one-time staff email codes. The code route only accepts an existing active staff membership; codes expire in 10 minutes, are one-use, and are never returned from the API. Without SMTP, this provider is not offered. Confirm the sender can deliver to the staff email domain before inviting staff to sign in. Keep `ALLOW_EMAIL_LOGIN=false`; the old address-only development login must not be used in production.
 
 ## 7. Microsoft 365 / Entra setup
 
