@@ -652,7 +652,7 @@ export default async function lostFoundRoutes(f: FastifyInstance) {
       );
       emailStatus = result.status;
     }
-    let smsStatus = phone ? await deliverSms(smsEnv(), { to: phone, body: message.sms }) : "disabled";
+    let smsStatus = phone ? await deliverSms(smsEnv(), { to: phone, body: message.sms, kind: "lost_found_guest", email: email || undefined, tenantId: a.tenantId, propertyId: a.propertyId }) : "disabled";
     const told = emailStatus === "LOGGED" || emailStatus === "SENT" || smsStatus === "sent";
     if (!told) return reply.code(502).send(problem(502, "delivery_failed", "The message could not be sent"));
     await pool.query(`update lost_item set notified_at=coalesce(notified_at, now()) where id=$1`, [row.id]);

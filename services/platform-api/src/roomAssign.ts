@@ -127,7 +127,7 @@ async function notifyAssignment(ctx: { tenantId: string; propertyId: string; use
   const staff = assignmentNote({ groupName: group.name, complete, who: "staff" });
   const organiser = assignmentNote({ groupName: group.name, complete, who: "organiser" });
   if (settings.staff_email.includes("@")) {
-    await sendEmail(ctx, { to: settings.staff_email, subject: staff.subject, body: staff.body, kind: "organiser_rooms", related_type: "booking_group", related_id: group.id });
+    await sendEmail(ctx, { to: settings.staff_email, subject: staff.subject, body: staff.body, kind: "organiser_rooms", audience: "staff", related_type: "booking_group", related_id: group.id });
   }
   if (group.contact_email?.includes("@")) {
     await sendEmail(ctx, { to: group.contact_email, subject: organiser.subject, body: organiser.body, kind: "organiser_rooms", related_type: "booking_group", related_id: group.id });
@@ -727,6 +727,7 @@ export default async function roomAssignRoutes(f: FastifyInstance) {
         subject: `Room change requested — ${g.name}`,
         body: `The organiser for ${g.name} asked for a room change after the list was locked.\n\n${note}`,
         kind: "organiser_rooms",
+        audience: "staff",
         related_type: "booking_group",
         related_id: groupId,
       });
@@ -750,6 +751,7 @@ export default async function roomAssignRoutes(f: FastifyInstance) {
         subject: `More rooms requested — ${g.name}`,
         body: `The organiser for ${g.name} has asked for more rooms.${note.note ? `\n\n${note.note}` : ""}`,
         kind: "organiser_rooms",
+        audience: "staff",
         related_type: "booking_group",
         related_id: groupId,
       });
@@ -1111,6 +1113,7 @@ export default async function roomAssignRoutes(f: FastifyInstance) {
         subject: `Room list access — ${issued.name}`,
         body: `Your access code for ${issued.name} is:\n\n${plain}\n\nIt expires on ${issued.expires_at.slice(0, 10)}. If you did not expect this, ignore this email.`,
         kind: "organiser_rooms",
+        urgent: true,
         related_type: "booking_group",
         related_id: req.params.id,
       });
@@ -1179,6 +1182,6 @@ export async function remindRoomLists(propertyId: string) {
   const note = roomDigestNote({ groups: digest });
   await sendEmail(
     { tenantId: property.tenant_id, propertyId, userId: null },
-    { to: settings.staff_email, subject: note.subject, body: note.body, kind: "organiser_rooms", related_type: "property", related_id: propertyId },
+    { to: settings.staff_email, subject: note.subject, body: note.body, kind: "organiser_rooms", audience: "staff", related_type: "property", related_id: propertyId },
   );
 }

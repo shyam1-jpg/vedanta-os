@@ -1,6 +1,7 @@
 "use client";
 import { useEffect, useState } from "react";
 import PhotoGallery from "@/components/PhotoGallery";
+import HearFromUs from "@/components/HearFromUs";
 const API = process.env.NEXT_PUBLIC_API_URL ?? "";
 const tok = {
   get: () => (typeof window === "undefined" ? null : sessionStorage.getItem("vedanta.guest.token")),
@@ -537,6 +538,7 @@ export default function Book() {
                 </div>
               )}
 
+              {me && <HearFromUs />}
               {me && (
                 <div className="card" style={{ marginTop: 18 }}>
                   <h2 style={{ fontSize: 20 }}>Need something from the house?</h2>

@@ -142,7 +142,7 @@ export async function sendDueFeedback(propertyId: string): Promise<number> {
             TWILIO_ACCOUNT_SID: process.env.TWILIO_ACCOUNT_SID,
             TWILIO_AUTH_TOKEN: process.env.TWILIO_AUTH_TOKEN,
             TWILIO_FROM: process.env.TWILIO_FROM,
-          }, { to: phone, body: text.body })
+          }, { to: phone, body: text.body, kind: "feedback_invite", email, tenantId: row.tenant_id, propertyId })
           : "failed";
       }
       await pool.query(

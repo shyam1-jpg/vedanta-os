@@ -31,6 +31,7 @@ export default function JourneyAdmin() {
   const [sends, setSends] = useState<Send[]>([]);
   const [err, setErr] = useState<string | null>(null);
   const [msg, setMsg] = useState<string | null>(null);
+  const [commsOn, setCommsOn] = useState(false);
 
   const load = async () => {
     const next = await api<Settings>("/v1/guest-journey/settings");
@@ -39,6 +40,7 @@ export default function JourneyAdmin() {
     setSubject(template?.subject ?? "");
     setBody(template?.body ?? "");
     setSends((await api<{ items: Send[] }>("/v1/guest-journey/sends")).items);
+    api<{ enabled: boolean }>("/v1/comms-prefs/settings").then(row => setCommsOn(!!row.enabled)).catch(() => {});
   };
 
   useEffect(() => { load().catch(e => setErr((e as Error).message)); }, []); // eslint-disable-line react-hooks/exhaustive-deps
@@ -66,7 +68,20 @@ export default function JourneyAdmin() {
       <div className="topbar"><div><h1>Guest journey</h1><p>Service messages go with the stay. A rebook note needs marketing consent.</p></div></div>
       {err && <div className="note" role="alert">{err}</div>}
       {msg && <p className="m">{msg}</p>}
-      <div className="panel" data-testid="journey-settings">
+      <div className="panel" data-testid="comms-prefs-flag">
+        <h2>How guests hear from us</h2>
+        <label className="assign-check">
+          <input type="checkbox" checked={commsOn} onChange={async e => {
+            try {
+              const saved = await api<{ enabled: boolean }>("/v1/comms-prefs/settings", { method: "PUT", body: JSON.stringify({ enabled: e.target.checked }) });
+              setCommsOn(saved.enabled);
+            } catch (error) { setErr((error as Error).message); }
+          }} />
+          Use communication preferences
+        </label>
+        <p className="m">Off until you tick it. Marketing stays opt-in. Every guest email then carries a link to change this, and every marketing email has a one-click unsubscribe.</p>
+      </div>
+      <div className="panel" style={{ marginTop: 14 }} data-testid="journey-settings">
         <h2>Sequences</h2>
         {([
           ["pre_arrival", "Pre-arrival"],

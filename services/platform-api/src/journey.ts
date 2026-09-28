@@ -398,7 +398,7 @@ export async function runGuestJourney(propertyId: string): Promise<number> {
               TWILIO_ACCOUNT_SID: process.env.TWILIO_ACCOUNT_SID,
               TWILIO_AUTH_TOKEN: process.env.TWILIO_AUTH_TOKEN,
               TWILIO_FROM: process.env.TWILIO_FROM,
-            }, { to: phone, body: text.body })
+            }, { to: phone, body: text.body, kind: `journey_${plan.kind}`, email, tenantId: house.tenantId, propertyId })
             : "failed";
         }
         await pool.query(

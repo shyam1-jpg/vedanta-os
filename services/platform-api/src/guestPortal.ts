@@ -16,7 +16,7 @@ import { groupPublicTypes, shapePublicRoom } from "../../../domains/guest/availa
 import { backupGuestEvent } from "./kiteline.ts";
 import { departmentLabel, ownGuestRequests, planGuestRequest } from "../../../domains/ops/board.ts";
 import { freeRooms } from "./groups.ts";
-import { sendEmail, emailConfigured } from "./email.ts";
+import { sendEmail } from "./email.ts";
 import { paymentsEnabled } from "./payments.ts";
 import {
   carryOntoBooking,
@@ -900,19 +900,12 @@ export default async function guestPortal(f: FastifyInstance) {
     const subject = `Verify your email — ${prop?.name ?? "The Vedanta Way"} My Stay`;
     const body = `Dear ${gs.display_name},\n\nPlease verify your email address by clicking the link below:\n\n${verifyUrl}\n\nThis link expires in 24 hours. If you did not register with us, please ignore this email.\n\nWith warm regards,\n${prop?.name ?? "The Vedanta Way"}\n${prop?.website ?? "https://www.thevedanta.org/"}`;
 
-    // Log to outbound_email
-    await pool.query(`INSERT INTO outbound_email (tenant_id, property_id, to_email, subject, body, kind, related_type, related_id, status) VALUES ($1,$2,$3,$4,$5,'guest_verify_email','guest_account',$6,$7)`,
-      [gs.tenant_id, gs.property_id, gs.email, subject, body, gs.id, emailConfigured() ? "QUEUED" : "LOGGED"]);
+    const sent = await sendEmail(
+      { tenantId: gs.tenant_id, propertyId: gs.property_id, userId: null },
+      { to: gs.email, subject, body, kind: "guest_verify_email", related_type: "guest_account", related_id: gs.id, urgent: true },
+    );
 
-    // Send if SMTP configured
-    if (emailConfigured()) {
-      const nodemailer = (await import("nodemailer")).default;
-      const transport = nodemailer.createTransport(process.env.SMTP_URL!);
-      const FROM = process.env.MAIL_FROM ?? `The Vedanta <bookings@thevedanta.org>`;
-      await transport.sendMail({ from: FROM, to: gs.email, subject, text: body }).catch(() => {});
-    }
-
-    return { ok: true, email_sent: emailConfigured() };
+    return { ok: true, email_sent: sent.status === "SENT" || sent.status === "LOGGED" };
   });
 
   // Verify email via token from magic link
