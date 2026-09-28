@@ -183,7 +183,14 @@ export default async function orgRoutes(f: FastifyInstance) {
       department: filter || null,
       departments: depts,
       tree,
-      people: seats.map(seat => ({ ...publicSeat(seat), reports: directReports(seats, seat.id) })),
+      people: seats.map(seat => ({
+        ...publicSeat(seat),
+        reports: directReports(seats, seat.id),
+        dotted_names: seat.dottedIds.map(id => {
+          const other = seats.find(item => item.id === id);
+          return other ? (other.holderName || other.title) : "Someone";
+        }),
+      })),
       history: history.map((row: { undone_at: string | null }) => ({ ...row, undone: !!row.undone_at })),
     };
   });

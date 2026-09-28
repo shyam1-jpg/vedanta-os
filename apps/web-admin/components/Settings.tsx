@@ -30,6 +30,7 @@ export default function Settings() {
   const [audit, setAudit] = useState<{ time: string; gm_email: string; auto_email: boolean } | null>(null);
   const [swaps, setSwaps] = useState<{ min_rest_hours: number; standard_week_hours: number; expire_hours_before: number } | null>(null);
   const [brief, setBrief] = useState<{ severe: number; cold: number; vip: number; compliance: number; staffing: number; heads: Record<string, number> } | null>(null);
+  const [orgSettings, setOrgSettings] = useState<{ allow_multiple_gm: boolean; staff_contact: "work" | "none" } | null>(null);
   const [stayCopy, setStayCopy] = useState<Record<string, string>>({});
   useEffect(() => {
     api<{ rules: { kitchen: RouteBox; restaurant: RouteBox; front: RouteBox }; receives: Record<string, string> }>("/v1/settings/booking-routing")
@@ -50,6 +51,7 @@ export default function Settings() {
     api<{ time: string; gm_email: string; auto_email: boolean }>("/v1/settings/night-audit").then(setAudit).catch(() => {});
     api<{ min_rest_hours: number; standard_week_hours: number; expire_hours_before: number }>("/v1/settings/shift-swap").then(setSwaps).catch(() => {});
     api<{ severe: number; cold: number; vip: number; compliance: number; staffing: number; heads: Record<string, number> }>("/v1/settings/briefing").then(setBrief).catch(() => {});
+    api<{ allow_multiple_gm: boolean; staff_contact: "work" | "none" }>("/v1/org/settings").then(setOrgSettings).catch(() => {});
   }, []);
   const load = () => { api<{ items: Pkg[] }>("/v1/packages").then(r => setPkgs(r.items)); if (can("config.manage")) api<{ items: Key[] }>("/v1/integrations/keys").then(r => setKeys(r.items)).catch(() => {}); };
   useEffect(load, []); // eslint-disable-line react-hooks/exhaustive-deps
@@ -310,6 +312,22 @@ export default function Settings() {
           <button className="btn primary" style={{ marginTop: 12 }} onClick={() => run(async () => {
             setBrief(await api("/v1/settings/briefing", { method: "PUT", body: JSON.stringify(brief) }));
           }, "Briefing rules saved")}>Save briefing rules</button>
+        </div>
+      )}
+      {orgSettings && (
+        <div className="panel" style={{ marginTop: 14 }}>
+          <h3>Organisation</h3>
+          <p className="m" style={{ color: "var(--ink-2)" }}>One general manager sits at the top unless you allow more than one. Staff see a work email and work phone, or nothing. Managers and the general manager still see the personal phone.</p>
+          <label style={{ display: "block", marginTop: 8 }}><input type="checkbox" checked={orgSettings.allow_multiple_gm} onChange={e => setOrgSettings({ ...orgSettings, allow_multiple_gm: e.target.checked })} /> Allow more than one general manager</label>
+          <label style={{ display: "block", marginTop: 8 }}>What staff can see
+            <select aria-label="Staff contact" value={orgSettings.staff_contact} onChange={e => setOrgSettings({ ...orgSettings, staff_contact: e.target.value === "none" ? "none" : "work" })}>
+              <option value="work">Work email and work phone</option>
+              <option value="none">No contact details</option>
+            </select>
+          </label>
+          <button className="btn primary" style={{ marginTop: 12 }} onClick={() => run(async () => {
+            setOrgSettings(await api("/v1/org/settings", { method: "PUT", body: JSON.stringify(orgSettings) }));
+          }, "Organisation settings saved")}>Save organisation settings</button>
         </div>
       )}
       {retain && (
