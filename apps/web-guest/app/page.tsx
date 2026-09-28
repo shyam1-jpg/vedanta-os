@@ -20,7 +20,7 @@ type Room = { number: string; section: string | null };
 type RoomType = { code: string; name: string; sleeps: number; accessible: boolean; beds: string; features: string[]; total: number; available: number };
 type Avail = { arrival: string; departure: string; nights: number; free_rooms: number; types: RoomType[]; rooms: { number: string; section: string | null; type_name: string; sleeps: number; beds: string; feature_labels: string[]; accessible: boolean }[] };
 type Day = { date: string; free_rooms: number };
-type Mine = { id: string; people: number; arrival: string; departure: string; status: string; programme_name: string | null; notes: string | null; rooms: Room[] };
+type Mine = { id: string; people: number; arrival: string; departure: string; status: string; programme_name: string | null; notes: string | null; dietary_notes: string | null; accessibility_notes: string | null; arrival_time_note: string | null; travel_notes: string | null; rooms: Room[] };
 type Me = { name: string; email: string };
 type GuestAsk = { id: string; room_label: string | null; department_label: string; request_text: string; status: string };
 type Step = "browse" | "room" | "details" | "needs" | "pay" | "done";
@@ -47,6 +47,37 @@ const GALLERY: { file: string; title: string; caption: string; alt: string; wide
   { file: "lounge.jpg", title: "Guest lounge", caption: "The guest lounge.", alt: "The guest lounge", },
   { file: "lake.jpg", title: "The grounds", caption: "A lake in the grounds.", alt: "A lake in the grounds", },
 ];
+
+function StayNeedsEditor({ stay, onSaved }: { stay: Mine; onSaved: () => Promise<void> }) {
+  const [editing, setEditing] = useState(false);
+  const [busy, setBusy] = useState(false);
+  const [message, setMessage] = useState("");
+  const [needs, setNeeds] = useState({
+    dietary_notes: stay.dietary_notes ?? "", accessibility_notes: stay.accessibility_notes ?? "",
+    arrival_time_note: stay.arrival_time_note ?? "", travel_notes: stay.travel_notes ?? "",
+  });
+  const set = (key: keyof typeof needs, value: string) => setNeeds(s => ({ ...s, [key]: value }));
+  if (stay.status === "DECLINED" || stay.departure < new Date().toISOString().slice(0, 10)) return null;
+  return <div className="stay-needs">
+    <button className="btn sec" type="button" onClick={() => { setEditing(!editing); setMessage(""); }}>{editing ? "Close details" : "Update diet, access & arrival"}</button>
+    {editing && <div>
+      <p className="m">Please describe allergies clearly. The house will review changes with the kitchen; a request is not an allergy clearance.</p>
+      <label>Diet and allergies<textarea maxLength={2000} rows={2} value={needs.dietary_notes} onChange={e => set("dietary_notes", e.target.value)} /></label>
+      <label>Accessibility needs<textarea maxLength={2000} rows={2} value={needs.accessibility_notes} onChange={e => set("accessibility_notes", e.target.value)} /></label>
+      <label>Expected arrival time<input maxLength={2000} value={needs.arrival_time_note} onChange={e => set("arrival_time_note", e.target.value)} /></label>
+      <label>Travel or pickup<textarea maxLength={2000} rows={2} value={needs.travel_notes} onChange={e => set("travel_notes", e.target.value)} /></label>
+      <button className="btn" disabled={busy} onClick={async () => {
+        setBusy(true); setMessage("");
+        try {
+          await api(`/guest/enquiries/${stay.id}/needs`, { method: "PATCH", body: JSON.stringify(needs) });
+          await onSaved(); setMessage("Your stay details have been saved for the house."); setEditing(false);
+        } catch (e) { setMessage((e as Error).message); }
+        finally { setBusy(false); }
+      }}>{busy ? "Saving…" : "Save stay details"}</button>
+    </div>}
+    {message && <p className="note" role="status">{message}</p>}
+  </div>;
+}
 
 export default function Book() {
   const [prop, setProp] = useState<Prop | null>(null);
@@ -234,6 +265,16 @@ export default function Book() {
             <p className="goshala">A goshala on the grounds is home to two cows, Hari and Lakshmi, for care and seva.</p>
           </section>
 
+          <section className="experience" aria-label="Dining experience">
+            <img src={photo("guest-dining-concept.webp")} alt="Illustration of guests enjoying a vegetarian buffet at a retreat" loading="lazy" />
+            <div className="experience-copy">
+              <p className="section-kicker">At the table</p>
+              <h2>Food made for your retreat</h2>
+              <p>Enjoy vegetarian buffet meals together. Tell the house about vegan, Jain, gluten-free and allergy needs when you enquire, then update your details in My Stay.</p>
+              <small>Illustrative image · Guest experience concept</small>
+            </div>
+          </section>
+
           {auth !== "hidden" && !me && (
             <div className="card" style={{ maxWidth: 480, marginBottom: 28 }}>
               <h2 style={{ fontSize: 26 }}>{auth === "recover" ? "Access code help" : auth === "register" ? "Open My Stay" : "Sign in to My Stay"}</h2>
@@ -393,6 +434,7 @@ export default function Book() {
                       {x.rooms?.length
                         ? <div className="rooms">{x.rooms.map(r => <span key={r.number} className="room">{r.number}{r.section ? ` · ${r.section}` : ""}</span>)}</div>
                         : <p className="m" style={{ margin: "8px 0 0" }}>Rooms appear when the house assigns them.</p>}
+                      <StayNeedsEditor stay={x} onSaved={async () => setMine((await api<{ items: Mine[] }>("/guest/enquiries")).items)} />
                     </div>
                   ))}
                 </div>
