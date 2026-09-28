@@ -24,6 +24,7 @@ export default function Settings() {
   const [stay, setStay] = useState<{ delay_label: string; delay_hours: number | null; retention_days: number; open_maintenance: boolean; emails: { kitchen: string; front: string; housekeeping: string; manager: string } } | null>(null);
   const [comply, setComply] = useState<{ leads: number[]; manager: string } | null>(null);
   const [lostHold, setLostHold] = useState<{ hold_days: number; manager: string } | null>(null);
+  const [train, setTrain] = useState<{ leads: number[]; manager: string } | null>(null);
   const [stayCopy, setStayCopy] = useState<Record<string, string>>({});
   useEffect(() => {
     api<{ rules: { kitchen: RouteBox; restaurant: RouteBox; front: RouteBox }; receives: Record<string, string> }>("/v1/settings/booking-routing")
@@ -38,6 +39,7 @@ export default function Settings() {
       .then(r => { setStay(r); setStayCopy(r.receives); }).catch(() => {});
     api<{ leads: number[]; manager: string }>("/v1/settings/compliance").then(setComply).catch(() => {});
     api<{ hold_days: number; manager: string }>("/v1/settings/lost-found").then(setLostHold).catch(() => {});
+    api<{ leads: number[]; manager: string }>("/v1/settings/training").then(setTrain).catch(() => {});
   }, []);
   const load = () => { api<{ items: Pkg[] }>("/v1/packages").then(r => setPkgs(r.items)); if (can("config.manage")) api<{ items: Key[] }>("/v1/integrations/keys").then(r => setKeys(r.items)).catch(() => {}); };
   useEffect(load, []); // eslint-disable-line react-hooks/exhaustive-deps
@@ -199,6 +201,21 @@ export default function Settings() {
           <button className="btn primary" style={{ marginTop: 12 }} onClick={() => run(async () => {
             setLostHold(await api("/v1/settings/lost-found", { method: "PUT", body: JSON.stringify(lostHold) }));
           }, "Lost property settings saved")}>Save lost property settings</button>
+        </div>
+      )}
+      {train && (
+        <div className="panel" style={{ marginTop: 14 }}>
+          <h3>Training expiry</h3>
+          <p className="m" style={{ color: "var(--ink-2)" }}>The staff member and their manager are told before a certificate expires, and once when it has expired. Leave the manager blank to skip that copy. Do not commit a real address. If SMTP is not set, the note is logged.</p>
+          <label style={{ display: "block", marginTop: 8 }}>Days before, separated by commas
+            <input value={train.leads.join(", ")} onChange={e => setTrain({ ...train, leads: e.target.value.split(",").map(n => Number(n.trim())).filter(n => Number.isFinite(n)) })} />
+          </label>
+          <label style={{ display: "block", marginTop: 8 }}>Manager
+            <input placeholder="team@example.invalid" value={train.manager} onChange={e => setTrain({ ...train, manager: e.target.value })} />
+          </label>
+          <button className="btn primary" style={{ marginTop: 12 }} onClick={() => run(async () => {
+            setTrain(await api("/v1/settings/training", { method: "PUT", body: JSON.stringify(train) }));
+          }, "Training reminders saved")}>Save training reminders</button>
         </div>
       )}
       {toast && <div className="toast">{toast}</div>}

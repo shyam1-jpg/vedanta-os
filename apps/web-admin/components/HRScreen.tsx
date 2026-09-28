@@ -3,7 +3,7 @@ import { useEffect, useState } from "react";
 import { api } from "@/lib/api";
 import { useStore } from "@/lib/store";
 
-type Shift = { id: string; shift_date: string; start_time: string; end_time: string; department: string; status: string; display_name: string };
+type Shift = { id: string; shift_date: string; start_time: string; end_time: string; department: string; status: string; display_name: string; unsupervised_cleared?: boolean };
 type ClockStatus = { clocked_in: boolean; record: { id: string; clocked_in_at: string } | null };
 type Absence = { id: string; kind: string; from_date: string; to_date: string; days: number | null; status: string; display_name: string };
 type Training = { id: string; title: string; kind: string; completed_at: string | null; expires_at: string | null; cert_status: string; display_name?: string };
@@ -78,7 +78,7 @@ export default function HRScreen() {
               <div key={s.id} style={{ display: "flex", gap: 16, alignItems: "center", padding: "8px 0", borderBottom: "1px solid var(--rule)" }}>
                 <div style={{ width: 120, fontSize: 13 }}>{s.start_time.slice(0, 5)} – {s.end_time.slice(0, 5)}</div>
                 <span className={`chip ${s.status === "confirmed" ? "CONFIRMED" : "ENQUIRY"}`} style={{ fontSize: 11, width: 80, textAlign: "center" }}>{s.department}</span>
-                <div style={{ flex: 1 }}><b style={{ fontSize: 14 }}>{s.display_name}</b></div>
+                <div style={{ flex: 1 }}><b style={{ fontSize: 14 }}>{s.display_name}</b>{s.unsupervised_cleared === false && <div className="m">Not cleared for unsupervised work</div>}</div>
                 <span className="m" style={{ color: "var(--ink-2)", fontSize: 12 }}>{s.status}</span>
               </div>
             ))}

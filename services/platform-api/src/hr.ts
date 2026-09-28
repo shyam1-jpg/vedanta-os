@@ -5,6 +5,7 @@ import type { FastifyInstance } from "fastify";
 import { pool, tx } from "./db.ts";
 import { requireActor, allow, problem } from "./auth.ts";
 import { openText, sealText } from "./fieldCrypto.ts";
+import { clearanceForUsers } from "./training.ts";
 
 export default async function hr(f: FastifyInstance) {
 
@@ -14,7 +15,7 @@ export default async function hr(f: FastifyInstance) {
     const a = await requireActor(req, reply); if (!a) return;
     const { from, to, department, user_id } = req.query ?? {};
     const r = await pool.query(`
-      SELECT rs.id, rs.shift_date::text, rs.start_time::text, rs.end_time::text,
+      SELECT rs.id, rs.user_id, rs.shift_date::text, rs.start_time::text, rs.end_time::text,
              rs.department, rs.status, rs.notes, rs.break_minutes,
              u.display_name, u.email
       FROM rota_shift rs JOIN app_user u ON u.id = rs.user_id
@@ -25,7 +26,9 @@ export default async function hr(f: FastifyInstance) {
         AND ($5::uuid IS NULL OR rs.user_id = $5::uuid)
       ORDER BY rs.shift_date, rs.start_time, u.display_name`,
       [a.propertyId, from ?? null, to ?? null, department ?? null, user_id ?? null]);
-    return { items: r.rows };
+    const ids = [...new Set(r.rows.map((row: { user_id: string }) => row.user_id))];
+    const cleared = await clearanceForUsers(a.propertyId, ids);
+    return { items: r.rows.map((row: { user_id: string }) => ({ ...row, unsupervised_cleared: cleared.get(row.user_id) ?? false })) };
   });
 
   f.post("/v1/rota", async (req: any, reply) => {
@@ -37,7 +40,9 @@ export default async function hr(f: FastifyInstance) {
       INSERT INTO rota_shift (tenant_id, property_id, user_id, department, shift_date, start_time, end_time, break_minutes, notes, created_by)
       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10) RETURNING id`,
       [a.tenantId, a.propertyId, user_id, department, shift_date, start_time, end_time, break_minutes ?? 30, notes ?? null, a.userId])).rows[0];
-    return { id: r.id };
+    const cleared = await clearanceForUsers(a.propertyId, [user_id]);
+    const warning = cleared.get(user_id) ? null : "This person is not cleared for unsupervised work.";
+    return { id: r.id, warning };
   });
 
   f.delete<{ Params: { id: string } }>("/v1/rota/:id", async (req, reply) => {

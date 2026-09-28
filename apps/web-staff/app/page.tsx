@@ -4,6 +4,7 @@ import { API, api, shrinkPhoto, tok } from "@/lib/client";
 import CompliancePocket from "@/components/CompliancePocket";
 import LostPocket from "@/components/LostPocket";
 import SupplierPocket from "@/components/SupplierPocket";
+import MyTraining from "@/components/MyTraining";
 
 type Me = { name: string; email: string; role: string; role_name?: string; permissions?: string[]; property_name?: string | null; property_kicker?: string | null };
 type Prop = { name: string; kicker: string };
@@ -217,7 +218,7 @@ export default function Pocket() {
   const [secret, setSecret] = useState("");
   const [providers, setProviders] = useState<{ microsoft: boolean; dev: boolean } | null>(null);
   const [err, setErr] = useState<string | null>(null);
-  const [tab, setTab] = useState<"clock" | "leave" | "duty" | "sop" | "log" | "desk" | "night" | "manual" | "tasks" | "fault" | "stock" | "words" | "compliance" | "lost" | "suppliers">("clock");
+  const [tab, setTab] = useState<"clock" | "leave" | "duty" | "sop" | "log" | "desk" | "night" | "manual" | "tasks" | "fault" | "stock" | "words" | "compliance" | "lost" | "suppliers" | "training">("clock");
   const [words, setWords] = useState<{ first_name: string; comment: string | null; created_at: string }[]>([]);
   const [desk, setDesk] = useState<{
     today: { weekday: string; title: string; method: string; ingredients: { name: string; qty: string }[] };
@@ -352,6 +353,7 @@ export default function Pocket() {
           {(me.permissions ?? []).includes("compliance.calendar") && <button className={tab === "compliance" ? "on" : ""} onClick={() => setTab("compliance")}>Compliance</button>}
           {(me.permissions ?? []).includes("lostfound.log") && <button className={tab === "lost" ? "on" : ""} onClick={() => setTab("lost")}>Lost & found</button>}
           {(me.permissions ?? []).includes("supplier.register") && <button className={tab === "suppliers" ? "on" : ""} onClick={() => setTab("suppliers")}>Suppliers</button>}
+          {(me.permissions ?? []).includes("training.self") && <button className={tab === "training" ? "on" : ""} onClick={() => setTab("training")}>My training</button>}
           <button className={tab === "desk" ? "on" : ""} onClick={() => setTab("desk")}>Front desk</button>
           <button className={tab === "night" ? "on" : ""} onClick={() => setTab("night")}>Night</button>
           <button className={tab === "manual" ? "on" : ""} onClick={() => setTab("manual")}>Manual</button>
@@ -510,6 +512,7 @@ export default function Pocket() {
         {tab === "compliance" && (me.permissions ?? []).includes("compliance.calendar") && <CompliancePocket onError={setErr} />}
         {tab === "lost" && (me.permissions ?? []).includes("lostfound.log") && <LostPocket onError={setErr} />}
         {tab === "suppliers" && (me.permissions ?? []).includes("supplier.register") && <SupplierPocket onError={setErr} />}
+        {tab === "training" && (me.permissions ?? []).includes("training.self") && <MyTraining onError={setErr} />}
         {tab === "words" && (
           <div className="card">
             <h2>Kind words</h2>
