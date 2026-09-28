@@ -22,6 +22,7 @@ export default function Pocket() {
   const [me, setMe] = useState<Me | null>(null);
   const [prop, setProp] = useState<Prop>({ name: "The Vedanta Way", kicker: "Retreat Center" });
   const [email, setEmail] = useState("");
+  const [providers, setProviders] = useState<{ microsoft: boolean; email: boolean; dev: boolean } | null>(null);
   const [err, setErr] = useState<string | null>(null);
   const [tab, setTab] = useState<"clock" | "leave" | "duty" | "sop" | "log" | "desk" | "night" | "manual" | "tasks">("clock");
   const [desk, setDesk] = useState<{
@@ -66,6 +67,16 @@ export default function Pocket() {
   };
   useEffect(() => {
     api<Prop>("/guest/property").then(p => setProp({ name: p.name, kicker: p.kicker })).catch(() => {});
+    api<{ microsoft: boolean; email: boolean; dev: boolean }>("/auth/providers").then(setProviders).catch(() => setErr("Cannot reach staff sign-in right now."));
+    const returned = window.location.hash.match(/token=([^&]+)/);
+    if (returned) {
+      history.replaceState(null, "", window.location.pathname);
+      tok.set(returned[1]);
+      load().catch(() => { tok.set(null); setErr("Sign-in did not complete. Try again."); });
+      return;
+    }
+    const signInError = new URLSearchParams(window.location.search).get("error");
+    if (signInError) setErr(signInError);
     if (tok.get()) load().catch(() => tok.set(null));
   }, []);
 
@@ -98,10 +109,15 @@ export default function Pocket() {
       <div className="hero"><div className="kicker">{prop.kicker}</div><h1>{prop.name}</h1><p>Luxury retreat centre</p></div>
       <div className="wrap">
         <div className="card">
-          <label>Staff email</label>
-          <p className="m">There is no password.</p>
-          <input value={email} onChange={e => setEmail(e.target.value)} placeholder="you@thevedanta.org" />
-          <button className="btn" onClick={enter}>Enter the pocket</button>
+          <h2>Staff pocket</h2>
+          <p className="m">Your shifts, tasks and house handovers in one place.</p>
+          {providers?.microsoft && <a className="btn ms-signin" href={`${API}/auth/microsoft?surface=staff`}>Sign in with Microsoft 365</a>}
+          {providers?.email && <>
+            <label>Staff email</label>
+            <input type="email" autoComplete="email" value={email} onChange={e => setEmail(e.target.value)} placeholder="you@thevedanta.org" />
+            <button className="btn" disabled={!email} onClick={enter}>Enter the pocket</button>
+          </>}
+          {providers && !providers.microsoft && !providers.email && <p className="note">Staff sign-in has not been configured. Please contact the house administrator.</p>}
           {err && <div className="note">{err}</div>}
         </div>
       </div>
