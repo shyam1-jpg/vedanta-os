@@ -28,6 +28,7 @@ import {
   wantsMaintenance,
   type FeedbackSettings,
 } from "../../../domains/guest/feedback.ts";
+import { ownsFeedbackLetter, parseJourneySettings } from "../../../domains/guest/journey.ts";
 
 const LINK_DAYS = 21;
 
@@ -79,6 +80,8 @@ function publicWeb(): string {
 }
 
 export async function sendDueFeedback(propertyId: string): Promise<number> {
+  const owned = (await pool.query(`select settings from property where id=$1`, [propertyId])).rows[0];
+  if (ownsFeedbackLetter(parseJourneySettings(owned?.settings?.journey))) return 0;
   const settings = await loadSettings(propertyId);
   const prop = (await pool.query(`select name from property where id=$1`, [propertyId])).rows[0];
   const propertyName = prop?.name ?? "The Vedanta";
