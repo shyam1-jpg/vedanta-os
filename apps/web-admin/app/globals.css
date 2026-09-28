@@ -359,3 +359,7 @@ td.mark-dep { box-shadow: inset 3px 0 0 var(--marigold); }
   .look-act { grid-template-columns: 1fr; }
   .audit-actions .btn { flex: 1 1 140px; }
 }
+.swap-form { display: flex; flex-wrap: wrap; gap: 12px; align-items: end; margin: 8px 0; }
+.swap-form label { display: block; min-width: 140px; }
+.swap-hard { color: var(--brick); }
+.swap-warn { color: #8a5a12; }

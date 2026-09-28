@@ -30,3 +30,5 @@ input[type=checkbox] { width: auto; flex: none; margin: 0 10px 0 0; }
 .audit-dot.red { background: #8A3B32; }
 .audit-dot.amber { background: #C4A574; }
 .audit-dot.green { background: #4F6758; }
+.swap-hard { color: #8A3B32; }
+.swap-warn { color: #8a5a12; }

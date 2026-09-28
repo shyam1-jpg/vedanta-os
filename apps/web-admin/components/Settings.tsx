@@ -28,6 +28,7 @@ export default function Settings() {
   const [retain, setRetain] = useState<{ allergen_days_after_departure: number; feedback_text_days: number; staff_note_days: number; profile_inactive_months: number } | null>(null);
   const [deposit, setDeposit] = useState<{ amount_gbp: number; policy: string } | null>(null);
   const [audit, setAudit] = useState<{ time: string; gm_email: string; auto_email: boolean } | null>(null);
+  const [swaps, setSwaps] = useState<{ min_rest_hours: number; standard_week_hours: number; expire_hours_before: number } | null>(null);
   const [stayCopy, setStayCopy] = useState<Record<string, string>>({});
   useEffect(() => {
     api<{ rules: { kitchen: RouteBox; restaurant: RouteBox; front: RouteBox }; receives: Record<string, string> }>("/v1/settings/booking-routing")
@@ -46,6 +47,7 @@ export default function Settings() {
     api<{ allergen_days_after_departure: number; feedback_text_days: number; staff_note_days: number; profile_inactive_months: number }>("/v1/settings/guest-retention").then(setRetain).catch(() => {});
     api<{ amount_gbp: number; policy: string }>("/v1/settings/deposit").then(setDeposit).catch(() => {});
     api<{ time: string; gm_email: string; auto_email: boolean }>("/v1/settings/night-audit").then(setAudit).catch(() => {});
+    api<{ min_rest_hours: number; standard_week_hours: number; expire_hours_before: number }>("/v1/settings/shift-swap").then(setSwaps).catch(() => {});
   }, []);
   const load = () => { api<{ items: Pkg[] }>("/v1/packages").then(r => setPkgs(r.items)); if (can("config.manage")) api<{ items: Key[] }>("/v1/integrations/keys").then(r => setKeys(r.items)).catch(() => {}); };
   useEffect(load, []); // eslint-disable-line react-hooks/exhaustive-deps
@@ -255,6 +257,24 @@ export default function Settings() {
           <button className="btn primary" style={{ marginTop: 12 }} onClick={() => run(async () => {
             setAudit(await api("/v1/settings/night-audit", { method: "PUT", body: JSON.stringify(audit) }));
           }, "Night audit saved")}>Save night audit</button>
+        </div>
+      )}
+      {swaps && (
+        <div className="panel" style={{ marginTop: 14 }}>
+          <h3>Shift swaps</h3>
+          <p className="m" style={{ color: "var(--ink-2)" }}>Rest is the gap between one shift ending and the next starting. Hours over the standard week are lieu. A personal cap, set on Shift swaps, is a hard block. Unanswered requests expire when the shift starts, or this many hours before it. Person-specific rules stay in the house record, not in the public code.</p>
+          <label style={{ display: "block", marginTop: 8 }}>Minimum rest, hours
+            <input type="number" min={0} max={24} aria-label="Minimum rest hours" value={swaps.min_rest_hours} onChange={e => setSwaps({ ...swaps, min_rest_hours: Number(e.target.value) })} />
+          </label>
+          <label style={{ display: "block", marginTop: 8 }}>Standard week, hours
+            <input type="number" min={1} max={80} aria-label="Standard week hours" value={swaps.standard_week_hours} onChange={e => setSwaps({ ...swaps, standard_week_hours: Number(e.target.value) })} />
+          </label>
+          <label style={{ display: "block", marginTop: 8 }}>Expire this many hours before the shift
+            <input type="number" min={0} max={168} aria-label="Expire hours before shift" value={swaps.expire_hours_before} onChange={e => setSwaps({ ...swaps, expire_hours_before: Number(e.target.value) })} />
+          </label>
+          <button className="btn primary" style={{ marginTop: 12 }} onClick={() => run(async () => {
+            setSwaps(await api("/v1/settings/shift-swap", { method: "PUT", body: JSON.stringify(swaps) }));
+          }, "Shift swap settings saved")}>Save shift swaps</button>
         </div>
       )}
       {retain && (
