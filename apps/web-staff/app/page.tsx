@@ -110,7 +110,7 @@ export default function Pocket() {
 
   return (
     <>
-      <div className="hero"><div className="kicker">{me.role_name ?? me.role.replace(/_/g, " ")}</div><h1>{me.name}</h1></div>
+      <div className="hero"><div className="kicker">{me.role_name ?? me.role.replace(/_/g, " ")}</div><h1>{me.name}</h1><div className="hero-status"><span>{clock?.last === "IN" ? "On shift" : "Off shift"}</span><span>{tasks?.counts.open ?? 0} open tasks</span><span>{duty.length} shifts on your board</span></div></div>
       <div className="wrap">
         <div className="tabs">
           <button className={tab === "clock" ? "on" : ""} onClick={() => setTab("clock")}>Clock</button>
