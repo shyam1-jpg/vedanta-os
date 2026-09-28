@@ -70,17 +70,18 @@ export default function Spend() {
   const [budgetAmount, setBudgetAmount] = useState("");
   const [toast, setToast] = useState<string | null>(null);
   const [receipt, setReceipt] = useState<string | null>(null);
+  const [stamp, setStamp] = useState(0);
   const say = (text: string) => { setToast(text); setTimeout(() => setToast(null), 3500); };
 
   const load = (next = month) => {
     const q = next ? `?month=${encodeURIComponent(next)}` : "";
-    api<Board>(`/v1/spend${q}`).then(data => { setBoard(data); if (!month) setMonth(data.month); }).catch(e => say(e instanceof ApiError ? e.problem.detail : "Could not load spend"));
+    api<Board>(`/v1/spend${q}`).then(data => { setBoard(data); setStamp(value => value + 1); if (!month) setMonth(data.month); }).catch(e => say(e instanceof ApiError ? e.problem.detail : "Could not load spend"));
   };
   useEffect(() => { load(); }, []); // eslint-disable-line
   useEffect(() => {
     if (!month) return;
     api<Report>(`/v1/spend/report?month=${encodeURIComponent(month)}&trend=${trend}`).then(setReport).catch(() => {});
-  }, [month, trend]);
+  }, [month, trend, stamp]);
   useEffect(() => {
     if (!board?.can_set) return;
     api<SpendSettings>("/v1/spend/settings").then(setSettings).catch(() => {});
