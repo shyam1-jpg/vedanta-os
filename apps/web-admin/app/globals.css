@@ -299,6 +299,21 @@ td.mark-dep { box-shadow: inset 3px 0 0 var(--marigold); }
 .house-masthead .btn { background: rgba(255,255,255,.11); border-color: rgba(255,255,255,.35); color: var(--ivory); border-radius: 999px; }
 .house-masthead .btn.primary { background: var(--gold); border-color: var(--gold); color: var(--forest); }
 .house-masthead .btn:hover { background: rgba(255,255,255,.2); }
+.service-hub { margin-bottom: 22px; }
+.service-hub-heading { display: flex; align-items: flex-end; justify-content: space-between; gap: 16px; margin-bottom: 14px; }
+.service-hub-heading .k { color: #826138; font-size: 11px; letter-spacing: .17em; }
+.service-hub-heading h2 { font-size: clamp(27px, 3vw, 35px); line-height: 1.1; }
+.service-hub-heading p { max-width: 30ch; color: var(--ink-2); margin: 0; }
+.service-hub-grid { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 10px; }
+.service-hub-card { display: flex; flex-direction: column; min-height: 205px; padding: 22px; background: var(--paper); border: 1px solid var(--line); border-top: 3px solid var(--gold); transition: transform .2s, box-shadow .2s; }
+.service-hub-card:hover { transform: translateY(-2px); box-shadow: 0 12px 26px rgba(31,58,50,.08); }
+.service-hub-index { color: #796447; font-size: 11px; letter-spacing: .12em; font-weight: 600; }
+.service-hub-card h3 { font-size: 25px; line-height: 1.05; margin: 16px 0 7px; color: var(--forest); }
+.service-hub-card p { margin: 0 0 18px; color: var(--ink-2); font-size: 14px; line-height: 1.45; }
+.service-hub-card a { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin-top: auto; color: var(--forest); border-top: 1px solid var(--line); padding-top: 12px; font-weight: 600; }
+.service-hub-card a:hover { color: #8a6839; }
+@media (max-width: 1200px) { .service-hub-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+@media (max-width: 620px) { .service-hub-heading { display: block; } .service-hub-heading p { margin-top: 8px; } .service-hub-grid { grid-template-columns: 1fr; } .service-hub-card { min-height: 0; } }
 .house-panel .k { font-size: 11px; letter-spacing: 0.16em; text-transform: uppercase; color: var(--gold); margin-bottom: 12px; }
 .house-list { list-style: none; padding: 0; margin: 0; }
 .house-list li { display: flex; justify-content: space-between; gap: 12px; padding: 10px 0; border-bottom: 1px solid var(--line); }
