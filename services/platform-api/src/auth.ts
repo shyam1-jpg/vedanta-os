@@ -60,7 +60,7 @@ export function problem(status: number, code: string, detail: string, extra: obj
   return { status, code, title: code.replace(/_/g, " "), detail, ...extra };
 }
 
-async function loadActor(where: string, param: string): Promise<Actor | null> {
+export async function loadActor(where: string, param: string): Promise<Actor | null> {
   const { rows } = await pool.query(`
     select u.id user_id, u.tenant_id, u.email, u.display_name, m.property_id, r.code role, r.name role_name, d.code department,
            p.name property_name,

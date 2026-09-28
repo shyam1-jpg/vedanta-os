@@ -79,7 +79,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     user, ready, rooms, groups, occupancy, loading, error, reload, loadOccupancy,
     can: (p) => !!user?.permissions.includes(p),
     signIn: async (email) => { const r = await api<{ token: string; user: User }>("/auth/login", { method: "POST", body: JSON.stringify({ email }) }); token.set(r.token); setUser(r.user); },
-    signInWithToken: async (t) => { token.set(t); const u = await api<User>("/me"); setUser(u); },
+    signInWithToken: async (t) => { token.set(t); try { const u = await api<User>("/me"); setUser(u); } catch (e) { token.set(null); throw e; } },
     signOut: async () => {
       try { if (token.get()) await api("/auth/logout", { method: "POST" }); } catch { /* local cleanup still happens */ }
       token.set(null); setUser(null); setGroups([]); setOcc([]);
