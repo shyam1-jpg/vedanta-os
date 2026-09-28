@@ -1,0 +1,13 @@
+{
+  "note": "Copy to config/rota-constraints.json (gitignored) for the house. Keep real names out of git. These rows are examples only.",
+  "people": [
+    {
+      "email": "porter@example.invalid",
+      "earliest_start": "09:00",
+      "weekly_hours_cap": 20,
+      "monthly_hours_cap": 80,
+      "unavailable": ["2026-12-25"],
+      "skills": ["KITCHEN_PORTER"]
+    }
+  ]
+}
