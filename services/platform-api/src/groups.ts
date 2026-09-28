@@ -2,6 +2,7 @@ import type { FastifyInstance } from "fastify";
 import { pool, tx, type Q } from "./db.ts";
 import { requireActor, allow, problem, type Actor } from "./auth.ts";
 import { buildProgrammeSheet } from "../../../domains/retreat/sheet.ts";
+import { bookingScopeFilterSql, bookingScopeOrderSql, parseBookingListScope } from "../../../domains/groups/booking-scope.ts";
 
 type Slot = "AM" | "PM";
 export type GroupRow = { id: string; name: string; organisation: string | null; arrival_date: string; arrival_slot: Slot; departure_date: string; departure_slot: Slot; status: string; expected_rooms: number | null; version: number };
@@ -54,8 +55,16 @@ export async function freeRooms(c: Q | typeof pool, propertyId: string, g: { arr
 export default async function routes(f: FastifyInstance) {
   f.get("/groups", async (req, reply) => {
     const a = await requireActor(req, reply); if (!a || !allow(a, "group.read", reply)) return;
+    const scope = parseBookingListScope((req.query as { scope?: unknown } | undefined)?.scope);
+    if (scope === "invalid") return reply.code(422).send(problem(422, "validation", "scope must be upcoming, past, or all"));
+    const today = (await pool.query(`select (timezone('Europe/London', now()))::date::text t`)).rows[0].t as string;
+    const dated = scope === "upcoming" || scope === "past";
+    const where = bookingScopeFilterSql(scope);
+    const order = bookingScopeOrderSql(scope);
+    const propertyParam = dated ? "$2" : "$1";
+    const params = dated ? [today, a.propertyId] : [a.propertyId];
     const r = await pool.query(`select ${GROUP_COLS}, (select count(distinct room_id) from room_occupancy o where o.group_id=booking_group.id) rooms_allocated
-      from booking_group where property_id=$1 order by arrival_date, arrival_slot`, [a.propertyId]);
+      from booking_group where property_id=${propertyParam} and (${where}) order by ${order}`, params);
     return { items: r.rows };
   });
 

@@ -2,18 +2,20 @@
 import { useEffect, useMemo, useState } from "react";
 import { api, ApiError } from "@/lib/api";
 
+const PLACEHOLDER_NOTE = "Content to be added";
+
 type Step = { title: string; look: string; act: string; note?: string };
 type Node = { title: string; caption: string };
 type Chapter = {
   id: string; slug: string; department: string; department_label: string;
   kind: string; kind_label: string; title: string; summary: string; body: string;
-  steps: Step[]; diagram: Node[]; status: string; sort_order: number;
+  steps: Step[]; diagram: Node[]; status: string; catalogue?: string; sort_order: number;
 };
 type List = { items: Chapter[]; can_edit: boolean };
 
 function slugFromSearch() {
-  if (typeof window === "undefined") return "app-how-to-use";
-  return new URLSearchParams(window.location.search).get("slug") || "app-how-to-use";
+  if (typeof window === "undefined") return "welcome";
+  return new URLSearchParams(window.location.search).get("slug") || "welcome";
 }
 
 export default function HouseManual() {
@@ -23,15 +25,19 @@ export default function HouseManual() {
   const [draft, setDraft] = useState({ title: "", summary: "", body: "" });
   const [toast, setToast] = useState<string | null>(null);
   const [showWithdrawn, setShowWithdrawn] = useState(false);
+  const [showArchive, setShowArchive] = useState(false);
   const say = (t: string) => { setToast(t); setTimeout(() => setToast(null), 3200); };
-  const load = () => api<List>(`/v1/manuals${showWithdrawn ? "?include=withdrawn" : ""}`).then(setList).catch(e => say(e instanceof ApiError ? e.problem.detail : "Could not open the manual"));
-  useEffect(() => { load(); }, [showWithdrawn]); // eslint-disable-line
+  const load = () => {
+    const include = [showWithdrawn && "withdrawn", showArchive && "archive"].filter(Boolean).join(",");
+    return api<List>(`/v1/manuals${include ? `?include=${include}` : ""}`).then(setList).catch(e => say(e instanceof ApiError ? e.problem.detail : "Could not open the manual"));
+  };
+  useEffect(() => { load(); }, [showWithdrawn, showArchive]); // eslint-disable-line
   const items = list?.items ?? [];
   const chapter = items.find(c => c.slug === slug) ?? items[0];
   const groups = useMemo(() => {
     const map = new Map<string, Chapter[]>();
     for (const c of items) {
-      const key = c.department_label;
+      const key = c.catalogue === "archive" ? "Previous chapters" : "House manual";
       map.set(key, [...(map.get(key) ?? []), c]);
     }
     return [...map.entries()];
@@ -55,31 +61,36 @@ export default function HouseManual() {
       <div className="topbar">
         <div>
           <h1>House manual</h1>
-          <p>What it should look like, and how to act — for every department. Heads of department can change a chapter later, send it to the Pocket, or withdraw it from the floor.</p>
+          <p>Sections for the house. Each one is a heading and a short description, ready to be filled in with the procedure you use.</p>
         </div>
         {list.can_edit && (
-          <label className="m" style={{ display: "flex", gap: 8, alignItems: "center" }}>
-            <input type="checkbox" checked={showWithdrawn} onChange={e => setShowWithdrawn(e.target.checked)} /> Show withdrawn
-          </label>
+          <div style={{ display: "flex", gap: 16, alignItems: "center" }}>
+            <label className="m" style={{ display: "flex", gap: 8, alignItems: "center" }}>
+              <input type="checkbox" checked={showArchive} onChange={e => setShowArchive(e.target.checked)} /> Show previous chapters
+            </label>
+            <label className="m" style={{ display: "flex", gap: 8, alignItems: "center" }}>
+              <input type="checkbox" checked={showWithdrawn} onChange={e => setShowWithdrawn(e.target.checked)} /> Show withdrawn
+            </label>
+          </div>
         )}
       </div>
 
-      <div className="manual-map">
+      {groups.length > 1 && <div className="manual-map">
         {groups.map(([label, chs]) => (
           <button key={label} className={"manual-dept" + (chs.some(c => c.slug === chapter.slug) ? " on" : "")} onClick={() => open(chs[0].slug)}>
             <b>{label}</b>
             <span>{chs.length} {chs.length === 1 ? "chapter" : "chapters"}</span>
           </button>
         ))}
-      </div>
+      </div>}
 
       <div className="house-grid manual-layout">
         <aside className="house-panel">
           <div className="k">Contents</div>
-          <h2>Chapters</h2>
+          <h2>Sections</h2>
           {groups.map(([label, chs]) => (
             <div key={label} className="manual-toc">
-              <div className="manual-toc-h">{label}</div>
+              {groups.length > 1 && <div className="manual-toc-h">{label}</div>}
               {chs.map(c => (
                 <button key={c.slug} className={c.slug === chapter.slug ? "on" : ""} onClick={() => open(c.slug)}>
                   {c.title}
@@ -91,8 +102,9 @@ export default function HouseManual() {
         </aside>
 
         <article className="house-panel">
-          <div className="k">{chapter.department_label} · {chapter.kind_label}</div>
+          {chapter.steps.length > 0 && <div className="k">{chapter.department_label} · {chapter.kind_label}</div>}
           <h2>{chapter.title}</h2>
+          {chapter.catalogue === "archive" && <p className="note">Kept for reference. This chapter is not part of the current manual.</p>}
           {chapter.status === "withdrawn" && <p className="note">This chapter is withdrawn. The floor no longer sees it. Receipts already sent stay on the Pocket.</p>}
 
           {chapter.diagram.length > 0 && (
@@ -109,7 +121,15 @@ export default function HouseManual() {
             </div>
           )}
 
-          {!edit && (
+          {!edit && chapter.steps.length === 0 && (
+            <>
+              <p>{chapter.summary}</p>
+              <p style={{ whiteSpace: "pre-wrap" }}>{chapter.body}</p>
+              <p className="manual-placeholder">{PLACEHOLDER_NOTE}</p>
+            </>
+          )}
+
+          {!edit && chapter.steps.length > 0 && (
             <>
               <section className="look-act">
                 <div>

@@ -9,8 +9,10 @@ import EmailDialog from "@/components/EmailDialog";
 import { bookingValue, gbp } from "@/lib/pricing";
 import { api, ApiError } from "@/lib/api";
 import { fmt, nights } from "@/lib/format";
+import { groupFromApi } from "@/lib/store";
+import { bookingMatchesScope, londonToday, sortBookings, type BookingListScope } from "@/lib/booking-scope";
 
-const TODAY = new Date().toISOString().slice(0, 10);
+type BookFilter = BookingListScope | "attention";
 const FLOW: GroupStatus[] = ["ENQUIRY", "PROVISIONAL", "CONFIRMED", "IN_HOUSE", "COMPLETED"];
 const NEXT: Partial<Record<GroupStatus, { cmd: string; api: string; to: GroupStatus }[]>> = {
   ENQUIRY: [{ cmd: "Hold provisionally", api: "hold", to: "PROVISIONAL" }, { cmd: "Confirm", api: "confirm", to: "CONFIRMED" }],
@@ -21,7 +23,8 @@ const NEXT: Partial<Record<GroupStatus, { cmd: string; api: string; to: GroupSta
 
 export default function GroupsScreen() {
   const { groups, updateGroup, command, can, loading, reload } = useStore();
-  const [filter, setFilter] = useState<"upcoming" | "attention" | "all">("upcoming");
+  const [filter, setFilter] = useState<BookFilter>("upcoming");
+  const [listed, setListed] = useState<{ scope: BookFilter; items: Group[] } | null>(null);
   const [selId, setSelId] = useState<string | null>(null);
   const [creating, setCreating] = useState(false);
   const [editing, setEditing] = useState(false);
@@ -38,8 +41,8 @@ export default function GroupsScreen() {
   const [sheet, setSheet] = useState<{ programme: string; guests: number | null; rooms_placed: string[]; rooms_short: number; meals: { breakfast: number; lunch: number; dinner: number } | null; dietary: string | null; departments: { code: string; work: string }[] } | null>(null);
   const [stays, setStays] = useState<{ id: string; name: string; email: string; people: number; arrival: string; departure: string; status: string; programme_name: string | null; rooms: { number: string; section: string | null }[]; booking_id: string | null }[]>([]);
   const [roomDraft, setRoomDraft] = useState<Record<string, string>>({});
-  const today = new Date().toISOString().slice(0, 10);
-  const sel = groups.find(g => g.id === selId) ?? groups.filter(g => g.status !== "CANCELLED" && g.status !== "COMPLETED" && g.departure >= today).sort((a, b) => a.arrival.localeCompare(b.arrival))[0];
+  const today = londonToday();
+  const sel = groups.find(g => g.id === selId) ?? sortBookings(groups.filter(g => bookingMatchesScope(g, "upcoming", today)), "upcoming")[0];
   useEffect(() => {
     setAttendees(null); setFormUrl(null); setSheet(null); setFolio(null); setComms([]);
     if (sel?.attendees) api<{ items: typeof attendees }>(`/v1/groups/${sel.id}/attendees`).then(r => setAttendees(r.items)).catch(() => {});
@@ -53,21 +56,31 @@ export default function GroupsScreen() {
   };
   useEffect(loadGuestBook, []);
 
+  useEffect(() => {
+    const apiScope: BookingListScope = filter === "attention" ? "upcoming" : filter;
+    let stop = false;
+    api<{ items: Record<string, unknown>[] }>(`/v1/groups?scope=${apiScope}`)
+      .then(r => { if (!stop) setListed({ scope: filter, items: r.items.map(groupFromApi) }); })
+      .catch(() => { if (!stop) setListed({ scope: filter, items: groups.filter(g => bookingMatchesScope(g, apiScope, londonToday())) }); });
+    return () => { stop = true; };
+  }, [filter, groups]);
+
   const shown = useMemo(() => {
-    const live = groups.filter(g => g.status !== "CANCELLED" && g.status !== "COMPLETED" && g.departure >= TODAY);
-    if (filter === "attention") return live.filter(g => g.bookingForm !== "COMPLETE" || !g.termsSigned || g.status === "ENQUIRY");
-    if (filter === "all") return groups;
-    return live;
-  }, [groups, filter]);
+    const apiScope: BookingListScope = filter === "attention" ? "upcoming" : filter;
+    const rows = listed?.scope === filter ? listed.items : groups.filter(g => bookingMatchesScope(g, apiScope, today));
+    if (filter === "attention") return rows.filter(g => g.bookingForm !== "COMPLETE" || !g.termsSigned || g.status === "ENQUIRY");
+    return rows;
+  }, [listed, groups, filter, today]);
 
   const byMonth = useMemo(() => {
+    const order: BookingListScope = filter === "past" ? "past" : filter === "all" ? "all" : "upcoming";
     const m = new Map<string, Group[]>();
-    for (const g of [...shown].sort((a, b) => a.arrival.localeCompare(b.arrival))) {
-      const k = fmt(g.arrival, { month: "long", year: "numeric" });
+    for (const g of sortBookings(shown, order)) {
+      const k = fmt(order === "past" ? g.departure : g.arrival, { month: "long", year: "numeric" });
       m.set(k, [...(m.get(k) ?? []), g]);
     }
     return [...m.entries()];
-  }, [shown]);
+  }, [shown, filter]);
 
   const say = (t: string) => { setToast(t); setTimeout(() => setToast(null), 3500); };
   const run = async (fn: () => Promise<unknown>) => { try { await fn(); } catch (e) { say(e instanceof ApiError ? e.problem.detail : "Something went wrong"); } };
@@ -81,12 +94,12 @@ export default function GroupsScreen() {
   return (
     <>
       <div className="topbar">
-        <div><h1>The book</h1><p>{shown.length} shown · {groups.filter(g => g.status === "CONFIRMED" && g.departure >= TODAY).length} confirmed ahead{loading ? " · refreshing…" : ""}</p></div>
+        <div><h1>The book</h1><p>{shown.length} shown · {groups.filter(g => g.status === "CONFIRMED" && g.departure >= today).length} confirmed ahead{loading ? " · refreshing…" : ""}</p></div>
         <div style={{ display: "flex", gap: 10, alignItems: "center" }}>
-          <div className="seg" role="tablist">
-            {(["upcoming", "attention", "all"] as const).map(f => (
+          <div className="seg" role="tablist" aria-label="Booking dates">
+            {(["upcoming", "past", "all", "attention"] as const).map(f => (
               <button key={f} role="tab" aria-selected={filter === f} className={filter === f ? "on" : ""} onClick={() => setFilter(f)}>
-                {f === "upcoming" ? "Upcoming" : f === "attention" ? "Needs attention" : "All"}
+                {f === "upcoming" ? "Upcoming" : f === "past" ? "Past" : f === "attention" ? "Needs attention" : "All"}
               </button>))}
           </div>
           {can("group.create") && <button className="btn primary" onClick={() => setCreating(true)}>New group booking</button>}
@@ -135,7 +148,7 @@ export default function GroupsScreen() {
 
       <div className="split">
         <div className="list">
-          {byMonth.length === 0 && <div className="empty">{loading ? "Loading bookings…" : "Nothing here."}</div>}
+          {byMonth.length === 0 && <div className="empty">{loading ? "Loading bookings…" : filter === "past" ? "No past bookings." : filter === "all" ? "No bookings." : "No current or upcoming bookings."}</div>}
           {byMonth.map(([month, gs]) => (
             <div key={month}>
               <div className="month">{month}</div>

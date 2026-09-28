@@ -44,7 +44,7 @@ export default function Pocket() {
   const [sops, setSops] = useState<{ id: string; title: string; body: string; read_at: string | null }[]>([]);
   const [duty, setDuty] = useState<{ id: string; on_date: string; slot: string; kind: string; note: string | null }[]>([]);
   const [manuals, setManuals] = useState<{ slug: string; title: string; department_label: string; kind_label: string; summary: string; body: string; steps: { title: string; look: string; act: string }[]; diagram: { title: string; caption: string }[] }[]>([]);
-  const [manualSlug, setManualSlug] = useState("app-how-to-use");
+  const [manualSlug, setManualSlug] = useState("welcome");
   const [nightNote, setNightNote] = useState("");
   const [tasks, setTasks] = useState<{
     items: { id: string; title: string; department_label: string; status: string; status_label: string; overdue: boolean; room_label: string; next: { status: string; label: string }[] }[];
@@ -61,7 +61,11 @@ export default function Pocket() {
     try { setOps(await api("/v1/ops/board")); } catch { setOps(null); }
     try { setDesk(await api("/v1/service/front-desk")); } catch { setDesk(null); }
     try { setPay(await api("/staff/payroll")); } catch { setPay(null); }
-    try { setManuals((await api<{ items: typeof manuals }>("/v1/manuals")).items); } catch { setManuals([]); }
+    try {
+      const items = (await api<{ items: typeof manuals }>("/v1/manuals")).items;
+      setManuals(items);
+      setManualSlug(s => items.some(m => m.slug === s) ? s : (items[0]?.slug ?? s));
+    } catch { setManuals([]); }
     try { setTasks(await api("/v1/ops/tasks")); } catch { setTasks(null); }
   };
   useEffect(() => {
@@ -256,7 +260,7 @@ export default function Pocket() {
         )}
         {tab === "manual" && (
           <div>
-            <p className="m">What it should look like, and how to act. A sent SOP also lands under SOP — mark that one received.</p>
+            <p className="m">Sections for the house. Each one is a heading to fill in. A sent SOP also lands under SOP — mark that one received.</p>
             <div className="tabs">
               {manuals.map(m => <button key={m.slug} className={manualSlug === m.slug ? "on" : ""} onClick={() => setManualSlug(m.slug)}>{m.title}</button>)}
             </div>
@@ -264,9 +268,10 @@ export default function Pocket() {
               <div key={m.slug}>
                 <div className="card">
                   <h2>{m.title}</h2>
-                  <p className="m">{m.department_label} · {m.kind_label}</p>
-                  <p><b>Look.</b> {m.summary}</p>
-                  <p style={{ whiteSpace: "pre-wrap" }}><b>Act.</b> {m.body}</p>
+                  {m.steps.length > 0 && <p className="m">{m.department_label} · {m.kind_label}</p>}
+                  <p>{m.summary}</p>
+                  <p style={{ whiteSpace: "pre-wrap" }}>{m.body}</p>
+                  {m.steps.length === 0 && <p className="m">Content to be added</p>}
                 </div>
                 {m.diagram.length > 0 && <div className="card"><p className="m">{m.diagram.map(d => d.title).join(" → ")}</p></div>}
                 {m.steps.map(s => (

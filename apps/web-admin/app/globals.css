@@ -344,6 +344,7 @@ td.mark-dep { box-shadow: inset 3px 0 0 var(--marigold); }
 .look-step h3 { font-size: 18px; margin: 0; }
 .manual-ol { margin: 8px 0 0 18px; color: var(--ink); }
 .manual-ol li { margin: 8px 0; }
+.manual-placeholder { margin-top: 18px; color: var(--ink-2); font-style: italic; }
 .check .chip { margin-right: 8px; }
 @media (max-width: 900px) {
   .manual-layout { grid-template-columns: 1fr; }
