@@ -61,6 +61,119 @@ export function stockAlert(_before: number, after: number, threshold: number, al
   return "quiet";
 }
 
+export type ReorderSettings = {
+  /** Off leaves the low-stock note as it is and does not write purchase orders. */
+  enabled: boolean;
+  /** Supplier id -> true emails that supplier when a draft is raised. Missing or false waits for a manager. */
+  autoSend: Record<string, boolean>;
+};
+
+export function parseReorderSettings(raw: unknown): ReorderSettings {
+  const src = raw && typeof raw === "object" ? raw as Record<string, unknown> : {};
+  const box = src.reorder && typeof src.reorder === "object" ? src.reorder as Record<string, unknown> : src;
+  const autoSrc = box.auto_send && typeof box.auto_send === "object" ? box.auto_send as Record<string, unknown> : {};
+  const autoSend: Record<string, boolean> = {};
+  for (const [key, value] of Object.entries(autoSrc)) {
+    if (/^[0-9a-f-]{36}$/i.test(key) && value === true) autoSend[key.toLowerCase()] = true;
+  }
+  return { enabled: box.enabled === true, autoSend };
+}
+
+export function vegetarianName(name: string): { ok: true } | { ok: false; error: string } {
+  if (FORBIDDEN.test(name)) return { ok: false, error: "The kitchen is vegetarian: no eggs, and no onion, garlic, shallot, leek, or chive." };
+  return { ok: true };
+}
+
+export type OrderItem = {
+  id: string;
+  name: string;
+  unit: string;
+  quantity: number;
+  par: number;
+  threshold: number | null;
+  low: number;
+  packSize: number;
+  supplierId: string | null;
+  supplierName: string | null;
+  supplierEmail: string | null;
+};
+
+export type OrderLine = {
+  itemId: string;
+  name: string;
+  unit: string;
+  packs: number;
+  packSize: number;
+  quantity: number;
+};
+
+export type SupplierOrder = {
+  supplierId: string | null;
+  supplierKey: string;
+  supplierName: string;
+  supplierEmail: string | null;
+  autoSend: boolean;
+  lines: OrderLine[];
+};
+
+export function reorderThreshold(item: { threshold: number | null; low: number }): number {
+  return item.threshold != null && item.threshold > 0 ? item.threshold : item.low;
+}
+
+/** Whole packs needed to reach par. Nothing is ordered at or above the line, or when par is not above the count. */
+export function packsToOrder(item: { quantity: number; par: number; threshold: number; packSize: number }): number {
+  if (!(item.quantity < item.threshold)) return 0;
+  if (!(item.par > item.quantity)) return 0;
+  const pack = item.packSize > 0 ? item.packSize : 1;
+  const need = item.par - item.quantity;
+  return Math.ceil(need / pack - 1e-9);
+}
+
+export function groupOrders(items: OrderItem[], settings: ReorderSettings): SupplierOrder[] {
+  if (!settings.enabled) return [];
+  const groups = new Map<string, SupplierOrder>();
+  for (const item of items) {
+    if (!vegetarianName(item.name).ok) continue;
+    const threshold = reorderThreshold(item);
+    const packSize = item.packSize > 0 ? item.packSize : 1;
+    const packs = packsToOrder({ quantity: item.quantity, par: item.par, threshold, packSize });
+    if (packs <= 0) continue;
+    const key = item.supplierId ? item.supplierId.toLowerCase() : "";
+    const order = groups.get(key) ?? {
+      supplierId: item.supplierId,
+      supplierKey: key,
+      supplierName: item.supplierName || (item.supplierId ? "Supplier" : "No preferred supplier"),
+      supplierEmail: item.supplierEmail,
+      autoSend: key ? settings.autoSend[key] === true : false,
+      lines: [],
+    };
+    order.lines.push({
+      itemId: item.id,
+      name: item.name,
+      unit: item.unit,
+      packs,
+      packSize,
+      quantity: round3(packs * packSize),
+    });
+    groups.set(key, order);
+  }
+  return [...groups.values()];
+}
+
+export function orderMessage(order: { supplierName: string; lines: OrderLine[] }): { subject: string; body: string } {
+  const lines = order.lines.map(line => `${line.packs} × ${line.packSize} ${line.unit} ${line.name} (${line.quantity} ${line.unit})`);
+  return {
+    subject: `Kitchen order · ${order.supplierName}`,
+    body: [
+      "Please supply the following for the house kitchen.",
+      "",
+      ...lines,
+      "",
+      "The menu is vegetarian: no eggs, and no onion, garlic, shallot, leek, or chive.",
+    ].join("\n"),
+  };
+}
+
 export function stockNotices(
   item: { name: string; quantity: number; unit: string; threshold: number },
   rules: StockRouting,

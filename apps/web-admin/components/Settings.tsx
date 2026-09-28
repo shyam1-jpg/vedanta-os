@@ -21,6 +21,8 @@ export default function Settings() {
   const [handoverTags, setHandoverTags] = useState<string | null>(null);
   const [stockMail, setStockMail] = useState<{ kitchen: string; buyer: string } | null>(null);
   const [stockCopy, setStockCopy] = useState<Record<string, string>>({});
+  const [reorderOn, setReorderOn] = useState(false);
+  const [stockSuppliers, setStockSuppliers] = useState<{ id: string; name: string; auto: boolean }[]>([]);
   const [stay, setStay] = useState<{ delay_label: string; delay_hours: number | null; retention_days: number; open_maintenance: boolean; emails: { kitchen: string; front: string; housekeeping: string; manager: string } } | null>(null);
   const [comply, setComply] = useState<{ leads: number[]; manager: string } | null>(null);
   const [lostHold, setLostHold] = useState<{ hold_days: number; disposal_days: number; postage_note: string; link_days: number; manager: string; matcher: boolean; purge_days: number } | null>(null);
@@ -44,8 +46,14 @@ export default function Settings() {
       .then(r => { setFaultMail(r.emails); setFaultAreas(r.areas.join("\n")); setFaultCopy(r.receives); }).catch(() => {});
     api<{ tags: { label: string }[] }>("/v1/settings/handover-tags")
       .then(r => setHandoverTags(r.tags.map(t => t.label).join("\n"))).catch(() => {});
-    api<{ emails: { kitchen: string; buyer: string }; receives: Record<string, string> }>("/v1/settings/stock-alerts")
-      .then(r => { setStockMail(r.emails); setStockCopy(r.receives); }).catch(() => {});
+    api<{ emails: { kitchen: string; buyer: string }; receives: Record<string, string>; reorder?: { enabled?: boolean; auto_send?: Record<string, boolean> }; suppliers?: { id: string; name: string }[] }>("/v1/settings/stock-alerts")
+      .then(r => {
+        setStockMail(r.emails);
+        setStockCopy(r.receives);
+        setReorderOn(r.reorder?.enabled === true);
+        const auto = r.reorder?.auto_send ?? {};
+        setStockSuppliers((r.suppliers ?? []).map(row => ({ ...row, auto: auto[row.id] === true || auto[row.id.toLowerCase()] === true })));
+      }).catch(() => {});
     api<{ delay_label: string; delay_hours: number | null; retention_days: number; open_maintenance: boolean; emails: { kitchen: string; front: string; housekeeping: string; manager: string }; receives: Record<string, string> }>("/v1/settings/feedback")
       .then(r => { setStay(r); setStayCopy(r.receives); }).catch(() => {});
     api<{ leads: number[]; manager: string }>("/v1/settings/compliance").then(setComply).catch(() => {});
@@ -157,7 +165,11 @@ export default function Settings() {
       {stockMail && (
         <div className="panel" style={{ marginTop: 14 }}>
           <h3>Low stock</h3>
-          <p className="m" style={{ color: "var(--ink-2)" }}>When an item drops below its line, the kitchen and the person who orders stock each get one note. It is not sent again until the item is restocked. Put the inboxes here. Do not commit a real address. If SMTP is not set, the note is logged for staff to copy.</p>
+          <p className="m" style={{ color: "var(--ink-2)" }}>When an item drops below its line, the kitchen and the person who orders stock each get one note. It is not sent again until the item is restocked. Put the inboxes here. Do not commit a real address. If SMTP is not set, the note is logged for staff to copy. Draft purchase orders stay off until you tick them. A manager still approves before a supplier is emailed. Auto-send is off for every supplier until you tick that supplier.</p>
+          <label style={{ display: "block", marginTop: 8 }}><input type="checkbox" checked={reorderOn} onChange={e => setReorderOn(e.target.checked)} /> Draft a purchase order when stock falls below the reorder line</label>
+          {stockSuppliers.map(row => (
+            <label key={row.id} style={{ display: "block", marginTop: 8 }}><input type="checkbox" checked={row.auto} onChange={e => setStockSuppliers(stockSuppliers.map(item => item.id === row.id ? { ...item, auto: e.target.checked } : item))} /> Auto-send orders to {row.name}</label>
+          ))}
           {(["kitchen", "buyer"] as const).map(key => (
             <div key={key} style={{ marginTop: 14, maxWidth: 640 }}>
               <b>{key === "buyer" ? "Person who orders stock" : "Kitchen"}</b>
@@ -166,8 +178,11 @@ export default function Settings() {
             </div>
           ))}
           <button className="btn primary" style={{ marginTop: 12 }} onClick={() => run(async () => {
-            const saved = await api<{ emails: { kitchen: string; buyer: string } }>("/v1/settings/stock-alerts", { method: "PUT", body: JSON.stringify({ emails: stockMail }) });
+            const auto_send: Record<string, boolean> = {};
+            for (const row of stockSuppliers) if (row.auto) auto_send[row.id] = true;
+            const saved = await api<{ emails: { kitchen: string; buyer: string }; reorder?: { enabled?: boolean } }>("/v1/settings/stock-alerts", { method: "PUT", body: JSON.stringify({ emails: stockMail, reorder: { enabled: reorderOn, auto_send } }) });
             setStockMail(saved.emails);
+            setReorderOn(saved.reorder?.enabled === true);
           }, "Stock alerts saved")}>Save stock alerts</button>
         </div>
       )}

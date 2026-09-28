@@ -34,6 +34,10 @@ describe("handover and stock wiring", () => {
     assert.equal(count.includes("body.by_name"), false);
     assert.match(stock, /stockNotices/);
     assert.match(stock, /parseStockRouting/);
+    assert.match(stock, /if \(!settings\.enabled\) return/);
+    assert.match(stock, /vegetarianName/);
+    assert.match(stock, /kind: "stock_order"/);
+    assert.equal(stock.includes("setInterval"), false);
   });
 
   it("seeds vegetarian examples and no real address", () => {

@@ -1,6 +1,6 @@
 import { describe, it } from "node:test";
 import assert from "node:assert/strict";
-import { EXAMPLE_STOCK, applyCount, exampleListIsVegetarian, parseStockRouting, stockAlert, stockNotices } from "./stock.ts";
+import { EXAMPLE_STOCK, applyCount, exampleListIsVegetarian, groupOrders, orderMessage, packsToOrder, parseReorderSettings, parseStockRouting, stockAlert, stockNotices, vegetarianName } from "./stock.ts";
 
 describe("kitchen stock counts", () => {
   it("logs a use, a restock and a set count, and will not go below zero", () => {
@@ -38,6 +38,34 @@ describe("kitchen stock counts", () => {
     const parsed = parseStockRouting({ kitchen: "not an email", buyer: "Buyer@Example.invalid" });
     assert.equal(parsed.kitchen, "");
     assert.equal(parsed.buyer, "buyer@example.invalid");
+  });
+
+  it("rounds an order up to whole packs and keeps it as a draft until a supplier is allowed to be emailed", () => {
+    assert.equal(parseReorderSettings({}).enabled, false);
+    assert.equal(packsToOrder({ quantity: 3, par: 10, threshold: 4, packSize: 4 }), 2);
+    assert.equal(packsToOrder({ quantity: 4, par: 10, threshold: 4, packSize: 4 }), 0);
+    assert.equal(packsToOrder({ quantity: 1, par: 0, threshold: 4, packSize: 1 }), 0);
+    const rice = {
+      id: "rice", name: "Basmati rice", unit: "kg", quantity: 2, par: 20, threshold: 5, low: 5, packSize: 5,
+      supplierId: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa", supplierName: "Example Mill", supplierEmail: "mill@example.invalid",
+    };
+    const oats = { ...rice, id: "oats", name: "Oat milk", quantity: 1, par: 12, packSize: 6, unit: "litres" };
+    const towels = { ...rice, id: "towels", name: "Paper towels", supplierId: null, supplierName: null, supplierEmail: null, quantity: 1, par: 6, packSize: 2, unit: "packs" };
+    const held = groupOrders([rice, oats, towels], parseReorderSettings({ enabled: false }));
+    assert.equal(held.length, 0);
+    const drafts = groupOrders([rice, oats, towels, { ...rice, id: "bad", name: "Onion powder" }], parseReorderSettings({ enabled: true, auto_send: {} }));
+    assert.equal(drafts.length, 2);
+    const mill = drafts.find(order => order.supplierName === "Example Mill");
+    assert.equal(mill?.autoSend, false);
+    assert.equal(mill?.lines.length, 2);
+    assert.equal(mill?.lines.find(line => line.name === "Basmati rice")?.quantity, 20);
+    const loose = drafts.find(order => order.supplierKey === "");
+    assert.equal(loose?.autoSend, false);
+    const sent = groupOrders([rice], parseReorderSettings({ enabled: true, auto_send: { [rice.supplierId]: true } }));
+    assert.equal(sent[0].autoSend, true);
+    assert.match(orderMessage(sent[0]).body, /no eggs/);
+    assert.equal(vegetarianName("Free range eggs").ok, false);
+    assert.equal(vegetarianName("Chickpeas").ok, true);
   });
 
   it("seeds only vegetarian examples, with no egg and no onion or garlic family", () => {
