@@ -6,19 +6,23 @@ h1, h2 { font-family: var(--serif); font-weight: 500; margin: 0; }
 button, input, select, textarea { font: inherit; }
 .wrap { max-width: 440px; margin: 0 auto; padding: 28px 20px 64px; }
 .kicker { font-size: 11px; letter-spacing: .28em; text-transform: uppercase; color: var(--gold); }
-.hero { background: var(--forest); color: var(--ivory); padding: 36px 22px 28px; }
+.hero { background: var(--forest) linear-gradient(105deg, rgba(20,44,35,.94), rgba(20,44,35,.64)), url('/book/images/house-aerial.jpg') center/cover; color: var(--ivory); padding: 36px 22px 28px; min-height: 170px; display: flex; flex-direction: column; justify-content: flex-end; }
 .hero h1 { font-size: 40px; line-height: 1; margin: 8px 0; }
 .hero p { font-family: var(--serif); font-style: italic; font-size: 18px; color: #D5D0C6; margin: 0; }
-.card { background: #fff; border: 1px solid var(--line); padding: 18px; margin: 14px 0; }
+.card { background: #fff; border: 1px solid var(--line); border-radius: 16px; padding: 20px; margin: 14px 0; box-shadow: 0 8px 24px rgba(31,58,50,.06); }
 label { display: block; font-size: 12px; color: var(--ink-2); margin-top: 10px; }
 input, select, textarea { width: 100%; margin-top: 4px; padding: 10px; border: 1px solid var(--line); background: #fff; }
 input[type=checkbox] { width: auto; flex: none; margin: 0 10px 0 0; }
-.btn { display: inline-block; border: 0; background: var(--forest); color: var(--ivory); padding: 12px 16px; margin-top: 14px; width: 100%; font-weight: 500; cursor: pointer; }
+.btn { display: inline-block; border: 0; border-radius: 12px; background: var(--forest); color: var(--ivory); padding: 12px 16px; margin-top: 14px; width: 100%; font-weight: 500; cursor: pointer; }
 .btn.ghost { background: transparent; border: 1px solid var(--line); color: var(--ink); }
 .note { background: #F4EBD8; padding: 10px 12px; margin: 12px 0; font-size: 14px; }
 .m { color: var(--ink-2); font-size: 14px; }
 .row { display: flex; justify-content: space-between; gap: 10px; padding: 10px 0; border-bottom: 1px solid var(--line); }
-.tabs { display: flex; flex-wrap: wrap; gap: 6px; margin: 16px 0; }
-.tabs button { flex: 1; border: 1px solid var(--line); background: #fff; padding: 10px; cursor: pointer; }
+.tabs { display: flex; overflow-x: auto; gap: 8px; margin: 16px 0; padding-bottom: 8px; scrollbar-width: thin; }
+.tabs button { flex: none; border: 1px solid var(--line); border-radius: 999px; background: #fff; padding: 10px 14px; cursor: pointer; white-space: nowrap; }
 .tabs button.on { background: var(--forest); color: var(--ivory); border-color: var(--forest); }
 .tabs button { font-size: 13px; }
+.hero-status { margin-top: 12px; display: flex; flex-wrap: wrap; gap: 8px; }
+.hero-status span { padding: 5px 9px; border: 1px solid rgba(255,255,255,.36); border-radius: 999px; background: rgba(0,0,0,.16); font-size: 12px; }
+:focus-visible { outline: 2px solid var(--gold); outline-offset: 3px; }
+@media (prefers-reduced-motion: no-preference) { .card, .btn, .tabs button { transition: box-shadow .2s ease, background .2s ease, transform .2s ease; } .btn:hover { transform: translateY(-1px); } }
