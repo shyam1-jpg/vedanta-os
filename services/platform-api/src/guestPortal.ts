@@ -14,9 +14,28 @@ import { roomsForStay } from "../../../domains/guest/stay.ts";
 import { accessOutcome, issueExpiry, nextFailedAttempts, publicLoginDetail, RECOVERY_OK } from "../../../domains/guest/access.ts";
 import { groupPublicTypes, shapePublicRoom } from "../../../domains/guest/availability.ts";
 import { backupGuestEvent } from "./kiteline.ts";
-import { departmentLabel, ownGuestRequests, routeGuestRequest } from "../../../domains/ops/board.ts";
+import { departmentLabel, ownGuestRequests, planGuestRequest } from "../../../domains/ops/board.ts";
 import { freeRooms } from "./groups.ts";
-import { sendEmail, emailConfigured } from "./email.ts";
+import { sendEmail } from "./email.ts";
+import { paymentsEnabled } from "./payments.ts";
+import {
+  carryOntoBooking,
+  enquiryInput,
+  loadRoutingRules,
+  notesFor,
+  placeGuestRooms,
+  sealParty,
+  staffEnquiryView,
+  syncBookingTasks,
+  validateCapture,
+  withdrawGuestBooking,
+  type Db,
+} from "./bookingRoute.ts";
+import { acceptWarning, captureFromStored, dietarySummary, resendAccessCode, splitName, type OutboundNote, type StayCapture } from "../../../domains/guest/booking.ts";
+import { applyGuestConsent, suggestContact } from "./guestHistory.ts";
+import { cleanIdempotencyKey, formatBookingReference, issueSessionOnRegister, publicBookingOpen } from "../../../domains/guest/bookingGate.ts";
+import { parseDepositSettings } from "../../../domains/payments/deposit.ts";
+import { stayLinkForEmail } from "./journey.ts";
 
 const hits = new Map<string, { n: number; t: number }>();
 function rateOk(key: string): boolean {
@@ -132,6 +151,82 @@ async function propertyRow() {
     from property p join tenant t on t.id=p.tenant_id order by p.created_at limit 1`)).rows[0];
 }
 
+function productionMode(): boolean {
+  return process.env.NODE_ENV === "production";
+}
+function allowUnverifiedBootstrap(): boolean {
+  return ["1", "true", "yes", "on"].includes((process.env.ALLOW_UNVERIFIED_GUEST_BOOTSTRAP ?? "").trim().toLowerCase());
+}
+
+async function staffAlertEmails(propertyId: string): Promise<string[]> {
+  const row = (await pool.query(`select settings from property where id=$1`, [propertyId])).rows[0];
+  const settings = row?.settings ?? {};
+  const front = settings.booking_routing?.front?.email;
+  const manager = settings.fault_routing?.manager;
+  return [...new Set([front, manager].filter((email: unknown): email is string => typeof email === "string" && email.includes("@")))];
+}
+
+async function tellStaff(prop: { tenant_id: string; id: string }, note: { to: string; subject: string; body: string; kind: string; relatedId?: string | null }) {
+  await sendEmail(
+    { tenantId: prop.tenant_id, propertyId: prop.id, userId: null },
+    { to: note.to, subject: note.subject, body: note.body, kind: note.kind, related_type: "guest_enquiry", related_id: note.relatedId ?? undefined },
+  );
+}
+
+async function deliverNotes(prop: { tenant_id: string; id: string }, userId: string | null, notes: OutboundNote[], relatedId: string) {
+  for (const note of notes) {
+    if (!note.to?.includes("@")) continue;
+    await sendEmail(
+      { tenantId: prop.tenant_id, propertyId: prop.id, userId },
+      { to: note.to, subject: note.subject, body: note.body, kind: note.kind, related_type: "guest_enquiry", related_id: relatedId },
+    );
+  }
+}
+
+function captureFromBody(b: any, dates: { arrival: string; departure: string; arrival_slot?: string | null; departure_slot?: string | null }) {
+  let party = Array.isArray(b?.party) && b.party.length ? b.party : undefined;
+  let people = b?.people;
+  if (!party) {
+    const split = splitName(String(b?.name ?? ""));
+    party = [{
+      given_name: split.given_name,
+      family_name: split.family_name,
+      diet: [],
+      allergens: [],
+      other: b?.dietary_notes || null,
+      accessibility: null,
+      plate: "buffet",
+    }];
+    people = Number(b?.people) || 1;
+  }
+  return validateCapture({
+    people,
+    name: b?.name,
+    email: b?.email,
+    arrival: dates.arrival,
+    departure: dates.departure,
+    arrival_slot: dates.arrival_slot ?? b?.arrival_slot,
+    departure_slot: dates.departure_slot ?? b?.departure_slot,
+    party,
+    accessibility_notes: b?.accessibility_notes,
+    arrival_time_note: b?.arrival_time_note,
+    room_preference: b?.room_preference,
+    travel_notes: b?.travel_notes,
+    notes: b?.notes,
+    dietary_notes: b?.dietary_notes,
+  });
+}
+
+async function routedNotes(db: Db, prop: { id: string; tenant_id: string; name?: string }, enquiryId: string, bookingId: string | null, stay: StayCapture, kind: "submitted" | "accepted" | "amended" | "cancelled", actorId?: string | null) {
+  const rules = await loadRoutingRules(db, prop.id);
+  if (kind === "cancelled") {
+    await withdrawGuestBooking(db, { tenantId: prop.tenant_id, propertyId: prop.id, enquiryId, bookingId, actorId });
+  } else {
+    await syncBookingTasks(db, { tenantId: prop.tenant_id, propertyId: prop.id, enquiryId, bookingId, stay, rules, actorId });
+  }
+  return notesFor(kind, stay, rules, prop.name ?? "The Vedanta");
+}
+
 export default async function guestPortal(f: FastifyInstance) {
   f.get("/guest/property", async () => {
     const r = await propertyRow();
@@ -236,6 +331,38 @@ export default async function guestPortal(f: FastifyInstance) {
     return { from, to, days };
   });
 
+  f.get("/guest/booking-status", async (req: any) => {
+    const prop = await propertyRow();
+    const auth = String(req.headers.authorization ?? "");
+    const token = auth.startsWith("Bearer ") ? auth.slice(7).trim() : "";
+    const session = token
+      ? (await pool.query(
+        `select g.email_verified from guest_session s join guest_account g on g.id=s.guest_id
+         where s.token=$1 and s.expires_at > now() and g.status='ACTIVE'`,
+        [token],
+      )).rows[0]
+      : null;
+    const gate = publicBookingOpen({
+      production: productionMode(),
+      allowUnverifiedBootstrap: allowUnverifiedBootstrap(),
+      sessionVerified: !!session?.email_verified,
+    });
+    const settings = (await pool.query(`select settings from property where id=$1`, [prop.id])).rows[0]?.settings ?? {};
+    const deposit = parseDepositSettings(settings.deposit);
+    const contact = settings.contact_email || settings.booking_routing?.front?.email || null;
+    return {
+      open: gate.open,
+      code: gate.code,
+      detail: gate.detail,
+      contact,
+      website: prop.website,
+      payments: paymentsEnabled(),
+      deposit_gbp: deposit.amount_gbp,
+      deposit_policy: deposit.policy,
+      food_billed: false,
+    };
+  });
+
   f.post("/guest/register", async (req: any, reply) => {
     if (!emailLoginEnabled()) return reply.code(404).send(problem(404, "not_found", "Guest registration is not open"));
     if (!rateOk(`greg:${req.ip || "x"}`)) return reply.code(429).send(problem(429, "rate_limited", "Please wait a minute"));
@@ -245,21 +372,23 @@ export default async function guestPortal(f: FastifyInstance) {
     const prop = await propertyRow();
     const r = await upsertGuestWithCode(prop, email, name);
     void backupGuestEvent({ id: `guest_reg_${r.guest.id}`, kind: "register", name: r.guest.display_name, email: r.guest.email });
-    // Send access code by email so the guest doesn't lose it on page close
-    if (r.access_code && emailConfigured()) {
+    if (r.access_code) {
       const houseName = prop?.name ?? "The Vedanta Way";
-      void pool.query(
-        `insert into outbound_email (tenant_id, property_id, to_email, subject, body, kind, status)
-         values ($1,$2,$3,$4,$5,'guest_access_code','QUEUED')`,
-        [prop.tenant_id, prop.id, email,
-          `Your access code for ${houseName} My Stay`,
-          `Dear ${name},\n\nThank you for registering with ${houseName}.\n\nYour My Stay access code is: ${r.access_code}\n\nThis code expires in 14 days. Keep it somewhere safe — you will need it each time you sign in to My Stay.\n\nIf you did not request this, please ignore this email.\n\nWith warm regards,\n${houseName}\nhttps://www.thevedanta.org/`],
-      ).then(async () => {
-        const { default: nodemailer } = await import("nodemailer");
-        const transport = nodemailer.createTransport(process.env.SMTP_URL!);
-        const FROM = process.env.MAIL_FROM ?? `${houseName} <bookings@thevedanta.org>`;
-        await transport.sendMail({ from: FROM, to: email, subject: `Your access code for ${houseName} My Stay`, text: `Dear ${name},\n\nYour My Stay access code is: ${r.access_code}\n\nThis code expires in 14 days.\n\n${houseName}` });
-      }).catch(() => { /* email failure is non-fatal; code still shown in response */ });
+      await sendEmail(
+        { tenantId: prop.tenant_id, propertyId: prop.id, userId: null },
+        {
+          to: email,
+          subject: `Your access code for ${houseName} My Stay`,
+          body: `Dear ${name},\n\nYour My Stay access code is: ${r.access_code}\n\nThis code expires in 14 days.\n\n${houseName}`,
+          kind: "guest_access_code",
+        },
+      );
+    }
+    if (!issueSessionOnRegister(productionMode(), allowUnverifiedBootstrap())) {
+      return {
+        verification_required: true,
+        detail: "If this email can take a code, we have sent one. Sign in with it before saving a place. The code is not shown on this page.",
+      };
     }
     const session = await issueGuest(r.guest.id, r.guest.email, r.guest.display_name);
     return { ...session, access_code: r.access_code ?? null };
@@ -270,7 +399,7 @@ export default async function guestPortal(f: FastifyInstance) {
     const b = req.body ?? {};
     const email = String(b.email ?? "").trim().toLowerCase();
     const name = String(b.name ?? "").trim();
-    const people = Number(b.people);
+    const people = Number(b.people) || (Array.isArray(b.party) ? b.party.length : 0);
     if (!name || !email.includes("@") || !(people > 0)) return reply.code(422).send(problem(422, "validation", "Name, email and number of people are required"));
     const prop = await propertyRow();
     let arrival = b.arrival ?? null;
@@ -284,21 +413,79 @@ export default async function guestPortal(f: FastifyInstance) {
     }
     if (!arrival || !departure) return reply.code(422).send(problem(422, "validation", "Choose a programme, or give arrival and departure dates"));
     if (departure < arrival) return reply.code(422).send(problem(422, "validation", "Departure must be on or after arrival"));
+    const parsed = captureFromBody(b, { arrival, departure, arrival_slot: "PM", departure_slot: "AM" });
+    if (!parsed.ok) return reply.code(422).send(problem(422, "validation", parsed.errors[0] ?? "Check the party details"));
+    const capture = parsed.capture;
+    const idempotencyKey = cleanIdempotencyKey(req.headers["idempotency-key"] ?? b.idempotency_key);
+    if ((req.headers["idempotency-key"] || b.idempotency_key) && !idempotencyKey) {
+      return reply.code(422).send(problem(422, "validation", "The save key was not valid. Stay on this page and try again."));
+    }
     const r = await upsertGuestWithCode(prop, email, name);
     const guest = r.guest;
-    const e = (await pool.query(`insert into guest_enquiry (tenant_id,property_id,guest_id,name,email,people,arrival_date,departure_date,notes,programme_id,dietary_notes,accessibility_notes,room_preference,arrival_time_note,travel_notes)
-      values ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15) returning id, status`,
-      [prop.tenant_id, prop.id, guest.id, name, email, people, arrival, departure, b.notes ?? null, programmeId,
-        sealText(String(b.dietary_notes ?? "").trim() || null), sealText(String(b.accessibility_notes ?? "").trim() || null),
-        String(b.room_preference ?? "").trim() || null, String(b.arrival_time_note ?? "").trim() || null,
-        sealText(String(b.travel_notes ?? "").trim() || null)])).rows[0];
-    const session = await issueGuest(guest.id, email, name);
-    void backupGuestEvent({
-      id: `guest_enq_${e.id}`,
-      kind: programmeId ? "programme" : "dates",
-      name, email, people, arrival, departure, notes: b.notes ?? null, programme_id: programmeId,
+    let saved: { id: string; status: string; notes: OutboundNote[]; duplicate?: boolean };
+    try {
+    saved = await tx(async c => {
+      if (idempotencyKey) {
+        const prior = (await c.query(
+          `select id, status from guest_enquiry where property_id=$1 and idempotency_key=$2`,
+          [prop.id, idempotencyKey],
+        )).rows[0];
+        if (prior) return { id: prior.id as string, status: prior.status as string, notes: [] as OutboundNote[], duplicate: true };
+      }
+      const e = (await c.query(`insert into guest_enquiry (tenant_id,property_id,guest_id,name,email,people,arrival_date,departure_date,notes,programme_id,dietary_notes,accessibility_notes,room_preference,arrival_time_note,travel_notes,party,arrival_slot,departure_slot,idempotency_key)
+        values ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19) returning id, status`,
+        [prop.tenant_id, prop.id, guest.id, name, email, capture.people, arrival, departure, capture.notes, programmeId,
+          sealText(dietarySummary(capture)), sealText(capture.accessibility_notes),
+          capture.room_preference, capture.arrival_time_note, sealText(capture.travel_notes),
+          sealParty(capture.party, { access: capture.access, access_note: capture.access_note }), capture.arrival_slot, capture.departure_slot, idempotencyKey])).rows[0];
+      const suggested = await suggestContact(c, {
+        tenantId: prop.tenant_id, propertyId: prop.id, email, phone: null, name, groupId: null, enquiryId: e.id,
+      });
+      await c.query(`update guest_enquiry set keep_allergens=$2, matched_person_id=$3 where id=$1`, [e.id, !!b.keep_allergens, suggested.autoPersonId]);
+      if (suggested.autoPersonId) await applyGuestConsent(c, prop.tenant_id, suggested.autoPersonId, !!b.keep_allergens);
+      const notes = await routedNotes(c, prop, e.id, null, capture, "submitted");
+      return { id: e.id as string, status: e.status as string, notes, duplicate: false };
     });
-    return { id: e.id, status: e.status, ...session, access_code: r.access_code ?? null };
+    } catch (err) {
+      const reference = formatBookingReference(randomBytes(4).toString("hex"));
+      const detail = dietarySummary(capture);
+      try {
+        await pool.query(
+          `insert into guest_failed_submission (tenant_id, property_id, reference, idempotency_key, email, name, arrival_date, departure_date, error_code, detail)
+           values ($1,$2,$3,$4,$5,$6,$7,$8,'booking_not_saved',$9)
+           on conflict (property_id, idempotency_key) where idempotency_key is not null do update set reference = guest_failed_submission.reference`,
+          [prop.tenant_id, prop.id, reference, idempotencyKey, email, name, arrival, departure, sealText(detail)],
+        );
+        const body = `A guest tried to save a place and it did not save.\n\nReference: ${reference}\nName: ${name}\nEmail: ${email}\nDates: ${arrival} to ${departure}\n${detail ? `Diet and allergens:\n${detail}\n` : ""}Ask them to stay on the booking page and try again.`;
+        for (const to of await staffAlertEmails(prop.id)) {
+          await tellStaff(prop, { to, subject: `Booking was not saved — ${reference}`, body, kind: "booking_failed", relatedId: null });
+        }
+      } catch (inner) {
+        req.log?.error?.(inner);
+      }
+      req.log?.error?.(err);
+      return reply.code(500).send(problem(500, "booking_not_saved", `We could not save your place. Quote ${reference} if you contact the house, then try again from this page.`, { reference }));
+    }
+    if (!saved.duplicate) {
+      await deliverNotes(prop, null, saved.notes, saved.id);
+      try {
+        const { queueStaffNewEnquiry } = await import("./autocomms.ts");
+        await queueStaffNewEnquiry(saved.id, prop.tenant_id, prop.id);
+      } catch (err) {
+        req.log?.error?.(err);
+        console.error("[autocomms] could not queue the staff enquiry alert", err);
+      }
+      void backupGuestEvent({
+        id: `guest_enq_${saved.id}`,
+        kind: programmeId ? "programme" : "dates",
+        name, email, people: capture.people, arrival, departure, notes: capture.notes, programme_id: programmeId,
+      });
+    }
+    if (!issueSessionOnRegister(productionMode(), allowUnverifiedBootstrap())) {
+      return { id: saved.id, status: saved.status, duplicate: !!saved.duplicate };
+    }
+    const session = await issueGuest(guest.id, email, name);
+    return { id: saved.id, status: saved.status, ...session, access_code: r.access_code ?? null };
   });
 
   f.post("/guest/login", async (req: any, reply) => {
@@ -322,7 +509,7 @@ export default async function guestPortal(f: FastifyInstance) {
       }
       return reply.code(401).send(problem(401, check.code, publicLoginDetail(check)));
     }
-    await pool.query(`update guest_account set access_code_failed_attempts=0, access_code_locked_until=null where id=$1`, [g.id]);
+    await pool.query(`update guest_account set access_code_failed_attempts=0, access_code_locked_until=null, email_verified=true, email_verified_at=coalesce(email_verified_at, now()) where id=$1`, [g.id]);
     return issueGuest(g.id, g.email, g.display_name);
   });
 
@@ -380,13 +567,15 @@ export default async function guestPortal(f: FastifyInstance) {
       status: x.status,
       programme_name: x.programme_name ? cleanName(x.programme_name) : null,
       rooms: roomsForStay(x.booking_id, rooms),
+      deposit_status: x.deposit_status ?? "unpaid",
+      deposit_amount: x.deposit_amount == null ? null : Number(x.deposit_amount),
     };
   }
 
   f.get("/guest/enquiries", async (req, reply) => {
     const g = await requireGuest(req, reply); if (!g) return;
     const r = await pool.query(`select e.id, e.people, e.arrival_date::text arrival, e.departure_date::text departure, e.notes, e.status,
-        e.programme_id, e.booking_id, bg.name programme_name
+        e.programme_id, e.booking_id, e.deposit_status, e.deposit_amount, bg.name programme_name
       from guest_enquiry e
       left join booking_group bg on bg.id = e.programme_id
       where e.guest_id=$1 order by e.created_at desc`, [g.id]);
@@ -397,7 +586,7 @@ export default async function guestPortal(f: FastifyInstance) {
   f.get("/guest/stay", async (req, reply) => {
     const g = await requireGuest(req, reply); if (!g) return;
     const r = await pool.query(`select e.id, e.people, e.arrival_date::text arrival, e.departure_date::text departure, e.notes, e.status,
-        e.programme_id, e.booking_id, bg.name programme_name
+        e.programme_id, e.booking_id, e.deposit_status, e.deposit_amount, bg.name programme_name
       from guest_enquiry e
       left join booking_group bg on bg.id = e.programme_id
       where e.guest_id=$1 order by e.arrival_date desc, e.created_at desc`, [g.id]);
@@ -408,17 +597,24 @@ export default async function guestPortal(f: FastifyInstance) {
   f.get("/v1/guest-enquiries", async (req, reply) => {
     const a = await requireActor(req, reply, "ADMIN"); if (!a || !allow(a, "group.read", reply)) return;
     const r = await pool.query(`select e.id, e.name, e.email, e.people, e.arrival_date::text arrival, e.departure_date::text departure, e.notes, e.status, e.created_at,
-        e.programme_id, e.booking_id, e.dietary_notes, e.accessibility_notes, e.room_preference, e.arrival_time_note, e.travel_notes, bg.name programme_name
+        e.programme_id, e.booking_id, e.dietary_notes, e.accessibility_notes, e.room_preference, e.arrival_time_note, e.travel_notes, e.party, e.arrival_slot, e.departure_slot, e.deposit_status, e.deposit_amount, bg.name programme_name
       from guest_enquiry e
       left join booking_group bg on bg.id = e.programme_id
       where e.property_id=$1 and e.status='ENQUIRY' order by e.created_at desc limit 50`, [a.propertyId]);
-    return { items: r.rows.map(x => ({
-      ...x,
-      programme_name: x.programme_name ? cleanName(x.programme_name) : null,
-      dietary_notes: openText(x.dietary_notes),
-      accessibility_notes: openText(x.accessibility_notes),
-      travel_notes: openText(x.travel_notes),
-    })) };
+    return { items: r.rows.map(x => {
+      const view = staffEnquiryView(x);
+      return {
+        ...x,
+        party: undefined,
+        programme_name: x.programme_name ? cleanName(x.programme_name) : null,
+        dietary_notes: view.party_summary ?? openText(x.dietary_notes),
+        accessibility_notes: view.access_summary ?? openText(x.accessibility_notes),
+        travel_notes: openText(x.travel_notes),
+        party_summary: view.party_summary,
+        accept_warning: view.accept_warning,
+        severe: view.severe,
+      };
+    }) };
   });
 
   f.get("/v1/guest-stays", async (req, reply) => {
@@ -463,50 +659,54 @@ export default async function guestPortal(f: FastifyInstance) {
           values($1,$2,$3,$4,$5,$6,'PM',$7,'AM',$8,$9,'ENQUIRY','NOT_SENT',$10,$11,'GUEST_BOOK') returning id`,
           [a.tenantId, a.propertyId, e.name, e.name, e.email, e.arrival_date, e.departure_date, e.people, numbers.length, e.notes,
            ["#1F3A32", "#8A6A3B", "#4F6758", "#6B3A32"][Number(n.rows[0].count) % 4]])).rows[0];
-        bookingId = created.id;
+        bookingId = created.id as string;
         await c.query(`update guest_enquiry set booking_id=$2 where id=$1`, [e.id, bookingId]);
       }
-      const placed: string[] = [];
-      for (const number of numbers) {
-        const room = (await c.query(`select id, max_capacity, staff_only, status from room where property_id=$1 and number=$2`, [a.propertyId, number])).rows[0];
-        if (!room) { reply.code(404); return problem(404, "not_found", `No room ${number}`); }
-        if (room.staff_only) { reply.code(409); return problem(409, "staff_room", `${number} is a staff room`); }
-        if (["OUT_OF_SERVICE", "OUT_OF_ORDER"].includes(room.status)) { reply.code(409); return problem(409, "out_of_use", `Room ${number} is out of use`); }
-        const clash = (await c.query(`select occupant_label from room_occupancy where room_id=$1 and group_id is distinct from $2 and on_date >= $3 and on_date < greatest($4::date, $3::date + 1) limit 1`,
-          [room.id, bookingId, e.arrival_date, e.departure_date])).rows[0];
-        if (clash) { reply.code(409); return problem(409, "room_taken", `Room ${number} is already held for another stay`); }
-        await c.query(`insert into room_occupancy(tenant_id,room_id,group_id,occupant_label,on_date,slot)
-          select $1,$2,$3,$4,d::date,s
-          from generate_series($5::date, greatest($6::date - 1, $5::date), interval '1 day') d
-          cross join (values ('AM'),('PM')) v(s)
-          on conflict do nothing`,
-          [a.tenantId, room.id, bookingId, e.name, e.arrival_date, e.departure_date]);
-        placed.push(number);
-      }
-      await audit(c, a, "guest_enquiry", e.id, "guest.rooms.assign", { payload: { rooms: placed, booking_id: bookingId } });
-      return { id: e.id, booking_id: bookingId, rooms: placed };
+      if (!bookingId) throw new Error("booking was not created");
+      const dates = enquiryInput({ ...e, arrival: undefined, departure: undefined });
+      const people = (await c.query(
+        `select p.id, p.given_name || ' ' || p.family_name as label from group_attendee ga join person p on p.id=ga.person_id where ga.group_id=$1 order by ga.submitted_at`,
+        [bookingId],
+      )).rows as { id: string; label: string }[];
+      const placed = await placeGuestRooms(c, {
+        tenantId: a.tenantId, propertyId: a.propertyId, bookingId, rooms: numbers, people,
+        fallbackLabel: e.name, arrival: String(dates.arrival), departure: String(dates.departure),
+      });
+      if (!placed.ok) { reply.code(placed.status); return problem(placed.status, placed.code, placed.detail); }
+      const roomNumbers = [...new Set(placed.placed.map(p => p.room))];
+      await audit(c, a, "guest_enquiry", e.id, "guest.rooms.assign", { payload: { rooms: roomNumbers, booking_id: bookingId, people: placed.placed.map(p => p.personId) } });
+      return { id: e.id, booking_id: bookingId, rooms: roomNumbers };
     });
   });
 
   f.post("/v1/guest-enquiries/:id/take", async (req: any, reply) => {
     const a = await requireActor(req, reply, "ADMIN"); if (!a || !allow(a, "group.create", reply)) return;
-    return tx(async c => {
-      const e = (await c.query(`select * from guest_enquiry where id=$1 and property_id=$2 for update`, [req.params.id, a.propertyId])).rows[0];
+    const prop = (await pool.query(`select id, tenant_id, name from property where id=$1`, [a.propertyId])).rows[0];
+    const taken = await tx(async c => {
+      const e = (await c.query(`select *, arrival_date::text arrival, departure_date::text departure from guest_enquiry where id=$1 and property_id=$2 for update`, [req.params.id, a.propertyId])).rows[0];
       if (!e) { reply.code(404); return problem(404, "not_found", "No such enquiry"); }
-      if (e.status !== "ENQUIRY" && e.booking_id) return { id: e.booking_id, name: e.name, already: true };
+      if (e.status !== "ENQUIRY" && e.booking_id) return { id: e.booking_id, name: e.name, already: true, notes: [] as OutboundNote[] };
+      const built = captureFromStored(enquiryInput(e));
+      const warning = acceptWarning(built.loss);
+      if (warning && !req.body?.acknowledge_loss) {
+        reply.code(409);
+        return problem(409, "accept_would_lose_data", warning, { loss: built.loss });
+      }
       let bookingId = e.booking_id as string | null;
       if (!bookingId) {
         const n = await c.query(`select count(*) from booking_group where property_id=$1`, [a.propertyId]);
         const g = (await c.query(`insert into booking_group(tenant_id,property_id,name,organisation,contact_email,arrival_date,arrival_slot,departure_date,departure_slot,
             expected_guests,status,booking_form_status,notes,colour,source)
           values($1,$2,$3,$4,$5,$6,'PM',$7,'AM',$8,'ENQUIRY','NOT_SENT',$9,$10,'GUEST_BOOK') returning id, name`,
-          [a.tenantId, a.propertyId, e.name, e.name, e.email, e.arrival_date, e.departure_date, e.people, e.notes,
+          [a.tenantId, a.propertyId, e.name, e.name, e.email, e.arrival, e.departure, built.capture.party.length || e.people, e.notes,
            ["#1F3A32", "#8A6A3B", "#4F6758", "#6B3A32"][Number(n.rows[0].count) % 4]])).rows[0];
         bookingId = g.id;
       }
       if (!bookingId) throw new Error("booking was not created");
+      await carryOntoBooking(c, { tenantId: a.tenantId, propertyId: a.propertyId, bookingId, stay: built.capture, actorUserId: a.userId, keepAllergens: !!e.keep_allergens });
       await c.query(`update guest_enquiry set status='CONVERTED', booking_id=$2 where id=$1`, [e.id, bookingId]);
-      await audit(c, a, "booking_group", bookingId, "group.create", { to: "ENQUIRY", payload: { from_enquiry: e.id, private: true } });
+      const notes = await routedNotes(c, prop, e.id, bookingId, built.capture, "accepted", a.userId);
+      await audit(c, a, "booking_group", bookingId, "group.create", { to: "ENQUIRY", payload: { from_enquiry: e.id, private: true, carried: true, loss: built.loss } });
       void backupGuestEvent({
         id: `guest_take_${e.id}`,
         kind: e.programme_id ? "converted_programme" : "converted_dates",
@@ -515,12 +715,104 @@ export default async function guestPortal(f: FastifyInstance) {
         people: e.people,
         booking_group_id: bookingId,
         programme_id: e.programme_id ?? null,
-        arrival: e.arrival_date,
-        departure: e.departure_date,
+        arrival: e.arrival,
+        departure: e.departure,
         notes: e.notes ?? null,
       });
-      return { id: bookingId, name: e.name, private: true };
+      return { id: bookingId, name: e.name, private: true, enquiryId: e.id as string, notes };
     });
+    if (taken && "notes" in taken && taken.notes?.length && taken.enquiryId) await deliverNotes(prop, a.userId, taken.notes, taken.enquiryId);
+    if (taken && "notes" in taken) {
+      const { notes: _notes, enquiryId: _enquiryId, ...rest } = taken;
+      return rest;
+    }
+    return taken;
+  });
+
+  f.get("/guest/enquiries/:id", async (req: any, reply) => {
+    const g = await requireGuest(req, reply); if (!g) return;
+    const e = (await pool.query(`select *, arrival_date::text arrival, departure_date::text departure from guest_enquiry where id=$1 and guest_id=$2`, [req.params.id, g.id])).rows[0];
+    if (!e) return reply.code(404).send(problem(404, "not_found", "No such place"));
+    const { capture } = captureFromStored(enquiryInput(e));
+    return {
+      id: e.id,
+      status: e.status,
+      people: capture.party.length || Number(e.people),
+      arrival: capture.arrival,
+      departure: capture.departure,
+      notes: capture.notes,
+      accessibility_notes: capture.accessibility_notes,
+      access: capture.access,
+      access_note: capture.access_note,
+      room_preference: capture.room_preference,
+      arrival_time_note: capture.arrival_time_note,
+      travel_notes: capture.travel_notes,
+      party: capture.party,
+    };
+  });
+
+  f.patch("/guest/enquiries/:id", async (req: any, reply) => {
+    const g = await requireGuest(req, reply); if (!g) return;
+    if (!rateOk(`enam:${g.id}`)) return reply.code(429).send(problem(429, "rate_limited", "Please wait a minute"));
+    const prop = await propertyRow();
+    const saved = await tx(async c => {
+      const e = (await c.query(`select *, arrival_date::text arrival, departure_date::text departure from guest_enquiry where id=$1 and guest_id=$2 for update`, [req.params.id, g.id])).rows[0];
+      if (!e) { reply.code(404); return problem(404, "not_found", "No such place"); }
+      if (e.status === "CANCELLED" || e.status === "DECLINED") { reply.code(409); return problem(409, "closed", "This place is already closed"); }
+      if (e.booking_id) {
+        const booking = (await c.query(`select status from booking_group where id=$1`, [e.booking_id])).rows[0];
+        if (booking && ["IN_HOUSE", "COMPLETED", "CANCELLED"].includes(booking.status)) {
+          reply.code(409); return problem(409, "closed", "The house has this stay in progress. Contact reception to change it.");
+        }
+      }
+      const arrival = e.programme_id ? e.arrival : (req.body?.arrival ?? e.arrival);
+      const departure = e.programme_id ? e.departure : (req.body?.departure ?? e.departure);
+      const parsed = captureFromBody({ ...req.body, name: req.body?.name ?? e.name, email: g.email, people: req.body?.people ?? e.people }, { arrival, departure, arrival_slot: e.arrival_slot, departure_slot: e.departure_slot });
+      if (!parsed.ok) { reply.code(422); return problem(422, "validation", parsed.errors[0] ?? "Check the party details"); }
+      const capture = parsed.capture;
+      await c.query(`update guest_enquiry set name=$2, people=$3, arrival_date=$4, departure_date=$5, notes=$6, dietary_notes=$7, accessibility_notes=$8, room_preference=$9, arrival_time_note=$10, travel_notes=$11, party=$12, arrival_slot=$13, departure_slot=$14 where id=$1`,
+        [e.id, capture.name, capture.people, capture.arrival, capture.departure, capture.notes, sealText(dietarySummary(capture)), sealText(capture.accessibility_notes), capture.room_preference, capture.arrival_time_note, sealText(capture.travel_notes), sealParty(capture.party, { access: capture.access, access_note: capture.access_note }), capture.arrival_slot, capture.departure_slot]);
+      if (e.booking_id) {
+        await c.query(`update booking_group set arrival_date=$2, departure_date=$3, expected_guests=$4 where id=$1`, [e.booking_id, capture.arrival, capture.departure, capture.people]);
+        await c.query(`delete from room_occupancy where group_id=$1 and (on_date < $2::date or on_date > greatest($3::date - 1, $2::date))`, [e.booking_id, capture.arrival, capture.departure]);
+        await carryOntoBooking(c, { tenantId: prop.tenant_id, propertyId: prop.id, bookingId: e.booking_id, stay: capture, keepAllergens: !!(req.body?.keep_allergens ?? e.keep_allergens) });
+        if ("keep_allergens" in (req.body ?? {})) await c.query(`update guest_enquiry set keep_allergens=$2 where id=$1`, [e.id, !!req.body.keep_allergens]);
+      }
+      const notes = await routedNotes(c, prop, e.id, e.booking_id, capture, "amended");
+      return { id: e.id as string, status: e.status as string, notes };
+    });
+    if (saved && "notes" in saved && saved.notes) {
+      await deliverNotes(prop, null, saved.notes, saved.id);
+      return { id: saved.id, status: saved.status };
+    }
+    return saved;
+  });
+
+  f.post("/guest/enquiries/:id/cancel", async (req: any, reply) => {
+    const g = await requireGuest(req, reply); if (!g) return;
+    const prop = await propertyRow();
+    const saved = await tx(async c => {
+      const e = (await c.query(`select *, arrival_date::text arrival, departure_date::text departure from guest_enquiry where id=$1 and guest_id=$2 for update`, [req.params.id, g.id])).rows[0];
+      if (!e) { reply.code(404); return problem(404, "not_found", "No such place"); }
+      if (e.status === "CANCELLED") return { id: e.id as string, status: "CANCELLED", notes: [] as OutboundNote[] };
+      if (e.booking_id) {
+        const booking = (await c.query(`select status from booking_group where id=$1 for update`, [e.booking_id])).rows[0];
+        if (booking && ["IN_HOUSE", "COMPLETED"].includes(booking.status)) {
+          reply.code(409); return problem(409, "closed", "The house has this stay in progress. Contact reception to cancel it.");
+        }
+        if (booking && booking.status !== "CANCELLED") {
+          await c.query(`update booking_group set status='CANCELLED', version=version+1 where id=$1`, [e.booking_id]);
+          await c.query(`delete from room_occupancy where group_id=$1`, [e.booking_id]);
+        }
+      }
+      await c.query(`update guest_enquiry set status='CANCELLED' where id=$1`, [e.id]);
+      const { capture } = captureFromStored(enquiryInput(e));
+      const notes = await routedNotes(c, prop, e.id, e.booking_id, capture, "cancelled");
+      return { id: e.id as string, status: "CANCELLED", notes };
+    });
+    if (saved && "notes" in saved && saved.notes?.length) await deliverNotes(prop, null, saved.notes, saved.id);
+    if (saved && "notes" in saved) return { id: saved.id, status: saved.status };
+    return saved;
   });
 
   f.post("/guest/requests", async (req: any, reply) => {
@@ -528,23 +820,32 @@ export default async function guestPortal(f: FastifyInstance) {
     const requestText = String(req.body?.request_text ?? req.body?.notes ?? "").trim();
     if (!requestText) return reply.code(422).send(problem(422, "validation", "Write what you need"));
     const roomLabel = String(req.body?.room_label ?? "").trim() || null;
-    const department = routeGuestRequest(requestText, req.body?.department);
-    const r = await pool.query(
-      `insert into ops_guest_request (
-         tenant_id, property_id, guest_account_id, guest_name, guest_email, room_label, department, request_text, status
-       ) values ($1,$2,$3,$4,$5,$6,$7,$8,'open')
-       returning id, department, status, created_at`,
-      [g.tenantId, g.propertyId, g.id, g.name, g.email, roomLabel, department, requestText],
-    );
-    const row = r.rows[0];
+    const plan = planGuestRequest(requestText, req.body?.department);
+    const rows = [];
+    for (const route of plan) {
+      const r = await pool.query(
+        `insert into ops_guest_request (
+           tenant_id, property_id, guest_account_id, guest_name, guest_email, room_label, department, request_text, status
+         ) values ($1,$2,$3,$4,$5,$6,$7,$8,'open')
+         returning id, department, status, created_at`,
+        [g.tenantId, g.propertyId, g.id, g.name, g.email, roomLabel, route.department, route.request_text],
+      );
+      rows.push(r.rows[0]);
+    }
     return {
-      id: row.id,
-      department: row.department,
-      department_label: departmentLabel(row.department),
-      status: row.status,
-      request_text: requestText,
+      id: rows[0].id,
+      department: rows[0].department,
+      department_label: rows.map(row => departmentLabel(row.department)).join(" and "),
+      status: rows[0].status,
+      request_text: plan[0].request_text,
       room_label: roomLabel,
+      routes: rows.map(row => ({ id: row.id, department: row.department, department_label: departmentLabel(row.department) })),
     };
+  });
+
+  f.get("/guest/check-in", async (req, reply) => {
+    const g = await requireGuest(req, reply); if (!g) return;
+    return stayLinkForEmail(g.propertyId, g.email);
   });
 
   f.get("/guest/requests", async (req, reply) => {
@@ -601,19 +902,12 @@ export default async function guestPortal(f: FastifyInstance) {
     const subject = `Verify your email — ${prop?.name ?? "The Vedanta Way"} My Stay`;
     const body = `Dear ${gs.display_name},\n\nPlease verify your email address by clicking the link below:\n\n${verifyUrl}\n\nThis link expires in 24 hours. If you did not register with us, please ignore this email.\n\nWith warm regards,\n${prop?.name ?? "The Vedanta Way"}\n${prop?.website ?? "https://www.thevedanta.org/"}`;
 
-    // Log to outbound_email
-    await pool.query(`INSERT INTO outbound_email (tenant_id, property_id, to_email, subject, body, kind, related_type, related_id, status) VALUES ($1,$2,$3,$4,$5,'guest_verify_email','guest_account',$6,$7)`,
-      [gs.tenant_id, gs.property_id, gs.email, subject, body, gs.id, emailConfigured() ? "QUEUED" : "LOGGED"]);
+    const sent = await sendEmail(
+      { tenantId: gs.tenant_id, propertyId: gs.property_id, userId: null },
+      { to: gs.email, subject, body, kind: "guest_verify_email", related_type: "guest_account", related_id: gs.id, urgent: true },
+    );
 
-    // Send if SMTP configured
-    if (emailConfigured()) {
-      const nodemailer = (await import("nodemailer")).default;
-      const transport = nodemailer.createTransport(process.env.SMTP_URL!);
-      const FROM = process.env.MAIL_FROM ?? `The Vedanta <bookings@thevedanta.org>`;
-      await transport.sendMail({ from: FROM, to: gs.email, subject, text: body }).catch(() => {});
-    }
-
-    return { ok: true, email_sent: emailConfigured() };
+    return { ok: true, email_sent: sent.status === "SENT" || sent.status === "LOGGED" };
   });
 
   // Verify email via token from magic link
@@ -639,20 +933,32 @@ export default async function guestPortal(f: FastifyInstance) {
 
   // Resend access code to existing guest by email (magic link for forgotten code)
   f.post("/guest/resend-code", async (req: any, reply) => {
-    const { email } = req.body ?? {};
-    if (!email) return reply.code(422).send(problem(422, "validation", "email required"));
+    const email = String(req.body?.email ?? "").trim().toLowerCase();
+    if (!email.includes("@")) return reply.code(422).send(problem(422, "validation", "email required"));
     const prop = await propertyRow();
-    // Re-issue access code (same as registration flow)
-    const r = await upsertGuestWithCode(prop, email, email.split("@")[0]);
-    if (r.access_code && emailConfigured()) {
-      const nodemailer = (await import("nodemailer")).default;
-      const transport = nodemailer.createTransport(process.env.SMTP_URL!);
-      const FROM = process.env.MAIL_FROM ?? `The Vedanta <bookings@thevedanta.org>`;
-      const subject = `Your new access code — ${prop?.name ?? "The Vedanta Way"} My Stay`;
-      const body = `Your My Stay access code is: ${r.access_code}\n\nThis code expires in 14 days.\n\n${prop?.name ?? "The Vedanta Way"}`;
-      await transport.sendMail({ from: FROM, to: email, subject, text: body }).catch(() => {});
+    const existing = (await pool.query(
+      `select id, display_name from guest_account where property_id=$1 and lower(email)=$2 and status='ACTIVE'`,
+      [prop.id, email],
+    )).rows[0] as { id: string; display_name: string } | undefined;
+    const decision = resendAccessCode(existing ?? null);
+    if (decision.action === "reissue" && decision.guest_id) {
+      const accessCode = newAccessCode();
+      await pool.query(
+        `update guest_account set access_code_hash=$2, access_code_expires_at=$3, access_code_issued_at=now(), access_code_failed_attempts=0, access_code_locked_until=null where id=$1`,
+        [decision.guest_id, hashAccessCode(accessCode), issueExpiry()],
+      );
+      const houseName = prop?.name ?? "The Vedanta Way";
+      await sendEmail(
+        { tenantId: prop.tenant_id, propertyId: prop.id, userId: null },
+        {
+          to: email,
+          subject: `Your new access code — ${houseName} My Stay`,
+          body: `Your My Stay access code is: ${accessCode}\n\nThis code expires in 14 days.\n\n${houseName}`,
+          kind: "guest_access_code",
+        },
+      );
     }
-    return { ok: true }; // Always return ok to prevent email enumeration
+    return { ok: true };
   });
 }
 

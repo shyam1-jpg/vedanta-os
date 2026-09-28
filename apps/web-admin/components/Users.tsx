@@ -12,9 +12,15 @@ export default function Users() {
   const [edit, setEdit] = useState<U | null>(null);
   const [form, setForm] = useState({ name: "", role: "", department: "" });
   const [toast, setToast] = useState<string | null>(null); const [busy, setBusy] = useState(false);
+  const [cleared, setCleared] = useState<Record<string, boolean>>({});
   const say = (t: string) => { setToast(t); setTimeout(() => setToast(null), 3500); };
   const load = () => api<{ items: U[]; roles: Ref[]; departments: Ref[] }>("/v1/users").then(r => { setItems(r.items); setRoles(r.roles); setDepts(r.departments); }).catch(e => say(e instanceof ApiError ? e.problem.detail : "Could not load"));
-  useEffect(() => { load(); }, []);
+  useEffect(() => {
+    load();
+    api<{ people: { id: string; cleared: boolean }[] }>("/v1/induction/clearance")
+      .then(r => setCleared(Object.fromEntries(r.people.map(p => [p.id, p.cleared]))))
+      .catch(() => {});
+  }, []);
   const run = async (fn: () => Promise<unknown>, ok: string) => { setBusy(true); try { await fn(); say(ok); await load(); } catch (e) { say(e instanceof ApiError ? e.problem.detail : "Something went wrong"); } finally { setBusy(false); } };
   const active = items.filter(u => u.status === "ACTIVE"), gone = items.filter(u => u.status !== "ACTIVE");
   const openEdit = (u: U) => { setEdit(u); setForm({ name: u.name, role: u.role ?? "", department: u.department ?? "" }); };
@@ -31,7 +37,7 @@ export default function Users() {
 
   const Row = ({ u }: { u: U }) => (
     <div className="urow">
-      <div><div className="t">{u.name}{u.email === user?.email ? <span className="m"> · you</span> : null}</div><div className="m">{u.email}{u.department ? ` · ${depts.find(d => d.code === u.department)?.name ?? u.department}` : ""}{u.role_name ? ` · ${u.role_name}` : ""}{u.last_sign_in ? ` · last signed in ${new Date(u.last_sign_in).toLocaleDateString("en-GB")}` : ""}</div></div>
+      <div><div className="t">{u.name}{u.email === user?.email ? <span className="m"> · you</span> : null}</div><div className="m">{u.email}{u.department ? ` · ${depts.find(d => d.code === u.department)?.name ?? u.department}` : ""}{u.role_name ? ` · ${u.role_name}` : ""}{u.id in cleared ? (cleared[u.id] ? " · cleared for unsupervised work" : " · not cleared for unsupervised work") : ""}{u.last_sign_in ? ` · last signed in ${new Date(u.last_sign_in).toLocaleDateString("en-GB")}` : ""}</div></div>
       {u.status === "ACTIVE" && <button className="btn" disabled={busy} onClick={() => openEdit(u)}>Correct name / move</button>}
       {u.status === "ACTIVE"
         ? <button className="btn danger" disabled={busy || u.email === user?.email} onClick={() => { if (confirm(`Remove access for ${u.name}? They will be signed out.`)) run(() => api(`/v1/users/${u.id}`, { method: "PATCH", body: JSON.stringify({ status: "LEFT" }) }), `${u.name} no longer has access`); }}>Remove access</button>

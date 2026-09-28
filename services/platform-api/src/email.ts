@@ -5,7 +5,7 @@
 import nodemailer from "nodemailer";
 import type { FastifyInstance } from "fastify";
 import { pool, tx } from "./db.ts";
-import { requireActor, allow, problem, type Actor } from "./auth.ts";
+import { requireActor, allow, problem } from "./auth.ts";
 import { audit } from "./groups.ts";
 import { bookingValue } from "./packages.ts";
 
@@ -13,12 +13,60 @@ const transport = process.env.SMTP_URL ? nodemailer.createTransport(process.env.
 const FROM = process.env.MAIL_FROM ?? "The Vedanta <bookings@thevedanta.org>";
 export const emailConfigured = () => !!transport;
 
-export async function sendEmail(a: Actor, m: { to: string; subject: string; body: string; kind: string; related_type?: string; related_id?: string }) {
+type MailResult = { id: string; status: "LOGGED" | "SENT" | "FAILED" | "SKIPPED" | "DEFERRED"; error?: string };
+
+async function guestGate(a: { tenantId: string; propertyId: string }, m: { to: string; kind: string; audience?: "guest" | "staff"; urgent?: boolean }) {
+  try {
+    const { gateOutbound } = await import("./commsPrefs.ts");
+    return await gateOutbound({ tenantId: a.tenantId, propertyId: a.propertyId, to: m.to, email: m.to, kind: m.kind, channel: "email", audience: m.audience, urgent: m.urgent });
+  } catch {
+    return { action: "send" as const, applied: false, reason: "preferences unavailable", purpose: "operational" as const, footer: undefined as string | undefined, notBefore: undefined as string | undefined };
+  }
+}
+
+export async function sendEmail(a: { tenantId: string; propertyId: string; userId?: string | null }, m: { to: string; subject: string; body: string; kind: string; related_type?: string; related_id?: string; audience?: "guest" | "staff"; urgent?: boolean }): Promise<MailResult> {
+  const decision = await guestGate(a, m);
+  const body = decision.footer ? `${m.body.replace(/\s*$/, "")}\n${decision.footer}` : m.body;
+  if (decision.action !== "send") {
+    try {
+      const held = (await pool.query(
+        `insert into outbound_email (tenant_id, property_id, to_email, subject, body, kind, related_type, related_id, sent_by_user_id, status, channel, not_before, hold_reason, guest_email)
+         values ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,'email',$11,$12,$3) returning id`,
+        [a.tenantId, a.propertyId, m.to, m.subject, body, m.kind, m.related_type ?? null, m.related_id ?? null, a.userId ?? null, decision.action === "defer" ? "DEFERRED" : "SKIPPED", decision.notBefore ?? null, decision.reason],
+      )).rows[0];
+      return { id: held.id, status: decision.action === "defer" ? "DEFERRED" : "SKIPPED" };
+    } catch {
+      const held = (await pool.query(
+        `insert into outbound_email (tenant_id, property_id, to_email, subject, body, kind, related_type, related_id, sent_by_user_id, status, error)
+         values ($1,$2,$3,$4,$5,$6,$7,$8,$9,'LOGGED',$10) returning id`,
+        [a.tenantId, a.propertyId, m.to, m.subject, body, m.kind, m.related_type ?? null, m.related_id ?? null, a.userId ?? null, `held: ${decision.reason}`],
+      )).rows[0];
+      return { id: held.id, status: decision.action === "defer" ? "DEFERRED" : "SKIPPED" };
+    }
+  }
   const row = (await pool.query(`insert into outbound_email (tenant_id, property_id, to_email, subject, body, kind, related_type, related_id, sent_by_user_id, status)
-    values ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10) returning id`, [a.tenantId, a.propertyId, m.to, m.subject, m.body, m.kind, m.related_type ?? null, m.related_id ?? null, a.userId, transport ? "QUEUED" : "LOGGED"])).rows[0];
+    values ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10) returning id`, [a.tenantId, a.propertyId, m.to, m.subject, body, m.kind, m.related_type ?? null, m.related_id ?? null, a.userId ?? null, transport ? "QUEUED" : "LOGGED"])).rows[0];
   if (!transport) return { id: row.id, status: "LOGGED" as const };
-  try { await transport.sendMail({ from: FROM, to: m.to, subject: m.subject, text: m.body }); await pool.query(`update outbound_email set status='SENT', sent_at=now() where id=$1`, [row.id]); return { id: row.id, status: "SENT" as const }; }
-  catch (e: any) { await pool.query(`update outbound_email set status='FAILED', error=$2 where id=$1`, [row.id, String(e.message ?? e)]); return { id: row.id, status: "FAILED" as const, error: String(e.message ?? e) }; }
+  return dispatchOutbound(row.id);
+}
+
+/** Send a row that is already in the log. Used when a quiet-hours hold comes due. Does not check preferences again. */
+export async function dispatchOutbound(id: string): Promise<MailResult> {
+  const row = (await pool.query(`select to_email, subject, body, status from outbound_email where id=$1`, [id])).rows[0];
+  if (!row) return { id, status: "FAILED" };
+  if (!transport) {
+    await pool.query(`update outbound_email set status='LOGGED', sent_at=null where id=$1 and status='DEFERRED'`, [id]);
+    return { id, status: "LOGGED" };
+  }
+  try {
+    await transport.sendMail({ from: FROM, to: row.to_email, subject: row.subject, text: row.body });
+    await pool.query(`update outbound_email set status='SENT', sent_at=now(), error=null where id=$1`, [id]);
+    return { id, status: "SENT" };
+  } catch (e: any) {
+    const error = String(e.message ?? e);
+    await pool.query(`update outbound_email set status='FAILED', error=$2 where id=$1`, [id, error]);
+    return { id, status: "FAILED", error };
+  }
 }
 
 const fmtDate = (d: string) => new Date(d + "T00:00:00").toLocaleDateString("en-GB", { weekday: "long", day: "numeric", month: "long", year: "numeric" });

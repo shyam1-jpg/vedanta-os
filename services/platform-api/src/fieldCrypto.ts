@@ -120,12 +120,19 @@ export async function sealStoredSensitive(client: Queryable): Promise<void> {
     );
   }
   await sealTextColumns(client, "guest_account", "id", ["dietary_notes", "accessibility_notes", "travel_notes", "notes", "flagged_reason"]);
+  await sealTextColumns(client, "guest_enquiry", "id", ["party"]);
+  await sealTextColumns(client, "diet_profile", "person_id", ["allergen_detail"]);
+  await sealTextColumns(client, "booking_group", "id", ["accessibility_notes", "travel_notes"]);
   await sealTextColumns(client, "guest_communication", "id", ["body"]);
   await sealTextColumns(client, "guest_complaint", "id", ["description", "compensation", "resolution"]);
   await sealTextColumns(client, "staff_hr", "user_id", ["pay_note", "bank_account_name", "bank_sort_code", "bank_account_number", "national_insurance", "home_address", "date_of_birth"]);
   await sealTextColumns(client, "absence_request", "id", ["notes"]);
   await sealTextColumns(client, "staff_document", "id", ["notes"]);
   await sealTextColumns(client, "training_record", "id", ["notes", "certificate_ref"]);
+  await sealTextColumns(client, "guest_profile", "person_id", ["accessibility_notes", "special_requests", "notes"]);
+  await sealTextColumns(client, "guest_staff_note", "id", ["body"]);
+  await sealTextColumns(client, "guest_note_event", "id", ["previous_body"]);
+  await sealTextColumns(client, "diet_history", "id", ["notes", "allergen_detail"]);
 }
 
 async function sealTextColumns(client: Queryable, table: string, idCol: string, cols: string[]): Promise<void> {

@@ -9,6 +9,7 @@ import EmailDialog from "@/components/EmailDialog";
 import { bookingValue, gbp } from "@/lib/pricing";
 import { api, ApiError } from "@/lib/api";
 import { fmt, nights } from "@/lib/format";
+import { MatchPrompts, ReturningCards, type MatchPrompt, type ReturningCardData } from "@/components/ReturningCard";
 
 const TODAY = new Date().toISOString().slice(0, 10);
 const FLOW: GroupStatus[] = ["ENQUIRY", "PROVISIONAL", "CONFIRMED", "IN_HOUSE", "COMPLETED"];
@@ -34,10 +35,11 @@ export default function GroupsScreen() {
   const [payDraft, setPayDraft] = useState({ kind: "deposit", method: "bank_transfer", amount: "", reference: "", note: "" });
   const [invDraft, setInvDraft] = useState({ kind: "invoice", amount: "", due_date: "" });
   const [comms, setComms] = useState<{ id: string; kind: string; scheduled_for: string; sent_at: string | null; cancelled_at: string | null; email_status: string | null; to_email: string | null }[]>([]);
-  const [enquiries, setEnquiries] = useState<{ id: string; name: string; email: string; people: number; arrival: string; departure: string; notes: string | null; programme_name?: string | null; dietary_notes?: string | null; accessibility_notes?: string | null; room_preference?: string | null; arrival_time_note?: string | null; travel_notes?: string | null }[]>([]);
+  const [enquiries, setEnquiries] = useState<{ id: string; name: string; email: string; people: number; arrival: string; departure: string; notes: string | null; programme_name?: string | null; dietary_notes?: string | null; accessibility_notes?: string | null; room_preference?: string | null; arrival_time_note?: string | null; travel_notes?: string | null; party_summary?: string | null; accept_warning?: string | null; severe?: boolean; deposit_status?: string; deposit_amount?: number | null }[]>([]);
   const [sheet, setSheet] = useState<{ programme: string; guests: number | null; rooms_placed: string[]; rooms_short: number; meals: { breakfast: number; lunch: number; dinner: number } | null; dietary: string | null; departments: { code: string; work: string }[] } | null>(null);
   const [stays, setStays] = useState<{ id: string; name: string; email: string; people: number; arrival: string; departure: string; status: string; programme_name: string | null; rooms: { number: string; section: string | null }[]; booking_id: string | null }[]>([]);
   const [roomDraft, setRoomDraft] = useState<Record<string, string>>({});
+  const [returning, setReturning] = useState<{ cards: ReturningCardData[]; prompts: MatchPrompt[] }>({ cards: [], prompts: [] });
   const today = new Date().toISOString().slice(0, 10);
   const sel = groups.find(g => g.id === selId) ?? groups.filter(g => g.status !== "CANCELLED" && g.status !== "COMPLETED" && g.departure >= today).sort((a, b) => a.arrival.localeCompare(b.arrival))[0];
   useEffect(() => {
@@ -46,6 +48,7 @@ export default function GroupsScreen() {
     if (sel?.id) api<NonNullable<typeof sheet>>(`/v1/groups/${sel.id}/sheet`).then(setSheet).catch(() => setSheet(null));
     if (sel?.id) api<NonNullable<typeof folio>>(`/v1/groups/${sel.id}/folio`).then(setFolio).catch(() => {});
     if (sel?.id) api<{ items: typeof comms }>(`/v1/groups/${sel.id}/comms`).then(r => setComms(r.items)).catch(() => {});
+    if (sel?.id) api<{ cards: ReturningCardData[]; prompts: MatchPrompt[] }>(`/v1/guest-history/booking/${sel.id}`).then(setReturning).catch(() => setReturning({ cards: [], prompts: [] }));
   }, [sel?.id, sel?.attendees]); // eslint-disable-line react-hooks/exhaustive-deps
   const loadGuestBook = () => {
     api<{ items: typeof enquiries }>("/v1/guest-enquiries").then(r => setEnquiries(r.items)).catch(() => {});
@@ -99,8 +102,18 @@ export default function GroupsScreen() {
           <p className="m" style={{ color: "var(--ink-2)" }}>Guests sent these from /book. Take one into the house book to hold rooms.</p>
           {enquiries.map(e => (
             <div className="urow" key={e.id}>
-              <div><div className="t">{e.name}{e.programme_name ? ` · ${e.programme_name}` : ""}</div><div className="m">{e.email} · {e.arrival} → {e.departure} · {e.people} people{e.room_preference ? ` · ${e.room_preference}` : ""}{e.dietary_notes ? ` · diet: ${e.dietary_notes}` : ""}{e.accessibility_notes ? ` · access: ${e.accessibility_notes}` : ""}{e.travel_notes ? ` · travel: ${e.travel_notes}` : ""}{e.notes ? ` · ${e.notes}` : ""}</div></div>
-              {can("group.create") && <button className="btn primary" onClick={() => run(async () => { await api(`/v1/guest-enquiries/${e.id}/take`, { method: "POST" }); await reload(); loadGuestBook(); say("Private stay opened — assign rooms below"); })}>Take into the book</button>}
+              <div><div className="t">{e.name}{e.programme_name ? ` · ${e.programme_name}` : ""}{e.severe ? " · SEVERE allergen" : ""}</div><div className="m">{e.email} · {e.arrival} → {e.departure} · {e.people} people{e.deposit_status && e.deposit_status !== "unpaid" ? ` · deposit ${e.deposit_status}${e.deposit_amount != null ? ` £${Number(e.deposit_amount).toFixed(2)}` : ""}` : ""}{e.arrival_time_note ? ` · arrives ${e.arrival_time_note}` : ""}{e.room_preference ? ` · ${e.room_preference}` : ""}{e.party_summary || e.dietary_notes ? ` · diet: ${e.party_summary || e.dietary_notes}` : ""}{e.accessibility_notes ? ` · access: ${e.accessibility_notes}` : ""}{e.travel_notes ? ` · travel: ${e.travel_notes}` : ""}{e.notes ? ` · ${e.notes}` : ""}</div>{e.accept_warning && <div className="note">{e.accept_warning}</div>}</div>
+              {can("group.create") && <button className="btn primary" onClick={() => run(async () => {
+                try {
+                  await api(`/v1/guest-enquiries/${e.id}/take`, { method: "POST", body: JSON.stringify({}) });
+                } catch (err) {
+                  if (err instanceof ApiError && err.problem.code === "accept_would_lose_data") {
+                    if (!confirm(err.problem.detail)) return;
+                    await api(`/v1/guest-enquiries/${e.id}/take`, { method: "POST", body: JSON.stringify({ acknowledge_loss: true }) });
+                  } else throw err;
+                }
+                await reload(); loadGuestBook(); say("Private stay opened — diet, access and arrival are on the booking");
+              })}>Take into the book</button>}
             </div>
           ))}
         </div>
@@ -190,6 +203,8 @@ export default function GroupsScreen() {
               <div>{(() => { const v = bookingValue(sel); return <><span>Booking value</span><b>{v.value == null ? <span className="warn">Not priced — {v.how}</span> : gbp(v.value)}</b>{v.value != null && <div className="m" style={{ fontSize: 11, color: "var(--ink-2)" }}>{v.how}</div>}</>; })()}</div>
             </div>
 
+            <ReturningCards cards={returning.cards} />
+            <MatchPrompts prompts={returning.prompts} onDecide={(id, action) => run(async () => { await api(`/v1/guest-history/matches/${id}/${action}`, { method: "POST", body: "{}" }); if (sel?.id) setReturning(await api(`/v1/guest-history/booking/${sel.id}`)); say(action === "confirm" ? "Same guest — profiles merged" : "Not the same guest"); })} />
             {sel.dietaryNotes && <div className="note" style={{ borderColor: "var(--moss)", background: "var(--moss-soft)" }}>Dietary: {sel.dietaryNotes}</div>}
             {sel.notes && <div className="note" style={{ whiteSpace: "pre-wrap", maxHeight: 140, overflow: "auto" }}>{sel.notes}</div>}
             {sheet && (
@@ -249,6 +264,7 @@ export default function GroupsScreen() {
             {folio && (
               <div style={{ display: "flex", gap: 10, marginBottom: 14, flexWrap: "wrap" }}>
                 <span className="chip CONFIRMED">Paid {folio.total_paid_fmt}</span>
+                {sel.depositStatus && <span className={`chip ${sel.depositStatus === "paid" ? "CONFIRMED" : "ENQUIRY"}`}>Deposit {sel.depositStatus}</span>}
                 <span className={`chip ${folio.balance_due > 0 ? "ENQUIRY" : "CONFIRMED"}`}>
                   {folio.balance_due > 0 ? `Balance due ${folio.balance_due_fmt}` : "Settled ✓"}
                 </span>

@@ -4,10 +4,10 @@ import { usePathname } from "next/navigation";
 import { useStore } from "@/lib/store";
 
 const sections: { label: string; items: [string, string, string | null][] }[] = [
-  { label: "The house", items: [["/house/", "Today", "group.read"], ["/groups/", "Bookings", "group.read"], ["/rooms/", "Room board", "group.read"]] },
-  { label: "In service", items: [["/ops/", "House log", "group.read"], ["/tasks/", "Tasks", "group.read"], ["/front/", "Front desk", "group.read"], ["/night/", "Night porter", "group.read"], ["/service/", "Department boards", "group.read"], ["/manual/", "Manual", "group.read"], ["/housekeeping/", "Housekeeping", "group.read"], ["/maintenance/", "Maintenance", "maintenance.read"], ["/kitchen/", "Kitchen", "covers.read"]] },
+  { label: "The house", items: [["/house/", "Today", "group.read"], ["/briefing/", "Morning briefing", "briefing.read"], ["/groups/", "Bookings", "group.read"], ["/rooms/", "Room board", "group.read"], ["/room-assign/", "Room allocation", "group.read"], ["/journey/", "Guest journey", "group.read"], ["/arrivals/", "Arrivals", "group.read"], ["/seva/", "Seva", "group.read"], ["/cow-care/", "Cow care", "goshala.care"], ["/shuttles/", "Shuttles", "group.read"], ["/whos-in/", "Who's in", "group.read"], ["/gallery/", "Gallery", "gallery.manage"]] },
+  { label: "In service", items: [["/ops/", "House log", "group.read"], ["/tasks/", "Tasks", "group.read"], ["/front/", "Front desk", "group.read"], ["/night/", "Night porter", "group.read"], ["/night-audit/", "Night audit", "night.audit"], ["/service/", "Department boards", "group.read"], ["/manual/", "Manual", "group.read"], ["/housekeeping/", "Housekeeping", "group.read"], ["/maintenance/", "Maintenance", "maintenance.read|maintenance.report"], ["/kitchen/", "Kitchen", "covers.read"], ["/stock/", "Kitchen stock", "kitchen.stock"], ["/garden/", "Garden", "garden.log"], ["/sustainability/", "Sustainability", "sustainability.log"], ["/feedback/", "Guest feedback", "group.read"], ["/compliance/", "Compliance", "compliance.calendar"], ["/lost-found/", "Lost and found", "lostfound.log"], ["/suppliers/", "Suppliers", "supplier.register"], ["/spend/", "Spending", "spend.log"]] },
   { label: "Intelligence", items: [["/duty-manager/", "AI Duty Manager", "group.read"], ["/programme/", "Programme sheet", "group.read"], ["/finance/", "Finance dashboard", "report.read"]] },
-  { label: "People", items: [["/guests/", "Guests", "guest.read"], ["/guest-360/", "Guest 360", "guest.read"], ["/hr/", "HR & Rota", "group.read"], ["/labour/", "Labour forecast", "clock.manage"], ["/staff-corner/", "Staff corner", "cover.read"], ["/payroll/", "Payroll", "clock.manage"], ["/users/", "Names & positions", "user.manage"], ["/sessions/", "My devices", null]] },
+  { label: "People", items: [["/guests/", "Guests", "guest.read"], ["/guest-360/", "Guest 360", "guest.read"], ["/hr/", "HR & Rota", "group.read"], ["/swaps/", "Shift swaps", "shift.swap.manage"], ["/labour/", "Labour forecast", "clock.manage"], ["/staff-corner/", "Staff corner", "cover.read"], ["/payroll/", "Payroll", "clock.manage"], ["/training/", "Training", "training.manage|training.signoff"], ["/org/", "Organisation", "org.read"], ["/users/", "Names & positions", "user.manage"], ["/sessions/", "My devices", null]] },
   { label: "The estate", items: [["/review/", "Imported bookings", "group.update"], ["/quality/", "Data quality", "group.update"], ["/reports/", "Reports", "report.read"], ["/purchasing/", "Purchasing", "group.read"], ["/emergency/", "Emergency & compliance", "group.read"], ["/settings/", "Settings", "package.manage"]] },
 ];
 const ROLE_NAMES: Record<string, string> = {
@@ -34,7 +34,7 @@ export default function Nav() {
         <div key={sec.label} className="nav-group">
           <div className="nav-sec">{sec.label}</div>
           {sec.items.map(([href, label, perm], i) => {
-            const off = perm && !can(perm);
+            const off = perm ? !perm.split("|").some(code => can(code)) : false;
             return <Link key={i} href={off ? "#" : href} className={p === href ? "active" : ""} aria-disabled={!!off} style={off ? { opacity: .35, pointerEvents: "none" } : undefined}>{label}</Link>;
           })}
         </div>

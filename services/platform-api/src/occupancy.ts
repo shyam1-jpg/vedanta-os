@@ -3,17 +3,37 @@ import { pool, tx } from "./db.ts";
 import { requireActor, allow, problem } from "./auth.ts";
 import { openText } from "./fieldCrypto.ts";
 import { halfDays, audit } from "./groups.ts";
+import { countTowardCovers, isUnconfirmedStay } from "../../../domains/kitchen/forecast.ts";
 
 export async function coversFor(propertyId: string, from: string, to: string) {
     const req = { query: { from, to } } as { query: { from: string; to: string } };
     const a = { propertyId };
     const r = await pool.query(`select id, name, organisation, arrival_date::text arrival, arrival_slot, arrival_time::text, departure_date::text departure, departure_slot, departure_time::text,
         expected_guests, retreat_type, meals_from, meals_to, dietary_notes, notes, colour, status
-      from booking_group where property_id=$1 and status in ('PROVISIONAL','CONFIRMED','IN_HOUSE') and departure_date>=$2 and arrival_date<=$3 order by arrival_date`, [a.propertyId, req.query.from, req.query.to]);
-    const days: Record<string, { date: string; breakfast: number; lunch: number; dinner: number; groups: { id: string; name: string; colour: string; guests: number; meals: string[]; note?: string; dietary?: string; status: string }[] }> = {};
+      from booking_group where property_id=$1 and status in ('ENQUIRY','PROVISIONAL','CONFIRMED','IN_HOUSE') and departure_date>=$2 and arrival_date<=$3 order by arrival_date`, [a.propertyId, req.query.from, req.query.to]);
+    const pending = await pool.query(`select id, name, people, arrival_date::text arrival, coalesce(arrival_slot,'PM') arrival_slot, departure_date::text departure, coalesce(departure_slot,'AM') departure_slot, dietary_notes
+      from guest_enquiry where property_id=$1 and status='ENQUIRY' and booking_id is null
+        and departure_date>=$2 and arrival_date<=$3
+        and (dietary_notes is not null or party is not null)`, [a.propertyId, req.query.from, req.query.to]);
+    const days: Record<string, { date: string; breakfast: number; lunch: number; dinner: number; groups: { id: string; name: string; colour: string; guests: number; meals: string[]; note?: string; dietary?: string; status: string; unconfirmed?: boolean }[] }> = {};
     const MEALS = ["BREAKFAST", "LUNCH", "DINNER"];
-    for (const g of r.rows) {
-      const guests = Number(g.expected_guests ?? 0);
+    const stays = [
+      ...r.rows.map(g => ({ ...g, guests: Number(g.expected_guests ?? 0) })),
+      ...pending.rows.map(e => ({
+        ...e,
+        guests: Number(e.people ?? 0),
+        arrival_time: null,
+        departure_time: null,
+        retreat_type: "residential",
+        meals_from: null,
+        meals_to: null,
+        colour: "#8A6A3B",
+        status: "ENQUIRY",
+      })),
+    ];
+    for (const g of stays) {
+      const guests = Number(g.guests ?? 0);
+      const unconfirmed = isUnconfirmedStay(g.status);
       const d = new Date(g.arrival + "T00:00:00Z"); const end = new Date(g.departure + "T00:00:00Z");
       for (; d <= end; d.setUTCDate(d.getUTCDate() + 1)) {
         const iso = d.toISOString().slice(0, 10);
@@ -21,12 +41,14 @@ export async function coversFor(propertyId: string, from: string, to: string) {
         const first = iso === g.arrival, last = iso === g.departure;
         // Default meal logic: arrive AM → lunch onwards; arrive PM → dinner onwards; depart AM → breakfast only; depart PM → up to lunch.
         let meals = [...MEALS];
-        if (first) { const from = g.meals_from ?? (g.arrival_slot === "AM" ? "LUNCH" : "DINNER"); meals = from === "NONE" ? [] : meals.slice(MEALS.indexOf(from)); }
-        if (last) { const to = g.meals_to ?? (g.departure_slot === "AM" ? "BREAKFAST" : "LUNCH"); meals = to === "NONE" ? [] : meals.filter(m => MEALS.indexOf(m) <= MEALS.indexOf(to)); }
+        if (first) { const fromMeal = g.meals_from ?? (g.arrival_slot === "AM" ? "LUNCH" : "DINNER"); meals = fromMeal === "NONE" ? [] : meals.slice(MEALS.indexOf(fromMeal)); }
+        if (last) { const toMeal = g.meals_to ?? (g.departure_slot === "AM" ? "BREAKFAST" : "LUNCH"); meals = toMeal === "NONE" ? [] : meals.filter(m => MEALS.indexOf(m) <= MEALS.indexOf(toMeal)); }
         if (g.retreat_type === "day_retreat" || g.retreat_type === "venue_hire") meals = meals.filter(m => m !== "BREAKFAST");
         const day = days[iso] ??= { date: iso, breakfast: 0, lunch: 0, dinner: 0, groups: [] };
-        for (const m of meals) (day as unknown as Record<string, number>)[m.toLowerCase()] += guests;
-        day.groups.push({ id: g.id, name: g.name, colour: g.colour, guests, meals: meals.map(m => m.toLowerCase()), note: first ? `arrive ${g.arrival_slot}${g.arrival_time ? " " + g.arrival_time.slice(0, 5) : ""}` : last ? `depart ${g.departure_slot}${g.departure_time ? " " + g.departure_time.slice(0, 5) : ""}` : undefined, dietary: openText(g.dietary_notes) ?? undefined, status: g.status });
+        if (countTowardCovers(g.status)) {
+          for (const m of meals) (day as unknown as Record<string, number>)[m.toLowerCase()] += guests;
+        }
+        day.groups.push({ id: g.id, name: g.name, colour: g.colour, guests, meals: meals.map(m => m.toLowerCase()), note: first ? `arrive ${g.arrival_slot}${g.arrival_time ? " " + String(g.arrival_time).slice(0, 5) : ""}` : last ? `depart ${g.departure_slot}${g.departure_time ? " " + String(g.departure_time).slice(0, 5) : ""}` : undefined, dietary: openText(g.dietary_notes) ?? undefined, status: g.status, unconfirmed });
       }
     }
     return { max_covers: 130, days: Object.values(days).sort((x, y) => x.date.localeCompare(y.date)) };
@@ -60,6 +82,10 @@ export default async function routes(f: FastifyInstance) {
     const hds = [...halfDays(g.rows[0])];
     const clash = await c.query(`select o.occupant_label, o.on_date::text, o.slot from room_occupancy o where o.room_id=$1 and o.group_id<>$2 and (o.on_date::text,o.slot) in (select * from unnest($3::text[],$4::text[])) limit 1`, [r.id, groupId, hds.map(h => h.date), hds.map(h => h.slot)]);
     if (clash.rowCount) return { err: problem(409, "room_taken", `Room ${number} is taken by ${clash.rows[0].occupant_label} on ${clash.rows[0].on_date} ${clash.rows[0].slot}.`) };
+    const held = await c.query(`select g.name from group_room_hold h join booking_group g on g.id=h.group_id
+      where h.room_id=$1 and h.group_id<>$2 and g.status not in ('CANCELLED','COMPLETED')
+        and g.departure_date >= $3::date and g.arrival_date <= $4::date limit 1`, [r.id, groupId, g.rows[0].arrival_date, g.rows[0].departure_date]);
+    if (held.rowCount) return { err: problem(409, "room_held", `Room ${number} is held for ${held.rows[0].name}.`) };
     const cnt = await c.query(`select count(distinct occupant_label) n from room_occupancy where room_id=$1 and group_id=$2`, [r.id, groupId]);
     if (Number(cnt.rows[0].n) + adding > r.max_capacity) return { err: problem(409, "room_full", `Room ${number} sleeps ${r.max_capacity}.`) };
     return { roomId: r.id as string, hds };

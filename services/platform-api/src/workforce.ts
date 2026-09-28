@@ -343,9 +343,11 @@ export default async function workforce(f: FastifyInstance) {
     if (!b.user_id || !b.title || !b.body) return reply.code(422).send(problem(422, "validation", "user_id, title and body are required"));
     const c = (await pool.query(`insert into staff_contract (tenant_id,property_id,user_id,title,body,starts_on,status,sent_at) values ($1,$2,$3,$4,$5,$6,'SENT', now()) returning id`,
       [a.tenantId, a.propertyId, b.user_id, b.title, b.body, b.starts_on ?? null])).rows[0];
-    await pool.query(`insert into outbound_email (tenant_id, property_id, kind, to_email, subject, body, status, sent_by_user_id)
-      select $1,$2,'staff_contract', u.email, $3, $4, 'LOGGED', $5 from app_user u where u.id=$6`,
-      [a.tenantId, a.propertyId, `Your contract — ${b.title}`, b.body, a.userId, b.user_id]).catch(() => {});
+    const staff = (await pool.query(`select email from app_user where id=$1`, [b.user_id])).rows[0] as { email?: string } | undefined;
+    if (staff?.email?.includes("@")) {
+      const { sendEmail } = await import("./email.ts");
+      await sendEmail(a, { to: staff.email, subject: `Your contract — ${b.title}`, body: b.body, kind: "staff_contract", audience: "staff", related_type: "staff_contract", related_id: c.id }).catch(() => {});
+    }
     return { id: c.id, status: "SENT" };
   });
 

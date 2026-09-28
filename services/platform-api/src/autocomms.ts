@@ -5,7 +5,7 @@
  * - 14 days before arrival → balance reminder (if balance outstanding)
  * - 7 days before arrival → pre-arrival information
  * - Day of check-out → checkout reminder (morning)
- * - 3 days after departure → feedback request
+ * The post-stay note is a separate morning-after job with a one-time link.
  *
  * Run scheduleAutoComms() after any booking status change.
  * Run processAutoComms() on a cron/interval (every 15 mins).
@@ -13,11 +13,9 @@
 import type { FastifyInstance } from "fastify";
 import { pool } from "./db.ts";
 import { requireActor, allow } from "./auth.ts";
-import { emailConfigured } from "./email.ts";
-import nodemailer from "nodemailer";
-
-const FROM = process.env.MAIL_FROM ?? "The Vedanta <bookings@thevedanta.org>";
-const transport = process.env.SMTP_URL ? nodemailer.createTransport(process.env.SMTP_URL) : null;
+import { sendEmail } from "./email.ts";
+import { ORGANISER_NAME_SQL, plannedComms, PROPERTY_WEBSITE_SQL, staffAlertAddresses, staffNewEnquiryLetter } from "../../../domains/comms/auto.ts";
+import { legacyPreArrivalOwned, runGuestJourney } from "./journey.ts";
 
 const fmtDate = (d: string) =>
   new Date(d + "T00:00:00").toLocaleDateString("en-GB", { weekday: "long", day: "numeric", month: "long", year: "numeric" });
@@ -123,48 +121,98 @@ ${property.website ?? "https://www.thevedanta.org/"}`,
 }
 
 // Schedule auto comms for a booking — called when booking is confirmed or dates change
+export async function reportSchedulerError(propertyId: string, job: string, err: unknown) {
+  const message = err instanceof Error ? err.message : String(err);
+  console.error(`[scheduler] ${job} failed for ${propertyId}`, err);
+  try {
+    const row = (await pool.query(`select tenant_id, settings from property where id=$1`, [propertyId])).rows[0];
+    const to = staffAlertAddresses(row?.settings)[0];
+    if (!to || !row) return;
+    await sendEmail({ tenantId: row.tenant_id, propertyId }, {
+      to,
+      subject: `House scheduler needs a look — ${job}`,
+      body: `${job} failed.\n\n${message}\n`,
+      kind: "scheduler_error",
+    });
+  } catch (alertErr) {
+    console.error("[scheduler] could not alert admin", alertErr);
+  }
+}
+
+export async function queueStaffNewEnquiry(enquiryId: string, tenantId: string, propertyId: string) {
+  await pool.query(
+    `INSERT INTO auto_comm (tenant_id, property_id, enquiry_id, kind, scheduled_for)
+     VALUES ($1,$2,$3,'staff_new_enquiry', now())
+     ON CONFLICT (enquiry_id, kind) WHERE enquiry_id IS NOT NULL AND cancelled_at IS NULL
+     DO NOTHING`,
+    [tenantId, propertyId, enquiryId],
+  );
+}
+
 export async function scheduleAutoComms(groupId: string, tenantId: string, propertyId: string) {
   const g = (await pool.query(
-    `SELECT g.id, g.name, g.contact_name, g.organisation, g.arrival_date::text, g.departure_date::text,
-            g.expected_guests, g.contact_email
-     FROM booking_group g WHERE g.id = $1`,
+    `SELECT g.id, g.name, g.organisation, g.arrival_date::text, g.departure_date::text,
+            g.expected_guests, g.contact_email,
+            ${ORGANISER_NAME_SQL}
+     FROM booking_group g
+     LEFT JOIN person p ON p.id = g.organiser_person_id
+     WHERE g.id = $1`,
     [groupId]
   )).rows[0];
-  if (!g || !g.contact_email) return; // no email address, nothing to schedule
+  if (!g || !g.contact_email) {
+    console.warn(`[autocomms] booking ${groupId} has no contact email, so nothing was queued`);
+    return;
+  }
 
   const arrival = new Date(g.arrival_date + "T15:00:00Z");
   const departure = new Date(g.departure_date + "T09:00:00Z");
   const now = new Date();
+  const schedule = plannedComms({ now, arrival, departure });
 
-  const schedule: { kind: string; when: Date }[] = [
-    { kind: "booking_confirmed", when: now }, // immediately
-    { kind: "balance_reminder",  when: new Date(arrival.getTime() - 14 * 86400000) },
-    { kind: "pre_arrival",       when: new Date(arrival.getTime() - 7  * 86400000) },
-    { kind: "checkout_reminder", when: new Date(departure.getTime()) },
-    { kind: "feedback",          when: new Date(departure.getTime() + 3 * 86400000) },
-  ];
-
-  // Cancel any unsent comms for this group first
   await pool.query(
     `UPDATE auto_comm SET cancelled_at = now(), cancel_reason = 'rescheduled'
      WHERE group_id = $1 AND sent_at IS NULL AND cancelled_at IS NULL`,
     [groupId]
   );
 
-  // Schedule new ones (skip if in the past except for confirmed which fires immediately)
   for (const s of schedule) {
-    if (s.kind !== "booking_confirmed" && s.when < now) continue;
     await pool.query(
       `INSERT INTO auto_comm (tenant_id, property_id, group_id, kind, scheduled_for)
        VALUES ($1,$2,$3,$4,$5)
-       ON CONFLICT DO NOTHING`,
+       ON CONFLICT (group_id, kind) WHERE group_id IS NOT NULL AND cancelled_at IS NULL
+       DO NOTHING`,
       [tenantId, propertyId, groupId, s.kind, s.when.toISOString()]
     );
   }
 }
 
+async function deliverAutoEmail(
+  comm: { id: string; tenant_id: string; property_id: string; group_id: string | null; enquiry_id?: string | null; kind: string },
+  email: { to: string; subject: string; body: string },
+) {
+  const sent = await sendEmail(
+    { tenantId: comm.tenant_id, propertyId: comm.property_id },
+    {
+      to: email.to,
+      subject: email.subject,
+      body: email.body,
+      kind: `auto_${comm.kind}`,
+      related_type: comm.group_id ? "booking_group" : "guest_enquiry",
+      related_id: comm.group_id ?? comm.enquiry_id ?? undefined,
+    },
+  );
+  if (sent.status === "FAILED") {
+    console.error(`[autocomms] send failed for ${comm.kind} ${comm.id}`, sent.error);
+    await reportSchedulerError(comm.property_id, `auto_${comm.kind}`, new Error(sent.error ?? "email failed"));
+  }
+  // SMTP_URL unset: sendEmail keeps the letter as LOGGED. Nothing is dropped.
+  return sent;
+}
+
 // Process due auto comms — call this on a timer (every 15 mins)
 export async function processAutoComms(propertyId: string) {
+  await runGuestJourney(propertyId);
+  const journeyPreArrival = await legacyPreArrivalOwned(propertyId);
   const due = (await pool.query(
     `SELECT ac.id, ac.kind, ac.group_id, ac.enquiry_id, ac.tenant_id, ac.property_id
      FROM auto_comm ac
@@ -176,8 +224,8 @@ export async function processAutoComms(propertyId: string) {
   )).rows;
 
   const prop = (await pool.query(
-    `SELECT name, check_in_from::text, check_out_by::text, website, settings->>'check_in_from' ci,
-            coalesce(settings->>'website','https://www.thevedanta.org/') website
+    `SELECT name, tenant_id, settings, check_in_from::text, check_out_by::text,
+            ${PROPERTY_WEBSITE_SQL}
      FROM property WHERE id = $1`, [propertyId]
   )).rows[0] ?? {};
 
@@ -186,10 +234,51 @@ export async function processAutoComms(propertyId: string) {
   for (const comm of due) {
     let email: { to: string; subject: string; body: string } | null = null;
 
+    if (comm.kind === "pre_arrival" && journeyPreArrival) {
+      await pool.query(`UPDATE auto_comm SET cancelled_at=now(), cancel_reason='guest_journey' WHERE id=$1`, [comm.id]);
+      results.push({ id: comm.id, kind: comm.kind, status: "guest_journey" });
+      continue;
+    }
+
+    if (comm.kind === "feedback") {
+      await pool.query(`UPDATE auto_comm SET cancelled_at=now(), cancel_reason='feedback_form' WHERE id=$1`, [comm.id]);
+      results.push({ id: comm.id, kind: comm.kind, status: "feedback_form" });
+      continue;
+    }
+
+    if (comm.kind === "staff_new_enquiry") {
+      const enquiry = (await pool.query(
+        `SELECT name, email, people, arrival_date::text AS arrival, departure_date::text AS departure
+         FROM guest_enquiry WHERE id=$1`,
+        [comm.enquiry_id],
+      )).rows[0];
+      const recipients = staffAlertAddresses(prop.settings);
+      if (!enquiry || !recipients.length) {
+        console.warn(`[autocomms] staff_new_enquiry ${comm.id} has no recipient`);
+        await pool.query(`UPDATE auto_comm SET cancelled_at=now(), cancel_reason='no_recipient' WHERE id=$1`, [comm.id]);
+        results.push({ id: comm.id, kind: comm.kind, status: "cancelled_no_recipient" });
+        continue;
+      }
+      const letter = staffNewEnquiryLetter(enquiry);
+      let lastId: string | null = null;
+      let status = "LOGGED";
+      for (const to of recipients) {
+        const sent = await deliverAutoEmail(comm, { to, ...letter });
+        lastId = sent.id;
+        status = sent.status;
+      }
+      await pool.query(`UPDATE auto_comm SET sent_at=now(), outbound_email_id=$2 WHERE id=$1`, [comm.id, lastId]);
+      results.push({ id: comm.id, kind: comm.kind, status });
+      continue;
+    }
+
     if (comm.group_id) {
       const g = (await pool.query(
-        `SELECT name, contact_name, organisation, contact_email, arrival_date::text, departure_date::text, expected_guests
-         FROM booking_group WHERE id = $1`, [comm.group_id]
+        `SELECT g.name, g.organisation, g.contact_email, g.arrival_date::text, g.departure_date::text, g.expected_guests,
+                ${ORGANISER_NAME_SQL}
+         FROM booking_group g
+         LEFT JOIN person p ON p.id = g.organiser_person_id
+         WHERE g.id = $1`, [comm.group_id]
       )).rows[0];
       if (g?.contact_email) {
         const rendered = renderAutoComm(comm.kind, g, prop);
@@ -198,36 +287,18 @@ export async function processAutoComms(propertyId: string) {
     }
 
     if (!email) {
+      console.warn(`[autocomms] ${comm.kind} ${comm.id} has no recipient`);
       await pool.query(`UPDATE auto_comm SET cancelled_at=now(), cancel_reason='no_recipient' WHERE id=$1`, [comm.id]);
       results.push({ id: comm.id, kind: comm.kind, status: "cancelled_no_recipient" });
       continue;
     }
 
-    // Log to outbound_email
-    const emailRow = (await pool.query(
-      `INSERT INTO outbound_email (tenant_id, property_id, to_email, subject, body, kind, related_type, related_id, status)
-       VALUES ($1,$2,$3,$4,$5,$6,'booking_group',$7,$8) RETURNING id`,
-      [comm.tenant_id, comm.property_id, email.to, email.subject, email.body, `auto_${comm.kind}`,
-       comm.group_id, transport ? "QUEUED" : "LOGGED"]
-    )).rows[0];
-
-    let status = "LOGGED";
-    if (transport) {
-      try {
-        await transport.sendMail({ from: FROM, to: email.to, subject: email.subject, text: email.body });
-        await pool.query(`UPDATE outbound_email SET status='SENT', sent_at=now() WHERE id=$1`, [emailRow.id]);
-        status = "SENT";
-      } catch {
-        await pool.query(`UPDATE outbound_email SET status='FAILED' WHERE id=$1`, [emailRow.id]);
-        status = "FAILED";
-      }
-    }
-
+    const sent = await deliverAutoEmail(comm, email);
     await pool.query(
       `UPDATE auto_comm SET sent_at=now(), outbound_email_id=$2 WHERE id=$1`,
-      [comm.id, emailRow.id]
+      [comm.id, sent.id]
     );
-    results.push({ id: comm.id, kind: comm.kind, status });
+    results.push({ id: comm.id, kind: comm.kind, status: sent.status });
   }
 
   return results;

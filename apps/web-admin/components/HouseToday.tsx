@@ -3,7 +3,8 @@ import { useEffect, useState } from "react";
 import Link from "next/link";
 import { api } from "@/lib/api";
 import { fmt } from "@/lib/format";
-import OpsBoard from "@/components/OpsBoard";
+import OpsBoard, { HandoverBanner } from "@/components/OpsBoard";
+import { ReturningCards, type ReturningCardData } from "@/components/ReturningCard";
 import { useStore } from "@/lib/store";
 
 type Estate = {
@@ -33,6 +34,7 @@ export default function HouseToday() {
   const [err, setErr] = useState<string | null>(null);
   const [payments, setPayments] = useState<{ total_due: number; total_due_fmt: string; overdue: number } | null>(null);
   const [aiBriefing, setAiBriefing] = useState<string | null>(null);
+  const [cards, setCards] = useState<Record<string, ReturningCardData[]>>({});
 
   const load = () => {
     setErr(null);
@@ -41,6 +43,11 @@ export default function HouseToday() {
     api<{ total_due: number; total_due_fmt: string; overdue: number }>("/v1/estate/payments-due").then(setPayments).catch(() => {});
     // Load AI morning briefing silently — only if configured
     api<{ briefing: string }>("/v1/duty-manager/morning-briefing").then(r => setAiBriefing(r.briefing)).catch(() => {});
+    api<{ items: { group_id: string; cards: ReturningCardData[] }[] }>("/v1/guest-history/arrivals?surface=profile").then(r => {
+      const next: Record<string, ReturningCardData[]> = {};
+      for (const item of r.items) next[item.group_id] = item.cards;
+      setCards(next);
+    }).catch(() => {});
   };
 
   // Wait until the store has resolved the user session before calling the API.
@@ -76,6 +83,7 @@ export default function HouseToday() {
           <Link className="btn primary" href="/groups/">Open the book</Link>
         </div>
       </div>
+      <HandoverBanner />
       <div className="pulse pulse-wide">
         <article><div className="k">Occupancy</div><b>{p.rooms_tonight} / {p.guest_rooms}</b><div className="s">rooms tonight</div></article>
         <article><div className="k">Arrivals</div><b>{p.arriving}</b><div className="s">groups due today</div></article>
@@ -116,7 +124,7 @@ export default function HouseToday() {
           <h2>Coming in</h2>
           {e.arriving.length === 0 ? <p className="m" style={{ color: "var(--ink-2)" }}>No arrivals today. A quiet morning.</p> : (
             <ul className="house-list">{e.arriving.map(g => (
-              <li key={g.id}><span><div className="t">{g.name}</div><div className="m">{g.organisation || "Private"} · {g.expected_guests ?? "—"} guests</div></span><span className="chip CONFIRMED">{g.arrival_slot}</span></li>
+              <li key={g.id}><span><div className="t">{g.name}</div><div className="m">{g.organisation || "Private"} · {g.expected_guests ?? "—"} guests</div><ReturningCards cards={cards[g.id] ?? []} /></span><span className="chip CONFIRMED">{g.arrival_slot}</span></li>
             ))}</ul>
           )}
         </section>

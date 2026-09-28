@@ -4,11 +4,17 @@ import { api, ApiError } from "@/lib/api";
 import { useStore } from "@/lib/store";
 
 type Dept = { code: string; label: string };
+type Tag = { code: string; label: string };
+type HandoverNote = {
+  id: string; department: string; department_label: string; shift: string; shift_label: string;
+  for_date: string; body: string; author_name: string | null; created_at: string; tags?: string[]; acked?: boolean;
+};
 type Board = {
   date: string;
   departments: Dept[];
+  handover_tags?: Tag[];
   progress: { done: number; total: number };
-  handover: { id: string; department: string; department_label: string; shift: string; shift_label: string; for_date: string; body: string; author_name: string | null; created_at: string }[];
+  handover: HandoverNote[];
   notices: { id: string; department: string | null; department_label: string; title: string; body: string; author_name: string | null; pinned: boolean; created_at: string }[];
   checklists: { id: string; department: string; department_label: string; title: string; due_time?: string | null; done: boolean; done_by_name: string | null }[];
   guest_requests: { id: string; guest_name: string | null; room_label: string | null; department: string; department_label: string; request_text: string; status: string; created_at: string }[];
@@ -16,13 +22,36 @@ type Board = {
 
 const STATUS: Record<string, string> = { open: "Open", doing: "Doing", done: "Done" };
 
+export function HandoverBanner() {
+  const [box, setBox] = useState<{ label: string; unread: HandoverNote[]; tags: Tag[] } | null>(null);
+  const load = () => api<{ label: string; unread: HandoverNote[]; tags: Tag[] }>("/v1/ops/handover/inbox").then(setBox).catch(() => setBox(null));
+  useEffect(() => { load(); }, []);
+  if (!box?.unread.length) return null;
+  const labelOf = (code: string) => box.tags.find(t => t.code === code)?.label ?? code;
+  return (
+    <div className="note" style={{ marginBottom: 16 }}>
+      <b>{box.label}</b>
+      {box.unread.map(n => (
+        <div key={n.id} style={{ marginTop: 10 }}>
+          <div className="m">{n.author_name ?? "Staff"} · {new Date(n.created_at).toLocaleString("en-GB")}{(n.tags ?? []).map(t => ` · ${labelOf(t)}`).join("")}</div>
+          <p style={{ whiteSpace: "pre-wrap", margin: "4px 0 8px" }}>{n.body}</p>
+          <button className="btn" type="button" onClick={async () => { await api(`/v1/ops/handover/${n.id}/ack`, { method: "POST", body: "{}" }); load(); }}>Mark as read</button>
+        </div>
+      ))}
+    </div>
+  );
+}
+
 export default function OpsBoard({ compact = false }: { compact?: boolean }) {
   const { user } = useStore();
   const [board, setBoard] = useState<Board | null>(null);
   const [err, setErr] = useState<string | null>(null);
   const [toast, setToast] = useState<string | null>(null);
   const [dept, setDept] = useState("all");
-  const [handover, setHandover] = useState({ department: "HOUSE", shift: "am", body: "" });
+  const [handover, setHandover] = useState({ department: "HOUSE", shift: "am", body: "", tags: [] as string[] });
+  const [historyOn, setHistoryOn] = useState(false);
+  const [hist, setHist] = useState({ tag: "", shift: "", unread: false });
+  const [history, setHistory] = useState<HandoverNote[]>([]);
   const [notice, setNotice] = useState({ title: "", body: "", department: "", pinned: false });
   const [ask, setAsk] = useState({ guest_name: "", room_label: "", department: "", request_text: "" });
   const say = (t: string) => { setToast(t); setTimeout(() => setToast(null), 3000); };
@@ -34,6 +63,24 @@ export default function OpsBoard({ compact = false }: { compact?: boolean }) {
   const checks = board.checklists.filter(c => dept === "all" || c.department === dept);
   const requests = board.guest_requests.filter(r => dept === "all" || r.department === dept);
   const notes = board.handover.filter(h => dept === "all" || h.department === dept || h.department === "HOUSE");
+  const shown = historyOn ? history : notes;
+  const tagLabel = (code: string) => (board.handover_tags ?? []).find(t => t.code === code)?.label ?? code;
+  const loadHistory = async (next = hist) => {
+    const q = new URLSearchParams();
+    if (next.tag) q.set("tag", next.tag);
+    if (next.shift) q.set("shift", next.shift);
+    if (next.unread) q.set("unread", "1");
+    const r = await api<{ items: HandoverNote[] }>(`/v1/ops/handover?${q}`);
+    setHistory(r.items);
+  };
+  const ack = async (id: string) => {
+    try {
+      await api(`/v1/ops/handover/${id}/ack`, { method: "POST", body: "{}" });
+      say("Marked as read");
+      load();
+      if (historyOn) void loadHistory();
+    } catch (e) { say(e instanceof ApiError ? e.problem.detail : "Could not mark as read"); }
+  };
   const notices = board.notices.filter(n => dept === "all" || !n.department || n.department === dept);
 
   const tick = async (id: string, done: boolean) => {
@@ -77,6 +124,7 @@ export default function OpsBoard({ compact = false }: { compact?: boolean }) {
           <p>Shift notes, daily rounds and guest asks — one place instead of WhatsApp. {user?.name ? `Signed as ${user.name}.` : ""} {board.progress.done}/{board.progress.total} checks done today.</p>
         </div>
       </div>
+      <HandoverBanner />
       <div className="seg" style={{ marginBottom: 16 }}>
         <button className={dept === "all" ? "on" : ""} onClick={() => setDept("all")}>All</button>
         {board.departments.map(d => <button key={d.code} className={dept === d.code ? "on" : ""} onClick={() => setDept(d.code)}>{d.label}</button>)}
@@ -142,11 +190,34 @@ export default function OpsBoard({ compact = false }: { compact?: boolean }) {
         <section className="house-panel">
           <div className="k">Handover</div>
           <h2>For the next shift</h2>
-          {notes.length === 0 && <p className="m" style={{ color: "var(--ink-2)" }}>No notes yet today.</p>}
-          {notes.map(h => (
+          <div className="hk-actions" style={{ marginBottom: 8 }}>
+            <button type="button" className={"btn " + (!historyOn ? "primary" : "")} onClick={() => setHistoryOn(false)}>Today</button>
+            <button type="button" className={"btn " + (historyOn ? "primary" : "")} onClick={() => { setHistoryOn(true); void loadHistory(); }}>History</button>
+          </div>
+          {historyOn && (
+            <div className="frow" style={{ marginBottom: 8, flexWrap: "wrap" }}>
+              <select value={hist.tag} aria-label="Filter by tag" onChange={e => { const next = { ...hist, tag: e.target.value }; setHist(next); void loadHistory(next); }}>
+                <option value="">All tags</option>
+                {(board.handover_tags ?? []).map(t => <option key={t.code} value={t.code}>{t.label}</option>)}
+              </select>
+              <select value={hist.shift} aria-label="Filter by shift" onChange={e => { const next = { ...hist, shift: e.target.value }; setHist(next); void loadHistory(next); }}>
+                <option value="">All shifts</option>
+                <option value="am">Morning</option>
+                <option value="pm">Evening</option>
+                <option value="night">Night</option>
+              </select>
+              <label style={{ display: "flex", gap: 6, alignItems: "center" }}>
+                <input type="checkbox" checked={hist.unread} onChange={e => { const next = { ...hist, unread: e.target.checked }; setHist(next); void loadHistory(next); }} /> Unread only
+              </label>
+            </div>
+          )}
+          {shown.length === 0 && <p className="m" style={{ color: "var(--ink-2)" }}>{historyOn ? "No notes match those filters." : "No notes yet today."}</p>}
+          {shown.map(h => (
             <div key={h.id} className="ops-card">
-              <div className="ops-card-top"><b>{h.department_label} · {h.shift_label}</b><span className="m">{h.author_name ?? ""}</span></div>
+              <div className="ops-card-top"><b>{h.department_label} · {h.shift_label}</b><span className="m">{h.author_name ?? "Staff"}{h.created_at ? ` · ${new Date(h.created_at).toLocaleString("en-GB")}` : ""}</span></div>
+              {(h.tags ?? []).length > 0 && <div className="m">{(h.tags ?? []).map(tagLabel).join(" · ")}</div>}
               <p style={{ whiteSpace: "pre-wrap" }}>{h.body}</p>
+              {h.acked ? <span className="m">Read</span> : <button className="btn" type="button" onClick={() => ack(h.id)}>Mark as read</button>}
             </div>
           ))}
           <form className="ops-form" onSubmit={async e => {
@@ -156,6 +227,7 @@ export default function OpsBoard({ compact = false }: { compact?: boolean }) {
               setHandover({ ...handover, body: "" });
               say("Handover saved");
               load();
+              if (historyOn) void loadHistory();
             } catch (err) { say(err instanceof ApiError ? err.problem.detail : "Could not save"); }
           }}>
             <div className="frow">
@@ -168,7 +240,15 @@ export default function OpsBoard({ compact = false }: { compact?: boolean }) {
                 <option value="night">Night</option>
               </select>
             </div>
-            <textarea required rows={3} value={handover.body} onChange={e => setHandover({ ...handover, body: e.target.value })} placeholder="What the next shift needs to know" />
+            <div style={{ display: "flex", gap: 12, flexWrap: "wrap", margin: "8px 0" }}>
+              {(board.handover_tags ?? []).map(t => (
+                <label key={t.code} style={{ display: "flex", gap: 6, alignItems: "center" }}>
+                  <input type="checkbox" checked={handover.tags.includes(t.code)} onChange={e => setHandover({ ...handover, tags: e.target.checked ? [...handover.tags, t.code] : handover.tags.filter(c => c !== t.code) })} />
+                  {t.label}
+                </label>
+              ))}
+            </div>
+            <textarea required rows={3} value={handover.body} onChange={e => setHandover({ ...handover, body: e.target.value })} placeholder="What's running, any issues, and anything a guest needs the next shift to know" />
             <button className="btn primary" type="submit">Leave the note</button>
           </form>
         </section>

@@ -3,6 +3,8 @@ import { pool, tx, type Q } from "./db.ts";
 import { requireActor, allow, problem, type Actor } from "./auth.ts";
 import { openText, sealText } from "./fieldCrypto.ts";
 import { buildProgrammeSheet } from "../../../domains/retreat/sheet.ts";
+import { refreshGuestBookingForGroup, withdrawGuestBooking } from "./bookingRoute.ts";
+import { suggestContact } from "./guestHistory.ts";
 
 type Slot = "AM" | "PM";
 export type GroupRow = { id: string; name: string; organisation: string | null; arrival_date: string; arrival_slot: Slot; departure_date: string; departure_slot: Slot; status: string; expected_rooms: number | null; version: number };
@@ -39,7 +41,7 @@ export async function audit(c: Q, a: Actor, entity: string, id: string, action: 
 const GROUP_COLS = `id, name, organisation, contact_email, contact_phone, arrival_date::text arrival, arrival_slot, arrival_time::text, departure_date::text departure, departure_slot, departure_time::text,
   retreat_type, use_basis, expected_guests, expected_rooms, package_name, price_basis, price_notes, spa_access, status, booking_form_status, terms_signed, terms_document, feedback_form_status,
   meals_from, meals_to, dietary_notes, notes, colour, version, source, external_ref, updated_at, review_reason, sheet_text, public_title,
-  package_id, agreed_price_twin, agreed_price_single, singles_count, agreed_total, form_token, form_sent_at, form_submitted_at, open_for_guests,
+  package_id, agreed_price_twin, agreed_price_single, singles_count, agreed_total, form_token, form_sent_at, form_submitted_at, open_for_guests, deposit_status,
   (select json_build_object('code', pk.code, 'name', pk.name, 'price_basis', pk.price_basis, 'price_twin', pk.price_twin, 'price_single', pk.price_single) from package pk where pk.id=booking_group.package_id) package,
   (select count(*) from group_attendee ga where ga.group_id=booking_group.id)::int attendees`;
 
@@ -89,6 +91,14 @@ export default async function routes(f: FastifyInstance) {
         [a.tenantId, a.propertyId, b.name, b.organisation, b.contact_email ?? null, b.contact_phone ?? null, b.arrival, b.arrival_slot, parseTime(b.arrival_time), b.departure, b.departure_slot, parseTime(b.departure_time),
          b.retreat_type ?? "residential", b.use_basis ?? "SHARED", b.expected_guests ?? null, wanted, b.package_name ?? null, b.price_notes ?? null, !!b.spa_access, b.notes ?? null, b.meals_from ?? null, b.meals_to ?? null, sealText(typeof b.dietary_notes === "string" ? b.dietary_notes : null), PALETTE[Number(n.rows[0].count) % PALETTE.length], typeof b.public_title === "string" && b.public_title.trim() ? b.public_title.trim() : null]);
       await audit(c, a, "booking_group", r.rows[0].id, "group.create", { to: "ENQUIRY", version: 1 });
+      const suggested = await suggestContact(c, {
+        tenantId: a.tenantId, propertyId: a.propertyId,
+        email: typeof b.contact_email === "string" ? b.contact_email : null,
+        phone: typeof b.contact_phone === "string" ? b.contact_phone : null,
+        name: String(b.organisation || b.name || ""),
+        groupId: r.rows[0].id, actorUserId: a.userId,
+      });
+      if (suggested.autoPersonId) await c.query(`update booking_group set organiser_person_id=coalesce(organiser_person_id, $2) where id=$1`, [r.rows[0].id, suggested.autoPersonId]);
       reply.code(201); return { ...presentGroup(r.rows[0]), rooms_allocated: 0 };
     });
   });
@@ -152,6 +162,7 @@ export default async function routes(f: FastifyInstance) {
       const auditBody = { ...req.body };
       if ("dietary_notes" in auditBody) auditBody.dietary_notes = "[sealed]";
       await audit(c, a, "booking_group", req.params.id, "group.update", { version: r.rows[0].version, payload: auditBody });
+      if (datesChange) await refreshGuestBookingForGroup(c, a.tenantId, a.propertyId, req.params.id);
       return presentGroup(r.rows[0]);
     });
   });
@@ -170,12 +181,21 @@ export default async function routes(f: FastifyInstance) {
       if (!to) { reply.code(409); return problem(409, "invalid_transition", `Cannot '${req.params.cmd}' a booking that is ${g.status.toLowerCase()}`); }
       if (to === "CONFIRMED" && (g.booking_form_status !== "COMPLETE" || !g.terms_signed)) { reply.code(409); return problem(409, "paperwork_outstanding", "Booking form and signed T&Cs are needed before confirming"); }
       const r = await c.query(`update booking_group set status=$1, version=version+1 where id=$2 returning ${GROUP_COLS}`, [to, req.params.id]);
-      if (to === "CANCELLED") await c.query(`delete from room_occupancy where group_id=$1`, [req.params.id]);
+      if (to === "CANCELLED") {
+        await c.query(`delete from room_occupancy where group_id=$1`, [req.params.id]);
+        await withdrawGuestBooking(c, { tenantId: a.tenantId, propertyId: a.propertyId, bookingId: req.params.id, actorId: a.userId });
+      }
       await audit(c, a, "booking_group", req.params.id, "group." + req.params.cmd, { from: g.status, to, reason: req.body?.reason, version: r.rows[0].version });
       // Auto-schedule guest communications when confirmed
       if (to === "CONFIRMED") {
-        setImmediate(async () => {
-          try { const { scheduleAutoComms } = await import("./autocomms.ts"); await scheduleAutoComms(req.params.id, a.tenantId, a.propertyId); } catch {}
+        setImmediate(() => {
+          import("./autocomms.ts").then(async ({ scheduleAutoComms, reportSchedulerError }) => {
+            try { await scheduleAutoComms(req.params.id, a.tenantId, a.propertyId); }
+            catch (err) {
+              console.error("[autocomms] schedule failed", err);
+              await reportSchedulerError(a.propertyId, "scheduleAutoComms", err);
+            }
+          }).catch(err => console.error("[autocomms] schedule failed", err));
         });
       }
       return r.rows[0];

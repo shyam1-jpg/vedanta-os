@@ -67,9 +67,10 @@ export default async function routes(f: FastifyInstance) {
         else { pid = (await c.query(`insert into person (tenant_id, given_name, family_name, email, phone, organisation) values ($1,$2,$3,$4,$5,$6) returning id`, [g.tenant_id, at.given_name.trim(), at.family_name.trim(), at.email?.trim() || null, at.phone?.trim() || null, b.organiser_name ? null : null])).rows[0].id; created++; }
         await c.query(`insert into group_attendee (tenant_id, group_id, person_id, room_preference, arrives_early) values ($1,$2,$3,$4,$5) on conflict (group_id, person_id) do update set room_preference=excluded.room_preference, arrives_early=excluded.arrives_early, submitted_at=now()`, [g.tenant_id, g.id, pid, at.room_preference ?? null, !!at.arrives_early]);
         const allergens = (at.allergens ?? []).filter((x: string) => ALLERGENS.includes(x));
-        await c.query(`insert into diet_profile (tenant_id, person_id, diet, allergens, severity, notes, declared_at, version) values ($1,$2,$3,$4,$5,$6, now(), 1)
-          on conflict (person_id) do update set diet=excluded.diet, allergens=excluded.allergens, severity=excluded.severity, notes=excluded.notes, declared_at=now(), version=diet_profile.version+1`,
-          [g.tenant_id, pid, sealList(at.diet ?? []), sealList(allergens), allergens.length ? at.severity : (at.severity || null), sealText(at.diet_notes || null)]);
+        const detail = allergens.map((code: string) => ({ code, severity: at.severity }));
+        await c.query(`insert into diet_profile (tenant_id, person_id, diet, allergens, severity, notes, allergen_detail, declared_at, version) values ($1,$2,$3,$4,$5,$6,$7, now(), 1)
+          on conflict (person_id) do update set diet=excluded.diet, allergens=excluded.allergens, severity=excluded.severity, notes=excluded.notes, allergen_detail=excluded.allergen_detail, declared_at=now(), version=diet_profile.version+1`,
+          [g.tenant_id, pid, sealList(at.diet ?? []), sealList(allergens), allergens.length ? at.severity : (at.severity || null), sealText(at.diet_notes || null), sealText(JSON.stringify(detail))]);
       }
       await c.query(`update booking_group set booking_form_status='COMPLETE', form_submitted_at=now(), expected_guests=greatest(coalesce(expected_guests,0), (select count(*) from group_attendee where group_id=$1)),
         notes=case when $2::text is null or $2='' then notes else coalesce(notes,'') || E'\nOrganiser form: ' || $2 end, version=version+1 where id=$1`, [g.id, b.notes ?? null]);
