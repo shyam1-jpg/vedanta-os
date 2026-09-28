@@ -1,10 +1,12 @@
 import http from "node:http";
 import { createReadStream, existsSync, statSync } from "node:fs";
-import { extname, join, normalize } from "node:path";
+import { extname, join, normalize, resolve } from "node:path";
 
-const ADMIN_ROOT = "/workspace/vedanta-platform/apps/web-admin/out";
-const STAFF_ROOT = "/workspace/vedanta-platform/apps/web-staff/out";
-const GUEST_ROOT = "/workspace/vedanta-platform/apps/web-guest/out";
+const repoRoot = resolve(import.meta.dirname, "..");
+const ADMIN_ROOT = resolve(repoRoot, "apps/web-admin/out");
+const STAFF_ROOT = resolve(repoRoot, "apps/web-staff/out");
+const GUEST_ROOT = resolve(repoRoot, "apps/web-guest/out");
+const THANKS_ROOT = resolve(repoRoot, "apps/web-guest/gratitude");
 const API_HOST = "127.0.0.1";
 const API_PORT = 4000;
 const PORT = Number(process.env.LIVE_PORT ?? 8080);
@@ -36,8 +38,10 @@ function apiPath(urlPath) {
 }
 
 function staticMount(urlPath) {
-  if (urlPath.startsWith("/pocket")) return { root: STAFF_ROOT, prefix: "/pocket" };
-  if (urlPath.startsWith("/book")) return { root: GUEST_ROOT, prefix: "/book" };
+  const pathOnly = urlPath.split("?")[0];
+  if (pathOnly === "/thanks" || pathOnly.startsWith("/thanks/")) return { root: THANKS_ROOT, prefix: "/thanks" };
+  if (pathOnly.startsWith("/pocket")) return { root: STAFF_ROOT, prefix: "/pocket" };
+  if (pathOnly.startsWith("/book")) return { root: GUEST_ROOT, prefix: "/book" };
   return { root: ADMIN_ROOT, prefix: "" };
 }
 
