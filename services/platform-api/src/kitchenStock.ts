@@ -85,11 +85,16 @@ async function selectItems(propertyId: string): Promise<{ rows: any[] }> {
               s.name supplier_name, s.contact_phone supplier_phone, s.contact_email supplier_email`;
   const from = `from kitchen_stock_item i left join supplier s on s.id = i.supplier_id where i.property_id=$1 and i.active order by i.name`;
   try {
-    const rich = await pool.query(`${base}, i.par_level, i.reorder_at, i.pack_size ${from}`, [propertyId]);
+    const rich = await pool.query(`${base}, i.par_level, i.reorder_at, i.pack_size, i.source ${from}`, [propertyId]);
     return { rows: rich.rows };
   } catch {
-    const plain = await pool.query(`${base} ${from}`, [propertyId]);
-    return { rows: plain.rows.map((row: Record<string, unknown>) => ({ ...row, par_level: 0, reorder_at: null, pack_size: 1 })) };
+    try {
+      const reorder = await pool.query(`${base}, i.par_level, i.reorder_at, i.pack_size ${from}`, [propertyId]);
+      return { rows: reorder.rows.map((row: Record<string, unknown>) => ({ ...row, source: "purchased" })) };
+    } catch {
+      const plain = await pool.query(`${base} ${from}`, [propertyId]);
+      return { rows: plain.rows.map((row: Record<string, unknown>) => ({ ...row, par_level: 0, reorder_at: null, pack_size: 1, source: "purchased" })) };
+    }
   }
 }
 

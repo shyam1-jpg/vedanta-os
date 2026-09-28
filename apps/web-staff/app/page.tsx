@@ -13,6 +13,7 @@ import SpendPocket from "@/components/SpendPocket";
 import ArrivalsPocket from "@/components/ArrivalsPocket";
 import SevaPocket from "@/components/SevaPocket";
 import CowCarePocket from "@/components/CowCarePocket";
+import GardenPocket from "@/components/GardenPocket";
 import ShuttlePocket from "@/components/ShuttlePocket";
 import WhosInPocket from "@/components/WhosInPocket";
 import ReturningGuests from "@/components/ReturningGuests";
@@ -229,7 +230,7 @@ export default function Pocket() {
   const [secret, setSecret] = useState("");
   const [providers, setProviders] = useState<{ microsoft: boolean; dev: boolean } | null>(null);
   const [err, setErr] = useState<string | null>(null);
-  const [tab, setTab] = useState<"clock" | "leave" | "duty" | "sop" | "log" | "desk" | "night" | "manual" | "tasks" | "fault" | "stock" | "words" | "compliance" | "lost" | "suppliers" | "training" | "audit" | "swaps" | "brief" | "org" | "spend" | "arrivals" | "seva" | "cows" | "shuttle" | "whos">("clock");
+  const [tab, setTab] = useState<"clock" | "leave" | "duty" | "sop" | "log" | "desk" | "night" | "manual" | "tasks" | "fault" | "stock" | "words" | "compliance" | "lost" | "suppliers" | "training" | "audit" | "swaps" | "brief" | "org" | "spend" | "arrivals" | "seva" | "cows" | "garden" | "shuttle" | "whos">("clock");
   const openedHome = useRef(false);
   const [words, setWords] = useState<{ first_name: string; comment: string | null; created_at: string }[]>([]);
   const [desk, setDesk] = useState<{
@@ -371,6 +372,7 @@ export default function Pocket() {
           <button className={tab === "tasks" ? "on" : ""} onClick={() => setTab("tasks")}>Tasks</button>
           <button className={tab === "fault" ? "on" : ""} onClick={() => setTab("fault")}>Fault</button>
           {(me.permissions ?? []).includes("kitchen.stock") && <button className={tab === "stock" ? "on" : ""} onClick={() => setTab("stock")}>Stock</button>}
+          {(me.permissions ?? []).includes("garden.log") && <button className={tab === "garden" ? "on" : ""} data-testid="pocket-garden-tab" onClick={() => setTab("garden")}>Garden</button>}
           <button className={tab === "words" ? "on" : ""} onClick={async () => { setTab("words"); try { setWords((await api<{ items: typeof words }>("/v1/feedback/kind-words")).items); } catch (e) { setErr((e as Error).message); } }}>Kind words</button>
           {(me.permissions ?? []).includes("compliance.calendar") && <button className={tab === "compliance" ? "on" : ""} onClick={() => setTab("compliance")}>Compliance</button>}
           {(me.permissions ?? []).includes("lostfound.log") && <button className={tab === "lost" ? "on" : ""} onClick={() => setTab("lost")}>Lost & found</button>}
@@ -563,6 +565,7 @@ export default function Pocket() {
         {tab === "arrivals" && <ArrivalsPocket />}
         {tab === "seva" && <SevaPocket onError={setErr} />}
         {tab === "cows" && (me.permissions ?? []).includes("goshala.care") && <CowCarePocket staffName={me.name} onError={setErr} />}
+        {tab === "garden" && (me.permissions ?? []).includes("garden.log") && <GardenPocket onError={setErr} />}
         {tab === "shuttle" && <ShuttlePocket onError={setErr} />}
         {tab === "whos" && <WhosInPocket onError={setErr} />}
         {tab === "desk" && (

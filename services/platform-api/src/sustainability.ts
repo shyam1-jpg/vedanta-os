@@ -18,6 +18,7 @@ import {
   type ReportLine,
   type SustainabilitySettings,
 } from "../../../domains/ops/sustainability.ts";
+import { gardenDashboard } from "./garden.ts";
 
 async function actor(req: any, reply: any) {
   return requireActor(req, reply, ["ADMIN", "STAFF"]);
@@ -138,7 +139,8 @@ export default async function sustainabilityRoutes(f: FastifyInstance) {
     const settings = await loadSettings(a.propertyId);
     if (!settings.enabled) return { enabled: false, public: false, metrics: METRICS, series: [], factors: [] };
     const data = await stored(a.propertyId);
-    if (!data) return { enabled: true, public: settings.public, metrics: METRICS, series: [], factors: [], ready: false };
+    const garden = await gardenDashboard(a.propertyId);
+    if (!data) return { enabled: true, public: settings.public, metrics: METRICS, series: [], factors: [], ready: false, garden };
     const { series } = pack(data);
     return {
       enabled: true,
@@ -148,6 +150,7 @@ export default async function sustainabilityRoutes(f: FastifyInstance) {
         ...row,
         carbon: row.carbon,
       })),
+      garden,
       goshala: "The cows are cared for and are never milked. The goshala does not produce milk.",
     };
   });

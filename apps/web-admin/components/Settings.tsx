@@ -32,6 +32,7 @@ export default function Settings() {
   const [audit, setAudit] = useState<{ time: string; gm_email: string; auto_email: boolean } | null>(null);
   const [impact, setImpact] = useState<{ enabled: boolean; public: boolean } | null>(null);
   const [cows, setCows] = useState<{ enabled: boolean } | null>(null);
+  const [garden, setGarden] = useState<{ enabled: boolean } | null>(null);
   const [swaps, setSwaps] = useState<{ min_rest_hours: number; standard_week_hours: number; expire_hours_before: number; board: boolean; approval: Record<string, boolean> } | null>(null);
   const [swapDepts, setSwapDepts] = useState("");
   const [brief, setBrief] = useState<{ severe: number; cold: number; vip: number; compliance: number; staffing: number; heads: Record<string, number> } | null>(null);
@@ -66,6 +67,7 @@ export default function Settings() {
     api<{ time: string; gm_email: string; auto_email: boolean }>("/v1/settings/night-audit").then(setAudit).catch(() => {});
     api<{ enabled?: boolean; public?: boolean }>("/v1/settings/sustainability").then(row => setImpact({ enabled: row.enabled === true, public: row.public === true })).catch(() => {});
     api<{ enabled?: boolean }>("/v1/settings/cow-care").then(row => setCows({ enabled: row.enabled === true })).catch(() => {});
+    api<{ enabled?: boolean }>("/v1/settings/garden").then(row => setGarden({ enabled: row.enabled === true })).catch(() => {});
     api<{ min_rest_hours: number; standard_week_hours: number; expire_hours_before: number; board?: boolean; approval?: Record<string, boolean> }>("/v1/settings/shift-swap").then(row => {
       const approval = row.approval ?? {};
       setSwaps({ ...row, board: row.board === true, approval });
@@ -318,6 +320,16 @@ export default function Settings() {
           <button className="btn primary" style={{ marginTop: 12 }} onClick={() => run(async () => {
             setCows(await api("/v1/settings/cow-care", { method: "PUT", body: JSON.stringify({ enabled: cows.enabled === true }) }));
           }, "Cow care saved")}>Save cow care</button>
+        </div>
+      )}
+      {garden && (
+        <div className="panel" style={{ marginTop: 14 }}>
+          <h3>Garden</h3>
+          <p className="m" style={{ color: "var(--ink-2)" }}>Beds, harvests, and waste. A harvest is added to kitchen stock from the garden. Kitchen waste cannot be fed to the cows. Leave this off until the house wants the log.</p>
+          <label style={{ display: "block", marginTop: 8 }}><input type="checkbox" checked={garden.enabled} onChange={e => setGarden({ enabled: e.target.checked })} /> Keep a garden log</label>
+          <button className="btn primary" style={{ marginTop: 12 }} onClick={() => run(async () => {
+            setGarden(await api("/v1/settings/garden", { method: "PUT", body: JSON.stringify({ enabled: garden.enabled === true }) }));
+          }, "Garden saved")}>Save garden</button>
         </div>
       )}
       {swaps && (

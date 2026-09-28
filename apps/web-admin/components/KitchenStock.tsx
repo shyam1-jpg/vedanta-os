@@ -7,7 +7,7 @@ type Item = {
   id: string; name: string; unit: string; quantity: number; low_threshold: number; par_level?: number; reorder_at?: number | null; pack_size?: number;
   supplier: string | null; supplier_id: string | null;
   supplier_name?: string | null; supplier_phone?: string | null; supplier_email?: string | null;
-  notes: string | null; example: boolean; low: boolean; log: Log[];
+  notes: string | null; example: boolean; source?: string; low: boolean; log: Log[];
 };
 type OrderLine = { name: string; unit: string; packs: number; pack_size: number; quantity: number };
 type Order = {
@@ -70,7 +70,7 @@ export default function KitchenStock() {
         const setD = (patch: Partial<typeof d>) => setDraft(s => ({ ...s, [item.id]: { ...d, ...patch } }));
         return (
           <div key={item.id} className={"hk " + (item.low ? "VACANT_DIRTY" : "VACANT_CLEAN")}>
-            <div className="hk-top"><b>{item.name}</b>{item.low && <span className="chip sev-high">Low</span>}{item.example && <span className="chip PROVISIONAL">Example</span>}</div>
+            <div className="hk-top"><b>{item.name}</b>{item.low && <span className="chip sev-high">Low</span>}{item.source === "garden" && <span className="chip">Garden</span>}{item.example && <span className="chip PROVISIONAL">Example</span>}</div>
             <div style={{ fontSize: 28, margin: "8px 0" }}>{item.quantity} <span className="m">{item.unit}</span></div>
             <div className="m">Order more below {item.low_threshold} {item.unit}. Par {item.par_level ?? 0}, reorder {item.reorder_at ?? item.low_threshold}, pack {item.pack_size ?? 1}.{item.supplier_name ? ` ${item.supplier_name}${item.supplier_phone ? ` · ${item.supplier_phone}` : ""}${item.supplier_email ? ` · ${item.supplier_email}` : ""}` : item.supplier ? ` ${item.supplier}` : ""}</div>
             <div className="hk-actions">

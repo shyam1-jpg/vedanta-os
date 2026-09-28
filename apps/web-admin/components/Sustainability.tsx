@@ -6,11 +6,22 @@ type Point = { period: string; value: number; baseline: number | null; delta: nu
 type Carbon = { label: string; kgCo2e: number; factorText: string; source: string } | null;
 type Series = { code: string; label: string; unit: string; baseline: number | null; points: Point[]; carbon: Carbon };
 type Metric = { code: string; label: string; unit: string };
+type GardenCarbon = { label: string; kgCo2e: number; factorText: string; year: number; source: string } | null;
+type GardenImpact = {
+  period: string;
+  composted_kg: number;
+  local_share: number | null;
+  garden_kg: number;
+  other_incoming_kg: number;
+  by_destination: { code: string; label: string; kg: number; carbon: GardenCarbon }[];
+  carbon_note: string;
+};
 
 export default function Sustainability() {
   const [enabled, setEnabled] = useState(false);
   const [isPublic, setPublic] = useState(false);
   const [series, setSeries] = useState<Series[]>([]);
+  const [garden, setGarden] = useState<GardenImpact | null>(null);
   const [metrics, setMetrics] = useState<Metric[]>([]);
   const [form, setForm] = useState({ period: "2026-09", metric: "waste_plate", value: "", note: "" });
   const [baseline, setBaseline] = useState({ metric: "waste_plate", value: "" });
@@ -18,12 +29,13 @@ export default function Sustainability() {
   const [toast, setToast] = useState<string | null>(null);
   const say = (t: string) => { setToast(t); setTimeout(() => setToast(null), 3500); };
 
-  const load = () => api<{ enabled: boolean; public?: boolean; metrics?: Metric[]; series?: Series[]; goshala?: string }>("/v1/sustainability")
+  const load = () => api<{ enabled: boolean; public?: boolean; metrics?: Metric[]; series?: Series[]; goshala?: string; garden?: GardenImpact | null }>("/v1/sustainability")
     .then(row => {
       setEnabled(row.enabled);
       setPublic(row.public === true);
       setMetrics(row.metrics ?? []);
       setSeries(row.series ?? []);
+      setGarden(row.garden ?? null);
     })
     .catch(e => say(e instanceof ApiError ? e.problem.detail : "Could not open the tracker"));
 
@@ -62,6 +74,16 @@ export default function Sustainability() {
               </div>
             ))}
           </div>
+          {garden && (
+            <div className="panel" style={{ marginTop: 16 }} data-testid="sustain-garden">
+              <h3>From the garden log, {garden.period}</h3>
+              <p>Composted waste {garden.composted_kg} kg. Garden-to-kitchen local share {garden.local_share == null ? "is not available yet" : `${garden.local_share}%`} ({garden.garden_kg} kg from the garden, {garden.other_incoming_kg} kg bought in).</p>
+              {garden.by_destination.map(row => (
+                <p key={row.code}>{row.label}: {row.kg} kg.{row.carbon ? ` Estimate: ${row.carbon.kgCo2e} kg CO2e. Factor ${row.carbon.factorText}, ${row.carbon.year}. ${row.carbon.source}` : ""}</p>
+              ))}
+              <p className="m">{garden.carbon_note}</p>
+            </div>
+          )}
           <div className="panel" style={{ marginTop: 16 }}>
             <h3>Add a reading</h3>
             <div className="fgrid">
