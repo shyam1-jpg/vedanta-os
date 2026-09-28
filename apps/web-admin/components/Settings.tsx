@@ -15,9 +15,14 @@ export default function Settings() {
   type RouteBox = { enabled: boolean; email: string };
   const [routes, setRoutes] = useState<{ kitchen: RouteBox; restaurant: RouteBox; front: RouteBox } | null>(null);
   const [routeCopy, setRouteCopy] = useState<Record<string, string>>({});
+  const [faultMail, setFaultMail] = useState<{ maintenance: string; manager: string; kitchen: string } | null>(null);
+  const [faultAreas, setFaultAreas] = useState("");
+  const [faultCopy, setFaultCopy] = useState<Record<string, string>>({});
   useEffect(() => {
     api<{ rules: { kitchen: RouteBox; restaurant: RouteBox; front: RouteBox }; receives: Record<string, string> }>("/v1/settings/booking-routing")
       .then(r => { setRoutes(r.rules); setRouteCopy(r.receives); }).catch(() => {});
+    api<{ areas: string[]; emails: { maintenance: string; manager: string; kitchen: string }; receives: Record<string, string> }>("/v1/settings/fault-routing")
+      .then(r => { setFaultMail(r.emails); setFaultAreas(r.areas.join("\n")); setFaultCopy(r.receives); }).catch(() => {});
   }, []);
   const load = () => { api<{ items: Pkg[] }>("/v1/packages").then(r => setPkgs(r.items)); if (can("config.manage")) api<{ items: Key[] }>("/v1/integrations/keys").then(r => setKeys(r.items)).catch(() => {}); };
   useEffect(load, []); // eslint-disable-line react-hooks/exhaustive-deps
@@ -76,6 +81,25 @@ export default function Settings() {
             </div>
           ))}
           <button className="btn primary" style={{ marginTop: 12 }} onClick={() => run(() => api("/v1/settings/booking-routing", { method: "PUT", body: JSON.stringify(routes) }), "Routing saved")}>Save routing</button>
+        </div>
+      )}
+      {faultMail && (
+        <div className="panel" style={{ marginTop: 14 }}>
+          <h3>Fault reports</h3>
+          <p className="m" style={{ color: "var(--ink-2)" }}>Every fault goes to maintenance, and the general manager is copied. A fridge or freezer is also sent to the kitchen. Put the inboxes here. Do not commit a real address. If SMTP is not set, the note is logged for staff to copy.</p>
+          {(["maintenance", "manager", "kitchen"] as const).map(key => (
+            <div key={key} style={{ marginTop: 14, maxWidth: 640 }}>
+              <b>{key === "manager" ? "General manager" : key === "kitchen" ? "Kitchen (cold stores only)" : "Maintenance"}</b>
+              <p className="m">{faultCopy[key]}</p>
+              <input placeholder="team@example.invalid" value={faultMail[key]} onChange={e => setFaultMail({ ...faultMail, [key]: e.target.value })} />
+            </div>
+          ))}
+          <label style={{ display: "block", marginTop: 14, maxWidth: 640 }}>Areas, one per line<textarea rows={6} value={faultAreas} onChange={e => setFaultAreas(e.target.value)} style={{ display: "block", width: "100%", marginTop: 4, padding: "7px 9px", border: "1px solid var(--line)", borderRadius: 6, font: "inherit" }} /></label>
+          <button className="btn primary" style={{ marginTop: 12 }} onClick={() => run(async () => {
+            const saved = await api<{ areas: string[]; emails: { maintenance: string; manager: string; kitchen: string } }>("/v1/settings/fault-routing", { method: "PUT", body: JSON.stringify({ areas: faultAreas.split("\n").map(s => s.trim()).filter(Boolean), emails: faultMail }) });
+            setFaultAreas(saved.areas.join("\n"));
+            setFaultMail(saved.emails);
+          }, "Fault routing saved")}>Save fault routing</button>
         </div>
       )}
       {toast && <div className="toast">{toast}</div>}

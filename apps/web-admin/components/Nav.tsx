@@ -5,7 +5,7 @@ import { useStore } from "@/lib/store";
 
 const sections: { label: string; items: [string, string, string | null][] }[] = [
   { label: "The house", items: [["/house/", "Today", "group.read"], ["/groups/", "Bookings", "group.read"], ["/rooms/", "Room board", "group.read"]] },
-  { label: "In service", items: [["/ops/", "House log", "group.read"], ["/tasks/", "Tasks", "group.read"], ["/front/", "Front desk", "group.read"], ["/night/", "Night porter", "group.read"], ["/service/", "Department boards", "group.read"], ["/manual/", "Manual", "group.read"], ["/housekeeping/", "Housekeeping", "group.read"], ["/maintenance/", "Maintenance", "maintenance.read"], ["/kitchen/", "Kitchen", "covers.read"]] },
+  { label: "In service", items: [["/ops/", "House log", "group.read"], ["/tasks/", "Tasks", "group.read"], ["/front/", "Front desk", "group.read"], ["/night/", "Night porter", "group.read"], ["/service/", "Department boards", "group.read"], ["/manual/", "Manual", "group.read"], ["/housekeeping/", "Housekeeping", "group.read"], ["/maintenance/", "Maintenance", "maintenance.read|maintenance.report"], ["/kitchen/", "Kitchen", "covers.read"]] },
   { label: "Intelligence", items: [["/duty-manager/", "AI Duty Manager", "group.read"], ["/programme/", "Programme sheet", "group.read"], ["/finance/", "Finance dashboard", "report.read"]] },
   { label: "People", items: [["/guests/", "Guests", "guest.read"], ["/guest-360/", "Guest 360", "guest.read"], ["/hr/", "HR & Rota", "group.read"], ["/labour/", "Labour forecast", "clock.manage"], ["/staff-corner/", "Staff corner", "cover.read"], ["/payroll/", "Payroll", "clock.manage"], ["/users/", "Names & positions", "user.manage"], ["/sessions/", "My devices", null]] },
   { label: "The estate", items: [["/review/", "Imported bookings", "group.update"], ["/quality/", "Data quality", "group.update"], ["/reports/", "Reports", "report.read"], ["/purchasing/", "Purchasing", "group.read"], ["/emergency/", "Emergency & compliance", "group.read"], ["/settings/", "Settings", "package.manage"]] },
@@ -34,7 +34,7 @@ export default function Nav() {
         <div key={sec.label} className="nav-group">
           <div className="nav-sec">{sec.label}</div>
           {sec.items.map(([href, label, perm], i) => {
-            const off = perm && !can(perm);
+            const off = perm ? !perm.split("|").some(code => can(code)) : false;
             return <Link key={i} href={off ? "#" : href} className={p === href ? "active" : ""} aria-disabled={!!off} style={off ? { opacity: .35, pointerEvents: "none" } : undefined}>{label}</Link>;
           })}
         </div>

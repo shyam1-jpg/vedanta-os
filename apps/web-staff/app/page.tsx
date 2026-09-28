@@ -15,8 +15,195 @@ async function api<T>(path: string, init: RequestInit = {}): Promise<T> {
   return body as T;
 }
 
-type Me = { name: string; email: string; role: string; role_name?: string; property_name?: string | null; property_kicker?: string | null };
+type Me = { name: string; email: string; role: string; role_name?: string; permissions?: string[]; property_name?: string | null; property_kicker?: string | null };
 type Prop = { name: string; kicker: string };
+
+type FaultCat = {
+  rooms: string[];
+  areas: string[];
+  assets: { id: string; name: string; category: string | null; qr_code: string | null }[];
+  categories: { code: string; label: string }[];
+  urgencies: { code: string; label: string }[];
+  reporter: string;
+};
+type FaultItem = {
+  id: string; number: number; title: string; description: string | null; status: string; status_label?: string;
+  priority: string; urgency_label?: string; room: string | null; location: string | null;
+  asset_name: string | null; equipment_label: string | null; food_safety: boolean; has_photo: boolean;
+  reported_by: string | null; created_at: string;
+};
+
+async function shrinkPhoto(file: File): Promise<string> {
+  const url = URL.createObjectURL(file);
+  try {
+    const img = await new Promise<HTMLImageElement>((resolve, reject) => {
+      const el = new Image();
+      el.onload = () => resolve(el);
+      el.onerror = () => reject(new Error("Attach a photo as an image"));
+      el.src = url;
+    });
+    const max = 1280;
+    const scale = Math.min(1, max / Math.max(img.width, img.height));
+    const canvas = document.createElement("canvas");
+    canvas.width = Math.max(1, Math.round(img.width * scale));
+    canvas.height = Math.max(1, Math.round(img.height * scale));
+    const ctx = canvas.getContext("2d");
+    if (!ctx) throw new Error("Could not read the photo");
+    ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
+    let quality = 0.72;
+    let data = canvas.toDataURL("image/jpeg", quality);
+    while (data.length > 680_000 && quality > 0.35) {
+      quality -= 0.08;
+      data = canvas.toDataURL("image/jpeg", quality);
+    }
+    if (!data.startsWith("data:image/") || data.length > 700_000) throw new Error("That photo is too large — use a smaller one");
+    return data;
+  } finally {
+    URL.revokeObjectURL(url);
+  }
+}
+
+function FaultPocket({ me, canWork, onError }: { me: Me; canWork: boolean; onError: (msg: string | null) => void }) {
+  const [cat, setCat] = useState<FaultCat | null>(null);
+  const [mine, setMine] = useState<FaultItem[]>([]);
+  const [queue, setQueue] = useState<FaultItem[]>([]);
+  const [place, setPlace] = useState<"room" | "area">("room");
+  const [room, setRoom] = useState("");
+  const [area, setArea] = useState("");
+  const [assetId, setAssetId] = useState("");
+  const [category, setCategory] = useState("");
+  const [equipment, setEquipment] = useState("");
+  const [description, setDescription] = useState("");
+  const [urgency, setUrgency] = useState("NORMAL");
+  const [photo, setPhoto] = useState<string | null>(null);
+  const [note, setNote] = useState<Record<string, string>>({});
+  const [busy, setBusy] = useState(false);
+  const [msg, setMsg] = useState<string | null>(null);
+
+  const refresh = async () => {
+    setMine((await api<{ items: FaultItem[] }>("/v1/maintenance?mine=1&status=all")).items);
+    if (canWork) setQueue((await api<{ items: FaultItem[] }>("/v1/maintenance?status=open")).items);
+  };
+  useEffect(() => {
+    api<FaultCat>("/v1/maintenance/catalogue").then(setCat).catch(e => onError((e as Error).message));
+    refresh().catch(e => onError((e as Error).message));
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
+
+  const asset = cat?.assets.find(a => a.id === assetId);
+  const foodish = /fridge|freezer|walk-?in|cold room|cold-room|chiller/i.test([asset?.name, asset?.category, equipment, category].filter(Boolean).join(" "));
+
+  const send = async () => {
+    setBusy(true); onError(null);
+    try {
+      const r = await api<{ number: number; food_safety: boolean }>("/v1/maintenance", {
+        method: "POST",
+        body: JSON.stringify({
+          description: description.trim(),
+          room: place === "room" ? room : undefined,
+          area: place === "area" ? area : undefined,
+          asset_id: assetId || undefined,
+          equipment_category: category || undefined,
+          equipment_label: equipment.trim() || undefined,
+          urgency,
+          photo: photo || undefined,
+        }),
+      });
+      setDescription(""); setEquipment(""); setPhoto(null); setAssetId(""); setCategory("");
+      await refresh();
+      setMsg(`Sent as M-${r.number}${r.food_safety ? ". The kitchen is copied." : ""}`);
+    } catch (e) { onError((e as Error).message); }
+    finally { setBusy(false); }
+  };
+
+  const act = async (id: string, cmd: string) => {
+    onError(null);
+    try {
+      await api(`/v1/maintenance/${id}/commands/${cmd}`, { method: "POST", body: JSON.stringify({}) });
+      await refresh();
+    } catch (e) { onError((e as Error).message); }
+  };
+
+  const placeLine = (t: FaultItem) => t.room ? `Room ${t.room}` : (t.location || "House");
+  const gear = (t: FaultItem) => [t.asset_name, t.equipment_label].filter(Boolean).join(" · ");
+
+  return (
+    <div>
+      <div className="card">
+        <h2>Report a fault</h2>
+        <p className="m">Goes straight to maintenance. The general manager is copied. Reported by {cat?.reporter || me.name}.</p>
+        <label>Where</label>
+        <select value={place} onChange={e => setPlace(e.target.value === "area" ? "area" : "room")}><option value="room">A room</option><option value="area">An area</option></select>
+        {place === "room" ? (<>
+          <label>Room</label>
+          <select value={room} onChange={e => setRoom(e.target.value)}><option value="">Choose a room…</option>{(cat?.rooms ?? []).map(n => <option key={n} value={n}>{n}</option>)}</select>
+        </>) : (<>
+          <label>Area</label>
+          <select value={area} onChange={e => setArea(e.target.value)}><option value="">Choose an area…</option>{(cat?.areas ?? []).map(a => <option key={a} value={a}>{a}</option>)}</select>
+        </>)}
+        <label>Equipment on the register</label>
+        <select value={assetId} onChange={e => setAssetId(e.target.value)}><option value="">Not on the list</option>{(cat?.assets ?? []).map(a => <option key={a.id} value={a.id}>{a.name}{a.qr_code ? ` · ${a.qr_code}` : ""}</option>)}</select>
+        <label>Or a category</label>
+        <select value={category} onChange={e => setCategory(e.target.value)}><option value="">None</option>{(cat?.categories ?? []).map(c => <option key={c.code} value={c.code}>{c.label}</option>)}</select>
+        <label>Or say what it is</label>
+        <input value={equipment} onChange={e => setEquipment(e.target.value)} placeholder="Fridge 2, banquet chair" />
+        <label>What is wrong?</label>
+        <textarea rows={3} value={description} onChange={e => setDescription(e.target.value)} placeholder="toilet not flushing, overflowing, furniture broken" />
+        <label>How urgent</label>
+        <select value={urgency} onChange={e => setUrgency(e.target.value)}>{(cat?.urgencies ?? []).map(u => <option key={u.code} value={u.code}>{u.label}</option>)}</select>
+        <label>Photo, if you have one</label>
+        <input type="file" accept="image/*" onChange={async e => {
+          const file = e.target.files?.[0];
+          if (!file) { setPhoto(null); return; }
+          try { setPhoto(await shrinkPhoto(file)); onError(null); }
+          catch (ex) { setPhoto(null); onError((ex as Error).message); }
+        }} />
+        {foodish && <div className="note">This looks like a fridge or freezer. The kitchen will be told as well.</div>}
+        {msg && <div className="note">{msg}</div>}
+        <button className="btn" disabled={busy || !description.trim() || (place === "room" ? !room : !area)} onClick={send}>{busy ? "Sending…" : "Send to maintenance"}</button>
+      </div>
+      <div className="card">
+        <h2>Your reports</h2>
+        {mine.length === 0 && <p className="m">You have not reported a fault yet.</p>}
+        {mine.map(t => (
+          <div className="row" key={t.id} style={{ display: "block" }}>
+            <b>M-{t.number} · {placeLine(t)}</b>
+            <div>{t.title}</div>
+            <div className="m">{t.status_label || t.status} · {t.urgency_label || t.priority}{gear(t) ? ` · ${gear(t)}` : ""}{t.food_safety ? " · kitchen copied" : ""}{t.has_photo ? " · photo" : ""}</div>
+            <input value={note[t.id] ?? ""} onChange={e => setNote(s => ({ ...s, [t.id]: e.target.value }))} placeholder="Add a note" />
+            <button className="btn ghost" onClick={async () => {
+              const body = (note[t.id] ?? "").trim();
+              if (!body) return;
+              try {
+                await api(`/v1/maintenance/${t.id}/notes`, { method: "POST", body: JSON.stringify({ body }) });
+                setNote(s => ({ ...s, [t.id]: "" }));
+                setMsg("Note added");
+              } catch (e) { onError((e as Error).message); }
+            }}>Add note</button>
+          </div>
+        ))}
+      </div>
+      {canWork && (
+        <div className="card">
+          <h2>Maintenance queue</h2>
+          {queue.length === 0 && <p className="m">Nothing open.</p>}
+          {queue.map(t => (
+            <div className="row" key={t.id} style={{ display: "block" }}>
+              <b>M-{t.number} · {placeLine(t)}</b>
+              <div>{t.title}</div>
+              <div className="m">{t.status_label || t.status} · {t.reported_by ?? "Staff"}{gear(t) ? ` · ${gear(t)}` : ""}{t.food_safety ? " · food safety" : ""}</div>
+              <div className="tabs">
+                {t.status === "OPEN" && <button onClick={() => act(t.id, "acknowledge")}>Acknowledge</button>}
+                {["OPEN", "ACKNOWLEDGED", "WAITING_PARTS"].includes(t.status) && <button onClick={() => act(t.id, "start")}>In progress</button>}
+                {["OPEN", "ACKNOWLEDGED", "IN_PROGRESS"].includes(t.status) && <button onClick={() => act(t.id, "wait")}>Waiting parts</button>}
+                {!["DONE", "CANCELLED"].includes(t.status) && <button onClick={() => act(t.id, "done")}>Fixed</button>}
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
 
 export default function Pocket() {
   const [me, setMe] = useState<Me | null>(null);
@@ -25,7 +212,7 @@ export default function Pocket() {
   const [secret, setSecret] = useState("");
   const [providers, setProviders] = useState<{ microsoft: boolean; dev: boolean } | null>(null);
   const [err, setErr] = useState<string | null>(null);
-  const [tab, setTab] = useState<"clock" | "leave" | "duty" | "sop" | "log" | "desk" | "night" | "manual" | "tasks">("clock");
+  const [tab, setTab] = useState<"clock" | "leave" | "duty" | "sop" | "log" | "desk" | "night" | "manual" | "tasks" | "fault">("clock");
   const [desk, setDesk] = useState<{
     today: { weekday: string; title: string; method: string; ingredients: { name: string; qty: string }[] };
     tomorrow: { weekday: string; title: string; method: string; ingredients: { name: string; qty: string }[] };
@@ -133,6 +320,7 @@ export default function Pocket() {
           <button className={tab === "duty" ? "on" : ""} onClick={() => setTab("duty")}>Duty</button>
           <button className={tab === "log" ? "on" : ""} onClick={() => setTab("log")}>House log</button>
           <button className={tab === "tasks" ? "on" : ""} onClick={() => setTab("tasks")}>Tasks</button>
+          <button className={tab === "fault" ? "on" : ""} onClick={() => setTab("fault")}>Fault</button>
           <button className={tab === "desk" ? "on" : ""} onClick={() => setTab("desk")}>Front desk</button>
           <button className={tab === "night" ? "on" : ""} onClick={() => setTab("night")}>Night</button>
           <button className={tab === "manual" ? "on" : ""} onClick={() => setTab("manual")}>Manual</button>
@@ -229,6 +417,7 @@ export default function Pocket() {
             {(!tasks || tasks.items.length === 0) && <p className="m">No tasks on your list.</p>}
           </div>
         )}
+        {tab === "fault" && <FaultPocket me={me} canWork={(me.permissions ?? []).includes("maintenance.work")} onError={setErr} />}
         {tab === "desk" && (
           <div>
             <div className="card">
