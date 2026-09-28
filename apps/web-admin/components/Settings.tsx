@@ -13,7 +13,7 @@ export default function Settings() {
   const [newKeyName, setNewKeyName] = useState("");
   const [toast, setToast] = useState<string | null>(null); const say = (t: string) => { setToast(t); setTimeout(() => setToast(null), 3500); };
   type RouteBox = { enabled: boolean; email: string };
-  const [routes, setRoutes] = useState<{ kitchen: RouteBox; restaurant: RouteBox; front: RouteBox } | null>(null);
+  const [routes, setRoutes] = useState<{ kitchen: RouteBox; restaurant: RouteBox; front: RouteBox; housekeeping: RouteBox } | null>(null);
   const [routeCopy, setRouteCopy] = useState<Record<string, string>>({});
   const [faultMail, setFaultMail] = useState<{ maintenance: string; manager: string; kitchen: string } | null>(null);
   const [faultAreas, setFaultAreas] = useState("");
@@ -43,8 +43,8 @@ export default function Settings() {
   const [journey, setJourney] = useState<Record<string, unknown> | null>(null);
   const [stayCopy, setStayCopy] = useState<Record<string, string>>({});
   useEffect(() => {
-    api<{ rules: { kitchen: RouteBox; restaurant: RouteBox; front: RouteBox }; receives: Record<string, string> }>("/v1/settings/booking-routing")
-      .then(r => { setRoutes(r.rules); setRouteCopy(r.receives); }).catch(() => {});
+    api<{ rules: { kitchen: RouteBox; restaurant: RouteBox; front: RouteBox; housekeeping?: RouteBox }; receives: Record<string, string> }>("/v1/settings/booking-routing")
+      .then(r => { setRoutes({ ...r.rules, housekeeping: r.rules.housekeeping ?? { enabled: true, email: "" } }); setRouteCopy(r.receives); }).catch(() => {});
     api<{ areas: string[]; emails: { maintenance: string; manager: string; kitchen: string }; receives: Record<string, string> }>("/v1/settings/fault-routing")
       .then(r => { setFaultMail(r.emails); setFaultAreas(r.areas.join("\n")); setFaultCopy(r.receives); }).catch(() => {});
     api<{ tags: { label: string }[] }>("/v1/settings/handover-tags")
@@ -125,11 +125,11 @@ export default function Settings() {
         <div className="panel" style={{ marginTop: 14 }}>
           <h3>Guest booking routing</h3>
           <p className="m" style={{ color: "var(--ink-2)" }}>When a guest saves a place, each team gets only its own note. Put the department inbox here. Do not commit a real address. If SMTP is not set, the note is logged for staff to copy.</p>
-          {(["kitchen", "restaurant", "front"] as const).map(key => (
+          {(["kitchen", "restaurant", "front", "housekeeping"] as const).map(key => (
             <div key={key} style={{ marginTop: 14, maxWidth: 640 }}>
               <label style={{ display: "flex", gap: 8, alignItems: "center" }}>
                 <input type="checkbox" checked={routes[key].enabled} onChange={e => setRoutes({ ...routes, [key]: { ...routes[key], enabled: e.target.checked } })} />
-                <b>{key === "front" ? "Front of house" : key === "kitchen" ? "Kitchen" : "Restaurant"}</b>
+                <b>{key === "front" ? "Front of house" : key === "kitchen" ? "Kitchen" : key === "housekeeping" ? "Housekeeping" : "Restaurant"}</b>
               </label>
               <p className="m">{routeCopy[key]}</p>
               <input placeholder="team@example.invalid" value={routes[key].email} onChange={e => setRoutes({ ...routes, [key]: { ...routes[key], email: e.target.value } })} />

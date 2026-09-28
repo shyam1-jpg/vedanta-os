@@ -437,7 +437,7 @@ export default async function guestPortal(f: FastifyInstance) {
         [prop.tenant_id, prop.id, guest.id, name, email, capture.people, arrival, departure, capture.notes, programmeId,
           sealText(dietarySummary(capture)), sealText(capture.accessibility_notes),
           capture.room_preference, capture.arrival_time_note, sealText(capture.travel_notes),
-          sealParty(capture.party), capture.arrival_slot, capture.departure_slot, idempotencyKey])).rows[0];
+          sealParty(capture.party, { access: capture.access, access_note: capture.access_note }), capture.arrival_slot, capture.departure_slot, idempotencyKey])).rows[0];
       const suggested = await suggestContact(c, {
         tenantId: prop.tenant_id, propertyId: prop.id, email, phone: null, name, groupId: null, enquiryId: e.id,
       });
@@ -608,7 +608,7 @@ export default async function guestPortal(f: FastifyInstance) {
         party: undefined,
         programme_name: x.programme_name ? cleanName(x.programme_name) : null,
         dietary_notes: view.party_summary ?? openText(x.dietary_notes),
-        accessibility_notes: openText(x.accessibility_notes),
+        accessibility_notes: view.access_summary ?? openText(x.accessibility_notes),
         travel_notes: openText(x.travel_notes),
         party_summary: view.party_summary,
         accept_warning: view.accept_warning,
@@ -742,6 +742,8 @@ export default async function guestPortal(f: FastifyInstance) {
       departure: capture.departure,
       notes: capture.notes,
       accessibility_notes: capture.accessibility_notes,
+      access: capture.access,
+      access_note: capture.access_note,
       room_preference: capture.room_preference,
       arrival_time_note: capture.arrival_time_note,
       travel_notes: capture.travel_notes,
@@ -769,7 +771,7 @@ export default async function guestPortal(f: FastifyInstance) {
       if (!parsed.ok) { reply.code(422); return problem(422, "validation", parsed.errors[0] ?? "Check the party details"); }
       const capture = parsed.capture;
       await c.query(`update guest_enquiry set name=$2, people=$3, arrival_date=$4, departure_date=$5, notes=$6, dietary_notes=$7, accessibility_notes=$8, room_preference=$9, arrival_time_note=$10, travel_notes=$11, party=$12, arrival_slot=$13, departure_slot=$14 where id=$1`,
-        [e.id, capture.name, capture.people, capture.arrival, capture.departure, capture.notes, sealText(dietarySummary(capture)), sealText(capture.accessibility_notes), capture.room_preference, capture.arrival_time_note, sealText(capture.travel_notes), sealParty(capture.party), capture.arrival_slot, capture.departure_slot]);
+        [e.id, capture.name, capture.people, capture.arrival, capture.departure, capture.notes, sealText(dietarySummary(capture)), sealText(capture.accessibility_notes), capture.room_preference, capture.arrival_time_note, sealText(capture.travel_notes), sealParty(capture.party, { access: capture.access, access_note: capture.access_note }), capture.arrival_slot, capture.departure_slot]);
       if (e.booking_id) {
         await c.query(`update booking_group set arrival_date=$2, departure_date=$3, expected_guests=$4 where id=$1`, [e.booking_id, capture.arrival, capture.departure, capture.people]);
         await c.query(`delete from room_occupancy where group_id=$1 and (on_date < $2::date or on_date > greatest($3::date - 1, $2::date))`, [e.booking_id, capture.arrival, capture.departure]);

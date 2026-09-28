@@ -13,6 +13,7 @@ import {
   cancellationEmails,
   captureFromStored,
   departmentSlices,
+  accessSummary,
   dietarySummary,
   formatSlice,
   highestSeverity,
@@ -32,14 +33,32 @@ import {
 
 export type Db = { query(sql: string, params?: unknown[]): Promise<{ rows: any[]; rowCount?: number | null }> };
 
-export function sealParty(party: PartyGuest[]): string | null {
-  return sealText(JSON.stringify(party));
+export function sealParty(party: PartyGuest[], extra?: { access?: string[]; access_note?: string | null }): string | null {
+  const access = extra?.access ?? [];
+  const access_note = extra?.access_note ?? null;
+  const payload = access.length || access_note ? { party, access, access_note } : party;
+  return sealText(JSON.stringify(payload));
+}
+
+export function openPartyBundle(raw: string | null | undefined): { party: unknown; access: string[]; access_note: string | null } {
+  const text = openText(raw);
+  if (!text) return { party: [], access: [], access_note: null };
+  try {
+    const parsed = JSON.parse(text);
+    if (Array.isArray(parsed)) return { party: parsed, access: [], access_note: null };
+    if (parsed && typeof parsed === "object" && Array.isArray(parsed.party)) {
+      return {
+        party: parsed.party,
+        access: Array.isArray(parsed.access) ? parsed.access.map(String) : [],
+        access_note: typeof parsed.access_note === "string" ? parsed.access_note : null,
+      };
+    }
+  } catch { /* sealed text that is not JSON falls through */ }
+  return { party: [], access: [], access_note: null };
 }
 
 export function openParty(raw: string | null | undefined): unknown {
-  const text = openText(raw);
-  if (!text) return [];
-  try { return JSON.parse(text); } catch { return []; }
+  return openPartyBundle(raw).party;
 }
 
 export function openAllergenDetail(raw: string | null | undefined): { code: string; severity: string }[] {
@@ -67,6 +86,7 @@ export function enquiryInput(row: {
   arrival_time_note?: string | null; room_preference?: string | null; travel_notes?: string | null; notes?: string | null;
 }): CaptureInput {
   const date = (v: string | Date | undefined) => v instanceof Date ? v.toISOString().slice(0, 10) : (v ? String(v).slice(0, 10) : undefined);
+  const bundle = openPartyBundle(row.party);
   return {
     people: row.people,
     name: row.name,
@@ -75,7 +95,9 @@ export function enquiryInput(row: {
     departure: row.departure ?? date(row.departure_date),
     arrival_slot: row.arrival_slot,
     departure_slot: row.departure_slot,
-    party: openParty(row.party),
+    party: bundle.party,
+    access: bundle.access,
+    access_note: bundle.access_note,
     dietary_notes: openText(row.dietary_notes),
     accessibility_notes: openText(row.accessibility_notes),
     arrival_time_note: row.arrival_time_note,
@@ -122,7 +144,7 @@ export async function syncBookingTasks(db: Db, args: {
     const rank = taskPriority(slice);
     const title = slice.department === "KITCHEN"
       ? `Diet — ${args.stay.name}${slice.severe ? " — SEVERE" : ""}`
-      : slice.department === "RESTAURANT" ? `Meals — ${args.stay.name}` : `Arrival — ${args.stay.name}`;
+      : slice.department === "RESTAURANT" ? `Meals — ${args.stay.name}` : slice.department === "HK" ? `Access — ${args.stay.name}` : `Arrival — ${args.stay.name}`;
     if (plan.update.includes(slice.department)) {
       await db.query(
         `update ops_task set title=$3, notes=$4, priority=$5, severity=$6, guest_name=$7, booking_id=$8, due_at=$9, updated_at=now()
@@ -361,6 +383,7 @@ export function staffEnquiryView(row: Parameters<typeof enquiryInput>[0]) {
     party_summary: dietarySummary(capture),
     accept_warning: acceptWarning(loss),
     severe: !!kitchen?.severe,
+    access_summary: accessSummary(capture),
   };
 }
 
@@ -377,6 +400,7 @@ export default async function bookingRouteRoutes(f: FastifyInstance) {
         kitchen: "Allergens and diets with severity, per person and per day. Severe and anaphylaxis are marked first.",
         restaurant: "Covers per meal, special-diet counts, who needs a prepared plate or table service, and seating help.",
         front: "Arrival time, room preference, accessibility and guest notes. Not the allergen list.",
+        housekeeping: "Access codes only: step-free, ground floor, shower, grab rails, quiet room, assistance dog, hearing loop, mobility aid storage, and help with luggage. Not the allergen list. A free-text note is marked for review.",
       },
     };
   });

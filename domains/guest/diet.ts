@@ -27,7 +27,8 @@ export const UK_ALLERGENS = ["celery", "cereals_gluten", "crustaceans", "eggs", 
 
 const ALLERGEN_LABEL: Record<string, string> = {
   celery: "Celery",
-  cereals_gluten: "Gluten",
+  cereals_gluten: "Cereals containing gluten",
+  other: "Other allergen",
   crustaceans: "Crustaceans — not used in this kitchen",
   eggs: "Eggs — not used in this kitchen",
   fish: "Fish — not used in this kitchen",
@@ -43,13 +44,17 @@ const ALLERGEN_LABEL: Record<string, string> = {
 };
 
 const DIET_LABEL: Record<string, string> = {
+  vegetarian: "Vegetarian",
   vegan: "Vegan",
   jain: "Jain — no root vegetables",
+  sattvic: "Sattvic",
   gluten_free: "Gluten-free",
   dairy_free: "Dairy-free",
-  nut_free: "Nut-free",
+  nut_free: "No nuts",
   halal: "Halal",
   kosher: "Kosher",
+  low_fodmap: "Low-FODMAP",
+  diabetic_friendly: "Diabetic-friendly",
 };
 
 export function allergenLabel(code: string): string {

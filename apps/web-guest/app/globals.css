@@ -69,9 +69,21 @@ input, textarea { width: 100%; margin-top: 4px; padding: 10px; border: 1px solid
 .room-type span { display: block; font-size: 13px; color: var(--ink-2); margin-top: 4px; }
 .diet-p { border-top: 1px solid var(--line); margin-top: 16px; padding-top: 8px; }
 .lbl { margin-top: 12px; font-size: 12px; color: var(--ink-2); }
-.chips { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 6px; }
-.chip { border: 1px solid var(--line); background: #fff; color: var(--ink); padding: 6px 10px; cursor: pointer; font-size: 13px; }
+.chips { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 8px; }
+.chip { border: 1px solid var(--line); background: #fff; color: var(--ink); padding: 10px 14px; cursor: pointer; font-size: 16px; min-height: 44px; }
 .chip.on { background: var(--forest); color: var(--ivory); border-color: var(--forest); }
+.tap-set { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 8px; }
+.tap {
+  min-height: 44px; padding: 10px 16px; border-radius: 999px; border: 1px solid var(--line);
+  background: #fff; color: var(--ink); font-size: 16px; line-height: 1.2; cursor: pointer;
+}
+.tap.on { background: var(--forest); color: var(--ivory); border-color: var(--forest); }
+.tap:focus-visible { outline: 3px solid var(--gold); outline-offset: 2px; }
+.allergen-row { border: 1px solid var(--line); border-radius: 12px; padding: 10px 12px; margin-top: 8px; background: var(--ivory); }
+fieldset.needs { border: 0; margin: 16px 0 0; padding: 0; }
+fieldset.needs legend { font-family: var(--serif); font-size: 22px; color: var(--forest); padding: 0; }
+.hint { color: var(--ink-2); font-size: 15px; line-height: 1.45; }
+.review { color: var(--forest); font-size: 14px; margin: 6px 0 0; }
 .checks { display: flex; flex-direction: column; gap: 6px; margin-top: 6px; }
 .check { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; font-size: 14px; color: var(--ink); margin-top: 0; }
 .check input { width: auto; margin: 0; }

@@ -11,6 +11,7 @@ import {
   dietarySummary,
   formatSlice,
   frontSlice,
+  housekeepingSlice,
   highestSeverity,
   kitchenSlice,
   mealsOn,
@@ -237,7 +238,79 @@ describe("department slices", () => {
 
   it("omits a department when its routing rule is off", () => {
     const slices = departmentSlices(sample, { ...rules, kitchen: { enabled: false, email: rules.kitchen.email } });
-    assert.deepEqual(slices.map(s => s.department), ["RESTAURANT", "FRONT"]);
+    assert.deepEqual(slices.map(s => s.department), ["RESTAURANT", "FRONT", "HK"]);
+  });
+});
+
+describe("structured diet and access", () => {
+  it("stores diet, allergen and access codes, and flags free text for review", () => {
+    const result = validateCapture({
+      name: "Ada Lovelace",
+      email: "ada@example.invalid",
+      people: 1,
+      arrival: "2026-10-02",
+      departure: "2026-10-04",
+      access: ["step_free", "ground_floor", "not_a_code"],
+      access_note: "Example ramp note",
+      party: [{
+        given_name: "Ada",
+        family_name: "Lovelace",
+        diet: ["vegetarian", "sattvic", "low_fodmap", "diabetic_friendly", "nut_free"],
+        allergens: [{ code: "cereals_gluten", severity: "ALLERGY" }, { code: "other", severity: "ANAPHYLAXIS", adrenaline_pen: true }],
+        allergen_other: "Example seed",
+        other: "Example diet note",
+      }],
+    });
+    assert.equal(result.ok, true);
+    if (!result.ok) return;
+    assert.deepEqual(result.capture.party[0].diet, ["vegetarian", "sattvic", "low_fodmap", "diabetic_friendly", "nut_free"]);
+    assert.equal(result.capture.party[0].allergens[1].adrenaline_pen, true);
+    assert.equal(result.capture.party[0].allergen_other, "Example seed");
+    assert.deepEqual(result.capture.access, ["step_free", "ground_floor"]);
+    const kitchen = kitchenSlice(result.capture)!;
+    const text = formatSlice(kitchen);
+    assert.match(text, /carries an adrenaline pen/);
+    assert.match(text, /review before service/i);
+    assert.match(text, /Example seed/);
+    assert.doesNotMatch(text, /step-free/i);
+    const house = formatSlice(departmentSlices(result.capture).find(s => s.department === "HK")!);
+    const front = formatSlice(frontSlice(result.capture));
+    assert.match(house, /Step-free access/);
+    assert.match(house, /Ground-floor room/);
+    assert.match(house, /Example ramp note/);
+    assert.match(house, /review before service/i);
+    assert.doesNotMatch(house, /Example seed/);
+    assert.doesNotMatch(house, /cereals/i);
+    assert.match(front, /Step-free access/);
+    assert.doesNotMatch(front, /Example seed/);
+    assert.doesNotMatch(front, /anaphylaxis/i);
+    const restaurant = formatSlice(restaurantSlice(result.capture));
+    assert.match(restaurant, /Sattvic|Low-FODMAP|Diabetic-friendly|No nuts/);
+    assert.doesNotMatch(restaurant, /Step-free access/);
+  });
+
+  it("refuses an other allergen with no description, and does not treat vegetarian as a special request", () => {
+    const missing = validateCapture({
+      name: "Ada Lovelace",
+      email: "ada@example.invalid",
+      people: 1,
+      arrival: "2026-10-02",
+      departure: "2026-10-04",
+      party: [{ given_name: "Ada", family_name: "Lovelace", allergens: [{ code: "other", severity: "ALLERGY" }] }],
+    });
+    assert.equal(missing.ok, false);
+    const plain = validateCapture({
+      name: "Ada Lovelace",
+      email: "ada@example.invalid",
+      people: 1,
+      arrival: "2026-10-02",
+      departure: "2026-10-04",
+      party: [{ given_name: "Ada", family_name: "Lovelace", diet: ["vegetarian"] }],
+    });
+    assert.equal(plain.ok, true);
+    if (!plain.ok) return;
+    assert.equal(kitchenSlice(plain.capture), null);
+    assert.equal(housekeepingSlice(plain.capture), null);
   });
 });
 

@@ -4,7 +4,7 @@ import { readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { openText, sealText } from "./fieldCrypto.ts";
-import { openParty, sealParty } from "./bookingRoute.ts";
+import { openParty, openPartyBundle, sealParty } from "./bookingRoute.ts";
 import { validateCapture } from "../../../domains/guest/booking.ts";
 
 const here = dirname(fileURLToPath(import.meta.url));
@@ -28,6 +28,11 @@ describe("booking route persistence", () => {
     assert.equal(opened[0].allergens[0].code, "peanuts");
     assert.equal(opened[0].allergens[0].severity, "ANAPHYLAXIS");
     assert.equal(sealText(sealed!), sealed);
+    const withAccess = sealParty(parsed.capture.party, { access: ["step_free", "ground_floor"], access_note: "Example ramp" });
+    const bundle = openPartyBundle(withAccess);
+    assert.deepEqual(bundle.access, ["step_free", "ground_floor"]);
+    assert.equal(bundle.access_note, "Example ramp");
+    assert.equal((bundle.party as { allergens: { code: string }[] }[])[0].allergens[0].code, "peanuts");
   });
 });
 
@@ -54,7 +59,7 @@ describe("guest booking regressions", () => {
   });
 
   it("a failed card page does not submit the enquiry twice", () => {
-    const start = page.indexOf("const enquiryResult = await doEnquiry()");
+    const start = page.indexOf("await doEnquiry({ finish: false })");
     const end = page.indexOf("Pay deposit & save my place");
     const handler = page.slice(start, end);
     assert.equal((handler.match(/doEnquiry\(/g) ?? []).length, 1);

@@ -4,6 +4,7 @@ import PhotoGallery from "@/components/PhotoGallery";
 import HearFromUs from "@/components/HearFromUs";
 import LostReport from "@/components/LostReport";
 import SustainabilityNote from "@/components/SustainabilityNote";
+import DietAccess, { type DietPerson } from "@/components/DietAccess";
 const API = process.env.NEXT_PUBLIC_API_URL ?? "";
 const tok = {
   get: () => (typeof window === "undefined" ? null : sessionStorage.getItem("vedanta.guest.token")),
@@ -27,19 +28,11 @@ type Day = { date: string; free_rooms: number };
 type Mine = { id: string; people: number; arrival: string; departure: string; status: string; programme_name: string | null; notes: string | null; rooms: Room[]; deposit_status?: string; deposit_amount?: number | null };
 type Me = { name: string; email: string };
 type GuestAsk = { id: string; room_label: string | null; department_label: string; request_text: string; status: string };
-type AllergenTick = { code: string; severity: string };
-type PartyPerson = { given_name: string; family_name: string; diet: string[]; allergens: AllergenTick[]; other: string; accessibility: string; plate: string };
+type PartyPerson = DietPerson;
 type Step = "browse" | "room" | "details" | "needs" | "pay" | "done";
-const ALLERGENS: [string, string][] = [
-  ["celery", "Celery"], ["cereals_gluten", "Gluten"], ["crustaceans", "Crustaceans"], ["eggs", "Eggs"],
-  ["fish", "Fish"], ["lupin", "Lupin"], ["milk", "Milk"], ["molluscs", "Molluscs"], ["mustard", "Mustard"],
-  ["nuts", "Tree nuts"], ["peanuts", "Peanuts"], ["sesame", "Sesame"], ["soya", "Soya"], ["sulphites", "Sulphites"],
-];
-const DIETS: [string, string][] = [["vegan", "Vegan"], ["jain", "Jain — no root vegetables"], ["gluten_free", "Gluten-free"], ["dairy_free", "Dairy-free"], ["nut_free", "Nut-free"], ["halal", "Halal"], ["kosher", "Kosher"]];
-const SEVERITIES: [string, string][] = [["PREFERENCE", "Preference"], ["INTOLERANCE", "Intolerance"], ["ALLERGY", "Allergy"], ["ANAPHYLAXIS", "Anaphylaxis — severe"]];
 function blankPerson(name = ""): PartyPerson {
   const parts = name.trim().split(/\s+/).filter(Boolean);
-  return { given_name: parts[0] ?? "", family_name: parts.slice(1).join(" "), diet: [], allergens: [], other: "", accessibility: "", plate: "buffet" };
+  return { given_name: parts[0] ?? "", family_name: parts.slice(1).join(" "), diet: ["vegetarian"], allergens: [], other: "", allergen_other: "", accessibility: "", plate: "buffet" };
 }
 
 const fmt = (d: string) => {
@@ -66,7 +59,7 @@ export default function Book() {
   const [step, setStep] = useState<Step>("browse");
   const [form, setForm] = useState({
     name: "", email: "", access_code: "", people: "1", arrival: "", departure: "", notes: "",
-    dietary_notes: "", accessibility_notes: "", room_preference: "", arrival_time_note: "", travel_notes: "", keep_allergens: false,
+    dietary_notes: "", accessibility_notes: "", access: [] as string[], access_note: "", room_preference: "", arrival_time_note: "", travel_notes: "", keep_allergens: false,
   });
   const [avail, setAvail] = useState<Avail | null>(null);
   const [cal, setCal] = useState<Day[]>([]);
@@ -213,12 +206,14 @@ export default function Book() {
     if (missing >= 0) { setBusy(false); setErr(`Person ${missing + 1} needs a first and last name`); return null; }
     const ungraded = rows.find(p => p.allergens.some(a => !a.severity));
     if (ungraded) { setBusy(false); setErr(`Say how serious each allergen is for ${ungraded.given_name}`); return null; }
+    const unnamed = rows.find(p => p.allergens.some(a => a.code === "other") && !p.allergen_other.trim());
+    if (unnamed) { setBusy(false); setErr(`Say what the other allergen is for ${unnamed.given_name}`); return null; }
     const payload = {
       name: form.name, email: form.email, people: rows.length, notes: form.notes,
-      accessibility_notes: form.accessibility_notes,
+      access: form.access, access_note: form.access_note || null,
       room_preference: form.room_preference, arrival_time_note: form.arrival_time_note, travel_notes: form.travel_notes,
       keep_allergens: form.keep_allergens,
-      party: rows.map(p => ({ ...p, other: p.other || null, accessibility: p.accessibility || null })),
+      party: rows.map(p => ({ ...p, other: p.other || null, allergen_other: p.allergen_other || null, accessibility: null })),
       ...(editingId ? { arrival: form.arrival, departure: form.departure } : sel ? { programme_id: sel.id } : { arrival: form.arrival, departure: form.departure }),
     };
     try {
@@ -395,53 +390,19 @@ export default function Book() {
               )}
 
               {(step === "needs" || step === "pay" || step === "done") && (
-                <div className="card" style={{ marginTop: 18 }}>
-                  <h2 style={{ fontSize: 22 }}>Diet, access and arrival</h2>
-                  <p className="m">The kitchen is vegetarian: no eggs, and no onion or garlic. Tick an allergen only when it applies, and say how serious it is for that person.</p>
-                  {party.slice(0, Math.max(1, Number(form.people) || 1)).map((person, i) => (
-                    <div className="diet-p" key={i}>
-                      <b>Person {i + 1}</b>
-                      <label>First name</label>
-                      <input value={person.given_name} onChange={e => setParty(rows => rows.map((p, j) => j === i ? { ...p, given_name: e.target.value } : p))} />
-                      <label>Last name</label>
-                      <input value={person.family_name} onChange={e => setParty(rows => rows.map((p, j) => j === i ? { ...p, family_name: e.target.value } : p))} />
-                      <div className="lbl">Diet</div>
-                      <div className="chips">{DIETS.map(([code, label]) => (
-                        <button type="button" key={code} className={"chip" + (person.diet.includes(code) ? " on" : "")} onClick={() => setParty(rows => rows.map((p, j) => j === i ? { ...p, diet: p.diet.includes(code) ? p.diet.filter(x => x !== code) : [...p.diet, code] } : p))}>{label}</button>
-                      ))}</div>
-                      <div className="lbl">UK allergens</div>
-                      <div className="checks">{ALLERGENS.map(([code, label]) => {
-                        const tick = person.allergens.find(a => a.code === code);
-                        return (
-                          <label className="check" key={code}>
-                            <input type="checkbox" checked={!!tick} onChange={e => setParty(rows => rows.map((p, j) => {
-                              if (j !== i) return p;
-                              const allergens = e.target.checked ? [...p.allergens, { code, severity: "" }] : p.allergens.filter(a => a.code !== code);
-                              return { ...p, allergens };
-                            }))} />
-                            <span>{label}</span>
-                            {tick && <select aria-label={`${label} severity`} value={tick.severity} onChange={e => setParty(rows => rows.map((p, j) => j === i ? { ...p, allergens: p.allergens.map(a => a.code === code ? { ...a, severity: e.target.value } : a) } : p))}>
-                              <option value="">How serious?</option>
-                              {SEVERITIES.map(([value, text]) => <option key={value} value={value}>{text}</option>)}
-                            </select>}
-                          </label>
-                        );
-                      })}</div>
-                      <label>Other diet note</label>
-                      <input value={person.other} onChange={e => setParty(rows => rows.map((p, j) => j === i ? { ...p, other: e.target.value } : p))} placeholder="Anything else the kitchen should know" />
-                      <label>Plate</label>
-                      <select value={person.plate} onChange={e => setParty(rows => rows.map((p, j) => j === i ? { ...p, plate: e.target.value } : p))}>
-                        <option value="buffet">Buffet — I can serve myself</option>
-                        <option value="prepared">Please prepare a plate</option>
-                        <option value="table_service">I need table service</option>
-                      </select>
-                      <label>Help at the table</label>
-                      <input value={person.accessibility} onChange={e => setParty(rows => rows.map((p, j) => j === i ? { ...p, accessibility: e.target.value } : p))} placeholder="e.g. needs a seat near the buffet" />
-                    </div>
-                  ))}
-                  <h2 style={{ fontSize: 22, marginTop: 18 }}>Accessibility and arrival</h2>
-                  <label>Accessibility for the stay</label>
-                  <textarea rows={2} value={form.accessibility_notes} onChange={e => { const v = e.target.value; setForm(f => ({ ...f, accessibility_notes: v })); }} placeholder="Ground floor, step-free, hearing loop…" />
+                <div className="card" style={{ marginTop: 18 }} data-testid="needs-step">
+                  <h2 style={{ fontSize: 22 }}>Diet, allergens and access</h2>
+                  <DietAccess
+                    people={party.slice(0, Math.max(1, Number(form.people) || 1))}
+                    onPerson={(index, next) => setParty(rows => rows.map((p, j) => j === index ? next : p))}
+                    access={form.access}
+                    onAccess={next => setForm(f => ({ ...f, access: next }))}
+                    accessNote={form.access_note}
+                    onAccessNote={next => setForm(f => ({ ...f, access_note: next }))}
+                    keep={form.keep_allergens}
+                    onKeep={next => setForm(f => ({ ...f, keep_allergens: next }))}
+                  />
+                  <h2 style={{ fontSize: 22, marginTop: 18 }}>Arrival</h2>
                   <label>Expected arrival time</label>
                   <input value={form.arrival_time_note} onChange={e => { const v = e.target.value; setForm(f => ({ ...f, arrival_time_note: v })); }} placeholder="e.g. 16:30 from Lincoln station" />
                   <label>Room preference</label>
@@ -450,10 +411,6 @@ export default function Book() {
                   <textarea rows={2} value={form.travel_notes} onChange={e => { const v = e.target.value; setForm(f => ({ ...f, travel_notes: v })); }} placeholder="Train, taxi, self-drive…" />
                   <label>Guest notes</label>
                   <textarea rows={2} value={form.notes} onChange={e => { const v = e.target.value; setForm(f => ({ ...f, notes: v })); }} />
-                  <label className="check">
-                    <input type="checkbox" checked={form.keep_allergens} onChange={e => setForm(f => ({ ...f, keep_allergens: e.target.checked }))} />
-                    <span>Keep my dietary and allergen details for future stays</span>
-                  </label>
                   <button className="btn sec" onClick={() => setStep("pay")}>Continue to deposit</button>
                 </div>
               )}
@@ -522,9 +479,9 @@ export default function Book() {
                         <button className="btn sec" onClick={async () => {
                           setBusy(true); setErr(null);
                           try {
-                            const detail = await api<{ people: number; arrival: string; departure: string; notes: string | null; accessibility_notes: string | null; room_preference: string | null; arrival_time_note: string | null; travel_notes: string | null; party: PartyPerson[] }>(`/guest/enquiries/${x.id}`);
-                            setForm(f => ({ ...f, people: String(detail.people), arrival: detail.arrival, departure: detail.departure, notes: detail.notes ?? "", accessibility_notes: detail.accessibility_notes ?? "", room_preference: detail.room_preference ?? "", arrival_time_note: detail.arrival_time_note ?? "", travel_notes: detail.travel_notes ?? "" }));
-                            setParty((detail.party ?? []).map(p => ({ ...blankPerson(), ...p, diet: p.diet ?? [], allergens: p.allergens ?? [], other: p.other ?? "", accessibility: p.accessibility ?? "", plate: p.plate || "buffet" })));
+                            const detail = await api<{ people: number; arrival: string; departure: string; notes: string | null; accessibility_notes: string | null; access?: string[]; access_note?: string | null; room_preference: string | null; arrival_time_note: string | null; travel_notes: string | null; party: PartyPerson[] }>(`/guest/enquiries/${x.id}`);
+                            setForm(f => ({ ...f, people: String(detail.people), arrival: detail.arrival, departure: detail.departure, notes: detail.notes ?? "", access: detail.access ?? [], access_note: detail.access_note ?? detail.accessibility_notes ?? "", room_preference: detail.room_preference ?? "", arrival_time_note: detail.arrival_time_note ?? "", travel_notes: detail.travel_notes ?? "" }));
+                            setParty((detail.party ?? []).map(p => ({ ...blankPerson(), ...p, diet: p.diet?.length ? p.diet : ["vegetarian"], allergens: p.allergens ?? [], other: p.other ?? "", allergen_other: p.allergen_other ?? "", accessibility: p.accessibility ?? "", plate: p.plate || "buffet" })));
                             setEditingId(x.id); setSel(null); setStep("needs");
                           } catch (e) { setErr((e as Error).message); }
                           finally { setBusy(false); }

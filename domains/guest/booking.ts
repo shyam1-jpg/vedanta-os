@@ -8,26 +8,42 @@ import { allergenLabel, dietFlags, dietLabel, UK_ALLERGENS } from "./diet.ts";
 export const SEVERITIES = ["PREFERENCE", "INTOLERANCE", "ALLERGY", "ANAPHYLAXIS"] as const;
 export type Severity = (typeof SEVERITIES)[number];
 
-export const DIET_TYPES = ["vegetarian", "vegan", "jain", "gluten_free", "dairy_free", "nut_free", "halal", "kosher"] as const;
+export const DIET_TYPES = ["vegetarian", "vegan", "gluten_free", "dairy_free", "nut_free", "jain", "sattvic", "halal", "kosher", "low_fodmap", "diabetic_friendly"] as const;
+export const ACCESS_TYPES = ["step_free", "ground_floor", "walk_in_shower", "grab_rails", "quiet_room", "assistance_dog", "hearing_loop", "mobility_aid", "luggage_help"] as const;
+export const ALLERGEN_OTHER = "other";
+export const REVIEW_BEFORE_SERVICE = "review before service";
 export const PLATES = ["buffet", "prepared", "table_service"] as const;
 export type Plate = (typeof PLATES)[number];
 
-export const ROUTING_DEPARTMENTS = ["KITCHEN", "RESTAURANT", "FRONT"] as const;
+export const ROUTING_DEPARTMENTS = ["KITCHEN", "RESTAURANT", "FRONT", "HK"] as const;
 export type RoutingDepartment = (typeof ROUTING_DEPARTMENTS)[number];
 
 const SEVERITY_RANK: Record<Severity, number> = { PREFERENCE: 1, INTOLERANCE: 2, ALLERGY: 3, ANAPHYLAXIS: 4 };
-const ALLERGEN_SET = new Set<string>(UK_ALLERGENS);
+const ALLERGEN_SET = new Set<string>([...UK_ALLERGENS, ALLERGEN_OTHER]);
 const DIET_SET = new Set<string>(DIET_TYPES);
+const ACCESS_SET = new Set<string>(ACCESS_TYPES);
+const ACCESS_LABEL: Record<string, string> = {
+  step_free: "Step-free access",
+  ground_floor: "Ground-floor room",
+  walk_in_shower: "Walk-in shower",
+  grab_rails: "Grab rails",
+  quiet_room: "Quiet room",
+  assistance_dog: "Assistance dog",
+  hearing_loop: "Hearing loop / visual alerts",
+  mobility_aid: "Mobility aid storage",
+  luggage_help: "Help with luggage",
+};
 const MEAL_ORDER = ["breakfast", "lunch", "dinner"] as const;
 export type Meal = (typeof MEAL_ORDER)[number];
 
-export type AllergenTick = { code: string; severity: Severity };
+export type AllergenTick = { code: string; severity: Severity; adrenaline_pen?: boolean };
 export type PartyGuest = {
   given_name: string;
   family_name: string;
   diet: string[];
   allergens: AllergenTick[];
   other: string | null;
+  allergen_other: string | null;
   accessibility: string | null;
   plate: Plate;
 };
@@ -41,6 +57,8 @@ export type StayCapture = {
   arrival_slot: "AM" | "PM";
   departure_slot: "AM" | "PM";
   party: PartyGuest[];
+  access: string[];
+  access_note: string | null;
   accessibility_notes: string | null;
   arrival_time_note: string | null;
   room_preference: string | null;
@@ -51,8 +69,9 @@ export type StayCapture = {
 export type KitchenPerson = {
   name: string;
   diet: { code: string; label: string }[];
-  allergens: { code: string; label: string; severity: Severity; severe: boolean }[];
+  allergens: { code: string; label: string; severity: Severity; severe: boolean; adrenaline_pen: boolean }[];
   other: string | null;
+  allergen_other: string | null;
   days: { date: string; meals: Meal[] }[];
 };
 
@@ -98,18 +117,30 @@ export type FrontSlice = {
   party: { name: string; accessibility: string | null }[];
 };
 
-export type DepartmentSlice = KitchenSlice | RestaurantSlice | FrontSlice;
+export type HousekeepingSlice = {
+  department: "HK";
+  guest: string;
+  arrival: string;
+  departure: string;
+  access: { code: string; label: string }[];
+  note: string | null;
+  review: boolean;
+};
+
+export type DepartmentSlice = KitchenSlice | RestaurantSlice | FrontSlice | HousekeepingSlice;
 
 export type RoutingRules = {
   kitchen: { enabled: boolean; email: string };
   restaurant: { enabled: boolean; email: string };
   front: { enabled: boolean; email: string };
+  housekeeping: { enabled: boolean; email: string };
 };
 
 export const DEFAULT_ROUTING_RULES: RoutingRules = {
   kitchen: { enabled: true, email: "" },
   restaurant: { enabled: true, email: "" },
   front: { enabled: true, email: "" },
+  housekeeping: { enabled: true, email: "" },
 };
 
 export type OutboundNote = {
@@ -157,6 +188,20 @@ export function isSevere(severity: string): boolean {
   return severity === "ANAPHYLAXIS" || severity === "ALLERGY";
 }
 
+export function accessLabel(code: string): string {
+  return ACCESS_LABEL[code] ?? code.replace(/_/g, " ");
+}
+
+export function allergenPhrase(tick: AllergenTick): string {
+  const pen = tick.severity === "ANAPHYLAXIS" && tick.adrenaline_pen ? " · carries an adrenaline pen" : "";
+  return `${allergenLabel(tick.code)} — ${severityPhrase(tick.severity)}${pen}`;
+}
+
+function parseCodes(raw: unknown, allowed: Set<string>): string[] {
+  if (!Array.isArray(raw)) return [];
+  return [...new Set(raw.map(item => String(item).trim().toLowerCase().replace(/[\s-]+/g, "_")).filter(code => allowed.has(code)))];
+}
+
 function asSlot(v: unknown, fallback: "AM" | "PM"): "AM" | "PM" {
   const s = String(v ?? "").trim().toUpperCase();
   return s === "AM" || s === "PM" ? s : fallback;
@@ -181,8 +226,11 @@ function parseGuest(raw: unknown, index: number): { guest?: PartyGuest; error?: 
     if (!ALLERGEN_SET.has(normalised)) return { error: `${given}: ${normalised.replace(/_/g, " ")} is not one of the 14 UK allergens` };
     if (!SEVERITIES.includes(severity as Severity)) return { error: `Say how serious ${given}'s ${allergenLabel(normalised)} is` };
     seen.add(normalised);
-    allergens.push({ code: normalised, severity: severity as Severity });
+    const pen = severity === "ANAPHYLAXIS" && typeof item === "object" && !!item && (item as { adrenaline_pen?: unknown }).adrenaline_pen === true;
+    allergens.push({ code: normalised, severity: severity as Severity, adrenaline_pen: pen });
   }
+  const allergenOther = text(row.allergen_other, 2000);
+  if (seen.has(ALLERGEN_OTHER) && !allergenOther) return { error: `${given}: say what the other allergen is` };
   const plateRaw = String(row.plate ?? "buffet").trim().toLowerCase();
   if (!PLATES.includes(plateRaw as Plate)) return { error: `${given}: plate must be buffet, prepared, or table service` };
   return {
@@ -191,7 +239,8 @@ function parseGuest(raw: unknown, index: number): { guest?: PartyGuest; error?: 
       family_name: family,
       diet,
       allergens,
-      other: text(row.other ?? row.diet_notes, 2000),
+      other: text(row.other ?? row.diet_other ?? row.diet_notes, 2000),
+      allergen_other: seen.has(ALLERGEN_OTHER) ? allergenOther : null,
       accessibility: text(row.accessibility, 2000),
       plate: plateRaw as Plate,
     },
@@ -208,6 +257,8 @@ export type CaptureInput = {
   departure_slot?: unknown;
   party?: unknown;
   dietary_notes?: unknown;
+  access?: unknown;
+  access_note?: unknown;
   accessibility_notes?: unknown;
   arrival_time_note?: unknown;
   room_preference?: unknown;
@@ -242,6 +293,8 @@ export function validateCapture(input: CaptureInput): { ok: true; capture: StayC
   if (Array.isArray(input.party) && party.length && Number.isFinite(people) && people !== party.length) {
     errors.push("Diet and allergen details are needed for every person in the party");
   }
+  const access = parseCodes(input.access, ACCESS_SET);
+  const accessNote = text(input.access_note) ?? text(input.accessibility_notes);
   if (errors.length) return { ok: false, errors };
   return {
     ok: true,
@@ -254,7 +307,9 @@ export function validateCapture(input: CaptureInput): { ok: true; capture: StayC
       arrival_slot: asSlot(input.arrival_slot, "PM"),
       departure_slot: asSlot(input.departure_slot, "AM"),
       party,
-      accessibility_notes: text(input.accessibility_notes),
+      access,
+      access_note: accessNote,
+      accessibility_notes: accessNote,
       arrival_time_note: text(input.arrival_time_note, 200),
       room_preference: text(input.room_preference, 200),
       travel_notes: text(input.travel_notes),
@@ -291,6 +346,7 @@ export function captureFromStored(input: CaptureInput): { capture: StayCapture; 
       diet: [],
       allergens: [],
       other: dietary,
+      allergen_other: null,
       accessibility: null,
       plate: "buffet",
     }];
@@ -309,7 +365,9 @@ export function captureFromStored(input: CaptureInput): { capture: StayCapture; 
       arrival_slot: asSlot(input.arrival_slot, "PM"),
       departure_slot: asSlot(input.departure_slot, "AM"),
       party,
-      accessibility_notes: text(input.accessibility_notes),
+      access: parseCodes(input.access, ACCESS_SET),
+      access_note: text(input.access_note),
+      accessibility_notes: text(input.access_note) ?? text(input.accessibility_notes),
       arrival_time_note: text(input.arrival_time_note, 200),
       room_preference: text(input.room_preference, 200),
       travel_notes: text(input.travel_notes),
@@ -362,12 +420,13 @@ function kitchenPerson(stay: StayCapture, person: PartyGuest): KitchenPerson | n
     label: allergenLabel(a.code),
     severity: a.severity,
     severe: isSevere(a.severity),
+    adrenaline_pen: a.severity === "ANAPHYLAXIS" && a.adrenaline_pen === true,
   }));
-  if (!diet.length && !allergens.length && !person.other) return null;
+  if (!diet.length && !allergens.length && !person.other && !person.allergen_other) return null;
   const days = eachStayDate(stay.arrival, stay.departure)
     .map(date => ({ date, meals: mealsOn(stay, date) }))
     .filter(d => d.meals.length);
-  return { name: personName(person), diet, allergens, other: person.other, days };
+  return { name: personName(person), diet, allergens, other: person.other, allergen_other: person.allergen_other ?? null, days };
 }
 
 export function kitchenSlice(stay: StayCapture): KitchenSlice | null {
@@ -408,8 +467,9 @@ export function restaurantSlice(stay: StayCapture): RestaurantSlice {
     plate: p.plate as "prepared" | "table_service",
     detail: [
       ...p.diet.map(dietLabel),
-      ...p.allergens.map(a => `${allergenLabel(a.code)} (${severityPhrase(a.severity)})`),
-      p.other,
+      ...p.allergens.map(a => allergenPhrase(a)),
+      p.other ? `${p.other} (${REVIEW_BEFORE_SERVICE})` : null,
+      p.allergen_other ? `${p.allergen_other} (${REVIEW_BEFORE_SERVICE})` : null,
     ].filter(Boolean).join("; "),
     severe: p.allergens.some(a => a.severity === "ANAPHYLAXIS"),
   }));
@@ -417,12 +477,33 @@ export function restaurantSlice(stay: StayCapture): RestaurantSlice {
   for (const person of stay.party) {
     if (person.accessibility) seating.push({ name: personName(person), need: person.accessibility });
   }
-  if (stay.accessibility_notes) seating.push({ name: stay.name, need: stay.accessibility_notes });
   return { department: "RESTAURANT", guest: stay.name, arrival: stay.arrival, departure: stay.departure, days, plates, seating };
 }
 
+export function accessSummary(stay: StayCapture): string | null {
+  const codes = (stay.access ?? []).map(accessLabel);
+  const note = stay.access_note ?? stay.accessibility_notes;
+  const bits = [...codes, note ? `${note} (${REVIEW_BEFORE_SERVICE})` : null].filter(Boolean);
+  return bits.length ? bits.join("; ") : null;
+}
+
+export function housekeepingSlice(stay: StayCapture): HousekeepingSlice | null {
+  const codes = stay.access ?? [];
+  const texts = [...new Set([stay.access_note, stay.accessibility_notes, ...stay.party.map(p => p.accessibility)].filter((line): line is string => !!line))];
+  if (!codes.length && !texts.length) return null;
+  return {
+    department: "HK",
+    guest: stay.name,
+    arrival: stay.arrival,
+    departure: stay.departure,
+    access: codes.map(code => ({ code, label: accessLabel(code) })),
+    note: texts.length ? texts.map(line => `${line} (${REVIEW_BEFORE_SERVICE})`).join("\n") : null,
+    review: texts.length > 0,
+  };
+}
+
 export function frontSlice(stay: StayCapture): FrontSlice {
-  const access = [stay.accessibility_notes, ...stay.party.map(p => p.accessibility ? `${personName(p)}: ${p.accessibility}` : null)].filter(Boolean).join("\n");
+  const access = [accessSummary(stay), ...stay.party.map(p => p.accessibility ? `${personName(p)}: ${p.accessibility}` : null)].filter(Boolean).join("\n");
   return {
     department: "FRONT",
     guest: stay.name,
@@ -447,6 +528,11 @@ export function departmentSlices(stay: StayCapture, rules: RoutingRules = DEFAUL
   }
   if (rules.restaurant.enabled) slices.push(restaurantSlice(stay));
   if (rules.front.enabled) slices.push(frontSlice(stay));
+  const housekeeping = rules.housekeeping ?? DEFAULT_ROUTING_RULES.housekeeping;
+  if (housekeeping.enabled) {
+    const house = housekeepingSlice(stay);
+    if (house) slices.push(house);
+  }
   return slices;
 }
 
@@ -463,9 +549,11 @@ export function formatSlice(slice: DepartmentSlice): string {
       if (person.diet.length) lines.push(`  Diet: ${person.diet.map(d => d.label).join(", ")}`);
       for (const a of person.allergens) {
         const flag = a.severity === "ANAPHYLAXIS" ? "SEVERE — " : a.severe ? "Allergy — " : "";
-        lines.push(`  ${flag}${a.label}: ${severityPhrase(a.severity)}`);
+        const pen = a.adrenaline_pen ? " · carries an adrenaline pen" : "";
+        lines.push(`  ${flag}${a.label}: ${severityPhrase(a.severity)}${pen}`);
       }
-      if (person.other) lines.push(`  Other: ${person.other}`);
+      if (person.other) lines.push(`  Other diet (${REVIEW_BEFORE_SERVICE}): ${person.other}`);
+      if (person.allergen_other) lines.push(`  Other allergen (${REVIEW_BEFORE_SERVICE}): ${person.allergen_other}`);
       for (const day of person.days) lines.push(`  ${day.date}: ${mealLine(day.meals)}`);
       lines.push("");
     }
@@ -493,6 +581,12 @@ export function formatSlice(slice: DepartmentSlice): string {
     }
     return lines.join("\n").trim();
   }
+  if (slice.department === "HK") {
+    const lines = [`Housekeeping — ${slice.guest}`, `${slice.arrival} to ${slice.departure}`, "Access needs only. Not the allergen list.", ""];
+    if (slice.access.length) lines.push(...slice.access.map(item => `- ${item.label}`));
+    if (slice.note) lines.push("", slice.note);
+    return lines.join("\n").trim();
+  }
   const lines = [
     `Front of house — ${slice.guest}`,
     `${slice.people} ${slice.people === 1 ? "person" : "people"}`,
@@ -518,8 +612,9 @@ export function dietarySummary(stay: StayCapture): string | null {
   const lines = stay.party.map(person => {
     const bits = [
       ...dietFlags({ diet: person.diet, allergens: [] }).map(f => f.label),
-      ...person.allergens.map(a => `${allergenLabel(a.code)} (${severityPhrase(a.severity)})`),
-      person.other,
+      ...person.allergens.map(a => allergenPhrase(a)),
+      person.other ? `${person.other} (${REVIEW_BEFORE_SERVICE})` : null,
+      person.allergen_other ? `${person.allergen_other} (${REVIEW_BEFORE_SERVICE})` : null,
     ].filter(Boolean);
     if (!bits.length && person.plate === "buffet") return null;
     const plate = person.plate === "buffet" ? "" : person.plate === "prepared" ? "prepared plate" : "table service";
@@ -542,13 +637,13 @@ export function parseRoutingRules(raw: unknown): RoutingRules {
     const email = emailOrNull(String(row.email ?? "")) ?? "";
     return { enabled, email };
   };
-  return { kitchen: one("kitchen"), restaurant: one("restaurant"), front: one("front") };
+  return { kitchen: one("kitchen"), restaurant: one("restaurant"), front: one("front"), housekeeping: one("housekeeping") };
 }
 
 export function guestEmail(stay: StayCapture, houseName: string): OutboundNote {
   const lines = stay.party.map(person => {
     const allergens = person.allergens.length
-      ? person.allergens.map(a => `${allergenLabel(a.code)} — ${severityPhrase(a.severity)}`).join("; ")
+      ? person.allergens.map(a => allergenPhrase(a)).join("; ")
       : "none declared";
     const diet = person.diet.length ? person.diet.map(dietLabel).join(", ") : "house vegetarian";
     const plate = person.plate === "buffet" ? "buffet" : person.plate === "prepared" ? "a plate prepared for them" : "table service";
@@ -556,7 +651,8 @@ export function guestEmail(stay: StayCapture, houseName: string): OutboundNote {
       personName(person),
       `  Diet: ${diet}`,
       `  Allergens: ${allergens}`,
-      person.other ? `  Other: ${person.other}` : null,
+      person.other ? `  Other diet (${REVIEW_BEFORE_SERVICE}): ${person.other}` : null,
+      person.allergen_other ? `  Other allergen (${REVIEW_BEFORE_SERVICE}): ${person.allergen_other}` : null,
       `  Service: ${plate}`,
     ].filter(Boolean).join("\n");
   });
@@ -568,7 +664,7 @@ export function guestEmail(stay: StayCapture, houseName: string): OutboundNote {
     `Arrive: ${stay.arrival}${stay.arrival_time_note ? ` · ${stay.arrival_time_note}` : ""}`,
     `Depart: ${stay.departure}`,
     stay.room_preference ? `Room preference: ${stay.room_preference}` : null,
-    stay.accessibility_notes ? `Accessibility: ${stay.accessibility_notes}` : null,
+    accessSummary(stay) ? `Accessibility: ${accessSummary(stay)}` : null,
     "",
     "Please check the diet and allergen record below. The kitchen is vegetarian: no eggs, and no onion or garlic. If anything is wrong, reply to this email before you travel.",
     "",
@@ -593,7 +689,7 @@ export function departmentEmail(stay: StayCapture, slice: DepartmentSlice, to: s
   const when = kind === "cancelled" ? "cancelled" : kind === "accepted" ? "accepted into the house book" : kind === "amended" ? "amended" : "received";
   const subject = kind === "cancelled"
     ? `Cancelled — ${stay.name} · ${slice.department.toLowerCase()}`
-    : `${slice.department === "KITCHEN" ? "Kitchen" : slice.department === "RESTAURANT" ? "Restaurant" : "Front of house"} — ${stay.name}`;
+    : `${slice.department === "KITCHEN" ? "Kitchen" : slice.department === "RESTAURANT" ? "Restaurant" : slice.department === "HK" ? "Housekeeping" : "Front of house"} — ${stay.name}`;
   const intro = kind === "cancelled"
     ? `The stay for ${stay.name} (${stay.arrival} to ${stay.departure}) is cancelled. Withdraw the earlier note for your department.`
     : `${houseName} booking ${when}. This note is only for your department.`;
@@ -608,6 +704,7 @@ export function bookingEmails(stay: StayCapture, rules: RoutingRules, houseName:
     KITCHEN: rules.kitchen.email,
     RESTAURANT: rules.restaurant.email,
     FRONT: rules.front.email,
+    HK: (rules.housekeeping ?? DEFAULT_ROUTING_RULES.housekeeping).email,
   };
   for (const slice of slices) {
     const note = departmentEmail(stay, slice, address[slice.department], houseName, kind);
@@ -626,7 +723,7 @@ export function cancellationEmails(stay: StayCapture, rules: RoutingRules, house
   };
   const notes = [guest];
   for (const slice of departmentSlices(stay, rules)) {
-    const address = slice.department === "KITCHEN" ? rules.kitchen.email : slice.department === "RESTAURANT" ? rules.restaurant.email : rules.front.email;
+    const address = slice.department === "KITCHEN" ? rules.kitchen.email : slice.department === "RESTAURANT" ? rules.restaurant.email : slice.department === "HK" ? (rules.housekeeping ?? DEFAULT_ROUTING_RULES.housekeeping).email : rules.front.email;
     const note = departmentEmail(stay, slice, address, houseName, "cancelled");
     if (note) notes.push(note);
   }
