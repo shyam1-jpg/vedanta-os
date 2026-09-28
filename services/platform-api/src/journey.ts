@@ -766,6 +766,11 @@ export default async function journeyRoutes(f: FastifyInstance) {
       });
     } catch { /* seva tables are optional until migrated */ }
     const shuttle = await shuttleNote(found.row.property_id, found.row.person_id);
+    let reports: { id: string; category: string; room: string; status: string; ask: boolean }[] = [];
+    try {
+      const faults = await import("./guestFault.ts");
+      reports = await faults.guestReports(found.row.property_id, found.row.person_id);
+    } catch { /* guest reports are optional until migrated */ }
     const done = check?.status === "checked_in_digitally" || check?.status === "arrived" || check?.status === "keys_issued";
     return {
       given_name: found.row.given_name,
@@ -790,6 +795,7 @@ export default async function journeyRoutes(f: FastifyInstance) {
         : null,
       seva: { slots: seva.slots, mine: seva.mine },
       shuttle,
+      reports,
     };
   });
 

@@ -315,6 +315,12 @@ export default async function routes(f: FastifyInstance) {
     if (!changed || !("ticket" in changed)) return changed;
     const rules = await loadRouting(a.propertyId);
     const t = changed.ticket;
+    if (changed.status === "DONE") {
+      try {
+        const { notifyGuestFollowUp } = await import("./guestFault.ts");
+        await notifyGuestFollowUp(t.id);
+      } catch { /* a staff ticket has no guest follow-up */ }
+    }
     await deliver(a, statusNotices({
       number: t.number,
       description: t.description || t.title,

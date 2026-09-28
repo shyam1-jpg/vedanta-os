@@ -21,6 +21,7 @@ type Loaded = {
   welcome: Welcome | null;
   seva?: { slots: SevaSlot[]; mine: { slot_id: string; status: string }[] };
   shuttle?: string;
+  reports?: { id: string; category: string; room: string; status: string; ask: boolean }[];
 };
 
 export default function ArriveForm() {
@@ -43,6 +44,11 @@ export default function ArriveForm() {
   const [train, setTrain] = useState("");
   const [wheelchair, setWheelchair] = useState(false);
   const [shuttleNote, setShuttleNote] = useState("");
+  const [problem, setProblem] = useState("");
+  const [category, setCategory] = useState("water");
+  const [urgent, setUrgent] = useState("wait");
+  const [enter, setEnter] = useState(false);
+  const [photo, setPhoto] = useState<string | null>(null);
   const [welcome, setWelcome] = useState<Welcome | null>(null);
   const [err, setErr] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
@@ -155,6 +161,60 @@ export default function ArriveForm() {
                 <ul>{welcome.seva.map(line => <li key={line}>{line}</li>)}</ul>
               </div>
             )}
+            <section data-testid="arrive-problem">
+              <h2>Report a problem</h2>
+              <p className="m">Room {welcome.room || "not assigned yet"}. The house sees this on the maintenance list.</p>
+              <label>What is it
+                <select aria-label="Problem category" value={category} onChange={e => setCategory(e.target.value)}>
+                  <option value="water">Water or leak</option>
+                  <option value="heating">Heating</option>
+                  <option value="electrics">Electrics or lights</option>
+                  <option value="furniture">Furniture</option>
+                  <option value="cleanliness">Cleanliness</option>
+                  <option value="noise">Noise</option>
+                  <option value="other">Other</option>
+                </select>
+              </label>
+              <label>What happened<textarea aria-label="Problem" rows={3} value={problem} onChange={e => setProblem(e.target.value)} /></label>
+              <label>How soon
+                <select aria-label="Urgency" value={urgent} onChange={e => setUrgent(e.target.value)}>
+                  <option value="wait">It can wait</option>
+                  <option value="urgent">Urgent</option>
+                </select>
+              </label>
+              <label className="assign-check"><input type="checkbox" checked={enter} onChange={e => setEnter(e.target.checked)} /> Staff may enter the room</label>
+              <label>Photo, optional<input aria-label="Problem photo" type="file" accept="image/*" onChange={e => {
+                const file = e.target.files?.[0];
+                if (!file) { setPhoto(null); return; }
+                const reader = new FileReader();
+                reader.onload = () => setPhoto(typeof reader.result === "string" ? reader.result : null);
+                reader.readAsDataURL(file);
+              }} /></label>
+              <button className="btn" type="button" disabled={busy} onClick={async () => {
+                setBusy(true); setErr(null);
+                try {
+                  const res = await fetch(`${API}/public/journey/${encodeURIComponent(token)}/problem`, {
+                    method: "POST", headers: { "content-type": "application/json" },
+                    body: JSON.stringify({ category, description: problem, urgency: urgent, enter, photo }),
+                  });
+                  const body = await res.json().catch(() => null);
+                  if (!res.ok) throw new Error(body?.detail ?? "That could not be sent");
+                  setProblem("");
+                  await load(token);
+                } catch (e) { setErr((e as Error).message); }
+                finally { setBusy(false); }
+              }}>Send to the house</button>
+              <ul>
+                {(page?.reports ?? []).map(item => (
+                  <li key={item.id}>{item.category} · room {item.room} · {item.status}
+                    {item.ask && <button className="btn" type="button" onClick={async () => {
+                      await fetch(`${API}/public/journey/${encodeURIComponent(token)}/problem/${item.id}`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ sorted: true }) });
+                      await load(token);
+                    }}>It was sorted</button>}
+                  </li>
+                ))}
+              </ul>
+            </section>
           </div>
         )}
         {page && !welcome && (
