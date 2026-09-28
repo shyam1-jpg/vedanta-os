@@ -12,7 +12,7 @@ import {
   parseDepartment,
   parseRequestStatus,
   parseShift,
-  routeGuestRequest,
+  planGuestRequest,
   shiftLabel,
 } from "../../../domains/ops/board.ts";
 import {
@@ -308,23 +308,32 @@ export default async function ops(f: FastifyInstance) {
     const a = await requireLogWriter(req, reply); if (!a) return;
     const requestText = String(req.body?.request_text ?? req.body?.requestText ?? "").trim();
     if (!requestText) return reply.code(422).send(problem(422, "validation", "Write what is needed"));
-    const department = routeGuestRequest(requestText, req.body?.department);
-    const r = await pool.query(
-      `insert into ops_guest_request (
-         tenant_id, property_id, guest_enquiry_id, guest_name, room_label, department, request_text, status
-       ) values ($1, $2, $3, $4, $5, $6, $7, 'open')
-       returning id, department`,
-      [
-        a.tenantId,
-        a.propertyId,
-        String(req.body?.guest_enquiry_id ?? "").trim() || null,
-        String(req.body?.guest_name ?? "").trim() || null,
-        String(req.body?.room_label ?? "").trim() || null,
-        department,
-        requestText,
-      ],
-    );
-    return { id: r.rows[0].id, department: r.rows[0].department, department_label: departmentLabel(r.rows[0].department) };
+    const plan = planGuestRequest(requestText, req.body?.department);
+    const rows = [];
+    for (const route of plan) {
+      const r = await pool.query(
+        `insert into ops_guest_request (
+           tenant_id, property_id, guest_enquiry_id, guest_name, room_label, department, request_text, status
+         ) values ($1, $2, $3, $4, $5, $6, $7, 'open')
+         returning id, department`,
+        [
+          a.tenantId,
+          a.propertyId,
+          String(req.body?.guest_enquiry_id ?? "").trim() || null,
+          String(req.body?.guest_name ?? "").trim() || null,
+          String(req.body?.room_label ?? "").trim() || null,
+          route.department,
+          route.request_text,
+        ],
+      );
+      rows.push(r.rows[0]);
+    }
+    return {
+      id: rows[0].id,
+      department: rows[0].department,
+      department_label: rows.map(row => departmentLabel(row.department)).join(" and "),
+      routes: rows.map(row => ({ id: row.id, department: row.department, department_label: departmentLabel(row.department) })),
+    };
   });
 
   f.patch("/v1/ops/guest-requests/:id", async (req: any, reply) => {

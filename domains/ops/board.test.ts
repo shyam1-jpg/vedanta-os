@@ -6,6 +6,7 @@ import {
   parseDepartment,
   parseRequestStatus,
   parseShift,
+  planGuestRequest,
   routeGuestRequest,
   shiftLabel,
 } from "./board.ts";
@@ -28,6 +29,45 @@ describe("routeGuestRequest", () => {
   });
   it("sends a late door to the night porter", () => {
     assert.equal(routeGuestRequest("Locked out — can you let me in?"), "NIGHT");
+  });
+});
+
+describe("allergen requests", () => {
+  const depts = (text: string) => planGuestRequest(text).map(row => row.department);
+
+  it("sends a nut allergy to the kitchen and the restaurant, not the front desk", () => {
+    assert.deepEqual(depts("nut allergy"), ["KITCHEN", "RESTAURANT"]);
+  });
+
+  it("sends gluten free to the kitchen and the restaurant, not the front desk", () => {
+    assert.deepEqual(depts("gluten free"), ["KITCHEN", "RESTAURANT"]);
+  });
+
+  it("does not treat wheat as a heating fault", () => {
+    assert.deepEqual(depts("wheat"), ["KITCHEN", "RESTAURANT"]);
+    assert.equal(routeGuestRequest("The heating is off in room 4"), "MAINT");
+  });
+
+  it("sends a peanut allergy with a clean to housekeeping without the allergen words", () => {
+    const plan = planGuestRequest("peanut allergy — please clean the room");
+    assert.deepEqual(plan.map(row => row.department), ["KITCHEN", "RESTAURANT", "HK"]);
+    const kitchen = plan[0].request_text;
+    const restaurant = plan[1].request_text;
+    const house = plan[2].request_text;
+    assert.match(kitchen, /peanut/i);
+    assert.match(restaurant, /buffet/i);
+    assert.match(restaurant, /peanut/i);
+    assert.doesNotMatch(restaurant, /anaphylaxis|severe|epipen|allergy/i);
+    assert.match(restaurant, /Food is not billed/);
+    assert.match(house, /clean/i);
+    assert.doesNotMatch(house, /peanut|allergy/i);
+  });
+
+  it("flags anaphylaxis for the kitchen and keeps that detail off the restaurant note", () => {
+    const plan = planGuestRequest("anaphylaxis to nuts");
+    assert.match(plan[0].request_text, /^SEVERE —/);
+    assert.doesNotMatch(plan[1].request_text, /anaphylaxis|severe/i);
+    assert.match(plan[1].request_text, /nut/i);
   });
 });
 

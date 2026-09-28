@@ -14,7 +14,7 @@ import { roomsForStay } from "../../../domains/guest/stay.ts";
 import { accessOutcome, issueExpiry, nextFailedAttempts, publicLoginDetail, RECOVERY_OK } from "../../../domains/guest/access.ts";
 import { groupPublicTypes, shapePublicRoom } from "../../../domains/guest/availability.ts";
 import { backupGuestEvent } from "./kiteline.ts";
-import { departmentLabel, ownGuestRequests, routeGuestRequest } from "../../../domains/ops/board.ts";
+import { departmentLabel, ownGuestRequests, planGuestRequest } from "../../../domains/ops/board.ts";
 import { freeRooms } from "./groups.ts";
 import { sendEmail, emailConfigured } from "./email.ts";
 import { paymentsEnabled } from "./payments.ts";
@@ -817,22 +817,26 @@ export default async function guestPortal(f: FastifyInstance) {
     const requestText = String(req.body?.request_text ?? req.body?.notes ?? "").trim();
     if (!requestText) return reply.code(422).send(problem(422, "validation", "Write what you need"));
     const roomLabel = String(req.body?.room_label ?? "").trim() || null;
-    const department = routeGuestRequest(requestText, req.body?.department);
-    const r = await pool.query(
-      `insert into ops_guest_request (
-         tenant_id, property_id, guest_account_id, guest_name, guest_email, room_label, department, request_text, status
-       ) values ($1,$2,$3,$4,$5,$6,$7,$8,'open')
-       returning id, department, status, created_at`,
-      [g.tenantId, g.propertyId, g.id, g.name, g.email, roomLabel, department, requestText],
-    );
-    const row = r.rows[0];
+    const plan = planGuestRequest(requestText, req.body?.department);
+    const rows = [];
+    for (const route of plan) {
+      const r = await pool.query(
+        `insert into ops_guest_request (
+           tenant_id, property_id, guest_account_id, guest_name, guest_email, room_label, department, request_text, status
+         ) values ($1,$2,$3,$4,$5,$6,$7,$8,'open')
+         returning id, department, status, created_at`,
+        [g.tenantId, g.propertyId, g.id, g.name, g.email, roomLabel, route.department, route.request_text],
+      );
+      rows.push(r.rows[0]);
+    }
     return {
-      id: row.id,
-      department: row.department,
-      department_label: departmentLabel(row.department),
-      status: row.status,
-      request_text: requestText,
+      id: rows[0].id,
+      department: rows[0].department,
+      department_label: rows.map(row => departmentLabel(row.department)).join(" and "),
+      status: rows[0].status,
+      request_text: plan[0].request_text,
       room_label: roomLabel,
+      routes: rows.map(row => ({ id: row.id, department: row.department, department_label: departmentLabel(row.department) })),
     };
   });
 
