@@ -150,7 +150,7 @@ await app.register(authRoutes); await app.register(microsoft); await app.registe
 app.listen({ port: Number(process.env.PORT ?? 4000), host: "0.0.0.0" }).then(async () => {
   // Process due auto-communications every 15 minutes
   try {
-    const { processAutoComms } = await import("./autocomms.ts");
+    const { processAutoComms, reportSchedulerError } = await import("./autocomms.ts");
     const { sendDueFeedback, retainFeedback } = await import("./feedback.ts");
     const { sendDueCompliance } = await import("./compliance.ts");
     const { remindLostFound } = await import("./lostFound.ts");
@@ -161,14 +161,14 @@ app.listen({ port: Number(process.env.PORT ?? 4000), host: "0.0.0.0" }).then(asy
     const runComms = async () => {
       const props = (await pool.query("SELECT id FROM property")).rows;
       for (const p of props) {
-        try { await processAutoComms(p.id); } catch {}
-        try { await sendDueFeedback(p.id); } catch {}
-        try { await retainFeedback(p.id); } catch {}
-        try { await sendDueCompliance(p.id); } catch {}
-        try { await remindLostFound(p.id); } catch {}
-        try { await sendDueDeliveries(p.id); } catch {}
-        try { await sendDueTraining(p.id); } catch {}
-        try { await purgeGuestHistory(p.id); } catch {}
+        try { await processAutoComms(p.id); } catch (err) { await reportSchedulerError(p.id, "processAutoComms", err); }
+        try { await sendDueFeedback(p.id); } catch (err) { await reportSchedulerError(p.id, "sendDueFeedback", err); }
+        try { await retainFeedback(p.id); } catch (err) { await reportSchedulerError(p.id, "retainFeedback", err); }
+        try { await sendDueCompliance(p.id); } catch (err) { await reportSchedulerError(p.id, "sendDueCompliance", err); }
+        try { await remindLostFound(p.id); } catch (err) { await reportSchedulerError(p.id, "remindLostFound", err); }
+        try { await sendDueDeliveries(p.id); } catch (err) { await reportSchedulerError(p.id, "sendDueDeliveries", err); }
+        try { await sendDueTraining(p.id); } catch (err) { await reportSchedulerError(p.id, "sendDueTraining", err); }
+        try { await purgeGuestHistory(p.id); } catch (err) { await reportSchedulerError(p.id, "purgeGuestHistory", err); }
       }
     };
     runComms(); // run on boot

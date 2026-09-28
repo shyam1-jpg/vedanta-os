@@ -188,8 +188,14 @@ export default async function routes(f: FastifyInstance) {
       await audit(c, a, "booking_group", req.params.id, "group." + req.params.cmd, { from: g.status, to, reason: req.body?.reason, version: r.rows[0].version });
       // Auto-schedule guest communications when confirmed
       if (to === "CONFIRMED") {
-        setImmediate(async () => {
-          try { const { scheduleAutoComms } = await import("./autocomms.ts"); await scheduleAutoComms(req.params.id, a.tenantId, a.propertyId); } catch {}
+        setImmediate(() => {
+          import("./autocomms.ts").then(async ({ scheduleAutoComms, reportSchedulerError }) => {
+            try { await scheduleAutoComms(req.params.id, a.tenantId, a.propertyId); }
+            catch (err) {
+              console.error("[autocomms] schedule failed", err);
+              await reportSchedulerError(a.propertyId, "scheduleAutoComms", err);
+            }
+          }).catch(err => console.error("[autocomms] schedule failed", err));
         });
       }
       return r.rows[0];

@@ -467,6 +467,13 @@ export default async function guestPortal(f: FastifyInstance) {
     }
     if (!saved.duplicate) {
       await deliverNotes(prop, null, saved.notes, saved.id);
+      try {
+        const { queueStaffNewEnquiry } = await import("./autocomms.ts");
+        await queueStaffNewEnquiry(saved.id, prop.tenant_id, prop.id);
+      } catch (err) {
+        req.log?.error?.(err);
+        console.error("[autocomms] could not queue the staff enquiry alert", err);
+      }
       void backupGuestEvent({
         id: `guest_enq_${saved.id}`,
         kind: programmeId ? "programme" : "dates",
