@@ -4,7 +4,12 @@ import { useEffect, useState } from "react";
 import { API } from "@/lib/api";
 import AllergenFields from "@/components/AllergenFields";
 
-type Welcome = { room: string | null; note: string; keys: string };
+type Welcome = { room: string | null; note: string; keys: string; seva?: string[] };
+type SevaSlot = {
+  id: string; name: string; date: string; start: string; bookable: boolean; label: string;
+  waiver_required: boolean; waiver: string; tasks: string[]; kind: string;
+  animals: { id: string; name: string }[];
+};
 type Loaded = {
   given_name: string;
   group_name: string;
@@ -14,6 +19,7 @@ type Loaded = {
   complete: boolean;
   check_in: { enabled: boolean; open: boolean; from: string; id_required: boolean; rules: string; status: string; done: boolean };
   welcome: Welcome | null;
+  seva?: { slots: SevaSlot[]; mine: { slot_id: string; status: string }[] };
 };
 
 export default function ArriveForm() {
@@ -28,6 +34,10 @@ export default function ArriveForm() {
   const [emergencyPhone, setEmergencyPhone] = useState("");
   const [rules, setRules] = useState(false);
   const [idSeen, setIdSeen] = useState(false);
+  const [age, setAge] = useState("");
+  const [waiver, setWaiver] = useState(false);
+  const [hygiene, setHygiene] = useState(false);
+  const [animal, setAnimal] = useState("");
   const [welcome, setWelcome] = useState<Welcome | null>(null);
   const [err, setErr] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
@@ -79,6 +89,21 @@ export default function ArriveForm() {
     finally { setBusy(false); }
   };
 
+  const bookSeva = async (slotId: string) => {
+    setBusy(true); setErr(null);
+    try {
+      const res = await fetch(`${API}/public/journey/${encodeURIComponent(token)}/seva`, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ slot_id: slotId, age, waiver_ack: waiver, hygiene_ack: hygiene, animal_id: animal || undefined }),
+      });
+      const body = await res.json().catch(() => null);
+      if (!res.ok) throw new Error(body?.detail ?? "That slot could not be booked");
+      await load(token);
+    } catch (e) { setErr((e as Error).message); }
+    finally { setBusy(false); }
+  };
+
   const enRoute = async () => {
     setBusy(true); setErr(null);
     try {
@@ -102,6 +127,12 @@ export default function ArriveForm() {
             <h2>Welcome</h2>
             {welcome.room ? <p>Your room is {welcome.room}.</p> : <p>{welcome.note}</p>}
             <p>{welcome.keys}</p>
+            {!!welcome.seva?.length && (
+              <div data-testid="arrive-seva-welcome">
+                <h3>Your seva</h3>
+                <ul>{welcome.seva.map(line => <li key={line}>{line}</li>)}</ul>
+              </div>
+            )}
           </div>
         )}
         {page && !welcome && (
@@ -114,6 +145,31 @@ export default function ArriveForm() {
               <button className="btn" type="button" disabled={busy} onClick={() => saveDetails(true)}>Nothing to declare</button>
               {page.complete && <button className="btn" type="button" disabled={busy} onClick={() => saveDetails(true)}>These details are still right</button>}
             </div>
+            {!!page.seva?.slots?.length && (
+              <section data-testid="arrive-seva">
+                <h2>Seva</h2>
+                <label>Your age<input aria-label="Age" value={age} onChange={e => setAge(e.target.value)} /></label>
+                {page.seva.slots.map(slot => (
+                  <div key={slot.id}>
+                    <p>{slot.name} · {slot.date} {slot.start}</p>
+                    <p className="m">{slot.bookable ? slot.tasks.join(", ") : "Unsupervised: not bookable"}</p>
+                    {slot.kind === "cow_care" && (
+                      <label>Animal
+                        <select aria-label="Animal" value={animal} onChange={e => setAnimal(e.target.value)}>
+                          <option value="">Choose…</option>
+                          {slot.animals.map(item => <option key={item.id} value={item.id}>{item.name}</option>)}
+                        </select>
+                      </label>
+                    )}
+                    {slot.kind === "kitchen_help" && <label className="assign-check"><input type="checkbox" checked={hygiene} onChange={e => setHygiene(e.target.checked)} /> I have read the food hygiene briefing</label>}
+                    {slot.waiver_required && <label className="assign-check"><input type="checkbox" checked={waiver} onChange={e => setWaiver(e.target.checked)} /> {slot.waiver}</label>}
+                    <button className="btn" type="button" disabled={busy || !slot.bookable} onClick={() => bookSeva(slot.id)}>
+                      {page.seva?.mine.some(row => row.slot_id === slot.id) ? "Booked" : "Book this slot"}
+                    </button>
+                  </div>
+                ))}
+              </section>
+            )}
             {page.check_in.enabled && (
               <section className="assign-guest" data-testid="arrive-checkin">
                 <h2>Check in</h2>

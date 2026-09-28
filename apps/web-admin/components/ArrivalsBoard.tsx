@@ -81,13 +81,23 @@ export function ArrivalList({ board, onChange, compact }: { board: Board; onChan
 
 export default function ArrivalsBoard() {
   const [board, setBoard] = useState<Board | null>(null);
+  const [seva, setSeva] = useState<{ label: string }[]>([]);
   const [err, setErr] = useState<string | null>(null);
-  const load = () => api<Board>("/v1/arrivals").then(setBoard).catch(e => setErr((e as Error).message));
+  const load = () => {
+    api<Board>("/v1/arrivals").then(setBoard).catch(e => setErr((e as Error).message));
+    api<{ slots: { label: string }[] }>("/v1/seva").then(body => setSeva(body.slots)).catch(() => setSeva([]));
+  };
   useEffect(() => { void load(); }, []);
   return (
     <>
       <div className="topbar"><div><h1>Arrivals</h1><p>{board?.date ?? "Today"} · expected, en route, checked in digitally, arrived, keys issued</p></div></div>
       {err && <div className="note" role="alert">{err}</div>}
+      {seva.length > 0 && (
+        <section className="panel" data-testid="arrivals-seva">
+          <h2>Seva today</h2>
+          <ul>{seva.map(slot => <li key={slot.label}>{slot.label}</li>)}</ul>
+        </section>
+      )}
       {board && <ArrivalList board={board} onChange={load} />}
     </>
   );

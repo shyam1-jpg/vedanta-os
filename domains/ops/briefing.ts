@@ -49,6 +49,7 @@ export type BriefingCompliance = { id: string; title: string; dueOn: string };
 export type BriefingTraining = { id: string; firstName: string; title: string; expiresOn: string };
 export type BriefingDelivery = { id: string; supplier: string; detail: string };
 export type BriefingNote = { id: string; author: string; department: string; shift: string; excerpt: string; ackedBy: string[] };
+export type BriefingSeva = { id: string; text: string };
 
 export type BriefingFacts = {
   date: string;
@@ -62,6 +63,7 @@ export type BriefingFacts = {
   training: BriefingTraining[];
   deliveries: BriefingDelivery[];
   notes: BriefingNote[];
+  seva?: BriefingSeva[];
 };
 
 export type WatchRules = {
@@ -115,6 +117,7 @@ export const BRIEFING_LINKS = {
   deliveries: "/suppliers/",
   notes: "/ops/",
   guests: "/guest-360/",
+  seva: "/seva/",
 } as const;
 
 export const DEFAULT_HEADS: Record<string, number> = { KITCHEN: 2, FRONT: 1 };
@@ -458,6 +461,17 @@ export function buildBriefing(input: {
     section("deliveries", "Expected deliveries", "green", deliveries.length ? `${deliveries.length} today` : NOTHING, BRIEFING_LINKS.deliveries, deliveries),
     section("notes", "Unread handover", notes.length ? "amber" : "green", notes.length ? `${notes.length} unread` : NOTHING, BRIEFING_LINKS.notes, notes),
   ];
+  if (facts.seva) {
+    const unsupervised = facts.seva.some(slot => /unsupervised/i.test(slot.text));
+    sections.push(section(
+      "seva",
+      "Seva",
+      !facts.seva.length ? "green" : unsupervised ? "amber" : "green",
+      facts.seva.length ? `${facts.seva.length} today` : NOTHING,
+      BRIEFING_LINKS.seva,
+      facts.seva.map(slot => line(slot.id, slot.text, BRIEFING_LINKS.seva)),
+    ));
+  }
 
   return {
     date: facts.date,

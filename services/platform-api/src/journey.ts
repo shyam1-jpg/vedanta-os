@@ -521,6 +521,10 @@ async function readPublic(token: string): Promise<{ ok: false; error: string; st
   return { ok: true, row, read };
 }
 
+export async function openStayLink(token: string) {
+  return readPublic(token);
+}
+
 async function assignedRoom(groupId: string, personId: string): Promise<{ number: string | null; locked: boolean }> {
   const row = (await pool.query(
     `select r.number, o.assign_locked
@@ -741,6 +745,17 @@ export default async function journeyRoutes(f: FastifyInstance) {
     )).rows[0];
     const room = await assignedRoom(found.row.group_id, found.row.person_id);
     const shown = roomForGuest({ assigned: room.number, released: !!check?.room_released });
+    let seva: { slots: unknown[]; mine: unknown[]; welcome: string[] } = { slots: [], mine: [], welcome: [] };
+    try {
+      const mod = await import("./seva.ts");
+      seva = await mod.sevaForStay({
+        propertyId: found.row.property_id,
+        personId: found.row.person_id,
+        from: found.row.arrival,
+        to: found.row.departure,
+      });
+    } catch { /* seva tables are optional until migrated */ }
+    const done = check?.status === "checked_in_digitally" || check?.status === "arrived" || check?.status === "keys_issued";
     return {
       given_name: found.row.given_name,
       group_name: found.row.group_name,
@@ -757,11 +772,12 @@ export default async function journeyRoutes(f: FastifyInstance) {
         id_required: house.settings.id_required,
         rules: house.settings.house_rules,
         status: check?.status ?? "expected",
-        done: check?.status === "checked_in_digitally" || check?.status === "arrived" || check?.status === "keys_issued",
+        done,
       },
-      welcome: check?.status === "checked_in_digitally" || check?.status === "arrived" || check?.status === "keys_issued"
-        ? { room: shown.show, note: shown.note, keys: house.settings.key_instructions }
+      welcome: done
+        ? { room: shown.show, note: shown.note, keys: house.settings.key_instructions, seva: seva.welcome }
         : null,
+      seva: { slots: seva.slots, mine: seva.mine },
     };
   });
 

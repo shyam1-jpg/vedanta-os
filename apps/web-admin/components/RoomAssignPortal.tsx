@@ -37,6 +37,27 @@ type Draft = {
   single_occupancy: boolean; is_organiser: boolean; preferred_room_id: string;
 };
 
+function OrganiserSeva({ token }: { token: string }) {
+  const [items, setItems] = useState<{ activity: string; date: string; start_time: string; guest_name: string; status: string; group_name: string }[]>([]);
+  useEffect(() => {
+    fetch(`${API}/public/organiser/seva`, { headers: { authorization: `Bearer ${token}` } })
+      .then(res => res.ok ? res.json() : { items: [] })
+      .then(body => setItems(body.items ?? []))
+      .catch(() => setItems([]));
+  }, [token]);
+  if (!items.length) return null;
+  return (
+    <section data-testid="organiser-seva">
+      <h2>Seva</h2>
+      <ul>
+        {items.map((item, index) => (
+          <li key={`${item.guest_name}-${index}`}>{item.guest_name} · {item.activity} · {item.date} {item.start_time} · {item.status} · {item.group_name}</li>
+        ))}
+      </ul>
+    </section>
+  );
+}
+
 const blank = (): Draft => ({
   given_name: "", family_name: "", email: "", room_preference: "twin", share_consent: true,
   note: "", share_with_id: "", single_occupancy: false, is_organiser: false, preferred_room_id: "",
@@ -423,6 +444,7 @@ export default function RoomAssignPortal() {
           </section>
         ))}
         {board.groups.length === 0 && <p>There is no retreat on this sign-in.</p>}
+        {token && <OrganiserSeva token={token} />}
         <button className="linkbtn" type="button" onClick={() => { sessionStorage.removeItem(KEY); setPhase("code"); setBoard(null); }}>Use a different code</button>
         {toast && <div className="toast">{toast}</div>}
       </div>

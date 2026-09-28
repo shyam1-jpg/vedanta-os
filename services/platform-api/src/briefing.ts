@@ -112,6 +112,10 @@ async function factsFor(propertyId: string, date: string): Promise<{ facts: Brie
       if (label) stay.checkIn = label;
     }
   } catch { /* arrivals board is optional until its table exists */ }
+  try {
+    const { sevaBriefing } = await import("./seva.ts");
+    facts.seva = await sevaBriefing(propertyId, date);
+  } catch { facts.seva = []; }
   const generatedAt = new Date().toISOString();
   cache.set(key, { at: Date.now(), generatedAt, facts });
   return { facts, cached: false, generatedAt };
