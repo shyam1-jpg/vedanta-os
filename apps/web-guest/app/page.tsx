@@ -6,7 +6,8 @@ const tok = {
   set: (t: string | null) => { if (t) sessionStorage.setItem("vedanta.guest.token", t); else sessionStorage.removeItem("vedanta.guest.token"); },
 };
 async function api<T>(path: string, init: RequestInit = {}): Promise<T> {
-  const headers: Record<string, string> = { "content-type": "application/json", ...(init.headers as Record<string, string> ?? {}) };
+  const headers: Record<string, string> = { ...(init.headers as Record<string, string> ?? {}) };
+  if (init.body != null && init.body !== "") headers["content-type"] = headers["content-type"] ?? "application/json";
   const t = tok.get(); if (t) headers.authorization = `Bearer ${t}`;
   const res = await fetch(API + path, { ...init, headers });
   const body = res.status === 204 ? null : await res.json().catch(() => null);

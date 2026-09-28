@@ -17,6 +17,8 @@ export default function HRScreen() {
   const [training, setTraining] = useState<Training[]>([]);
   const [expiring, setExpiring] = useState<Training[]>([]);
   const [toast, setToast] = useState<string | null>(null);
+  const [people, setPeople] = useState<{ id: string; name: string; department: string | null }[]>([]);
+  const [shiftForm, setShiftForm] = useState({ user_id: "", department: "KITCHEN", shift_date: new Date().toISOString().slice(0, 10), start_time: "07:00", end_time: "16:00" });
   const say = (t: string) => { setToast(t); setTimeout(() => setToast(null), 3500); };
 
   const today = new Date().toISOString().slice(0, 10);
@@ -27,7 +29,10 @@ export default function HRScreen() {
     api<ClockStatus>("/v1/clock/status").then(setClock).catch(() => {});
     api<{ items: Absence[] }>("/v1/absence").then(r => setAbsences(r.items)).catch(() => {});
     api<{ items: Training[] }>("/v1/training").then(r => setTraining(r.items)).catch(() => {});
-    if (can("clock.manage")) api<{ items: Training[] }>("/v1/training/expiring").then(r => setExpiring(r.items)).catch(() => {});
+    if (can("clock.manage")) {
+      api<{ items: Training[] }>("/v1/training/expiring").then(r => setExpiring(r.items)).catch(() => {});
+      api<{ items: { id: string; name: string; department: string | null }[] }>("/v1/workforce/people").then(r => setPeople(r.items)).catch(() => {});
+    }
   }, []);
 
   const clockIn = async () => {
@@ -71,7 +76,31 @@ export default function HRScreen() {
       </div>
 
       {tab === "rota" && (
-        Object.entries(byDay).sort(([a], [b]) => a.localeCompare(b)).map(([date, dayShifts]) => (
+        <>
+        {can("clock.manage") && (
+          <form className="panel" style={{ marginBottom: 16 }} onSubmit={e => {
+            e.preventDefault();
+            api("/v1/rota", { method: "POST", body: JSON.stringify(shiftForm) })
+              .then(() => api<{ items: Shift[] }>(`/v1/rota?from=${today}&to=${weekEnd}`).then(r => setShifts(r.items)))
+              .then(() => say("Shift added"))
+              .catch(() => say("Could not add the shift"));
+          }}>
+            <h3>Add a shift</h3>
+            <div className="frow" style={{ flexWrap: "wrap", marginTop: 8 }}>
+              <select className="btn" value={shiftForm.user_id} onChange={e => setShiftForm(f => ({ ...f, user_id: e.target.value }))}>
+                <option value="">Person…</option>
+                {people.map(p => <option key={p.id} value={p.id}>{p.name}</option>)}
+              </select>
+              <input value={shiftForm.department} onChange={e => setShiftForm(f => ({ ...f, department: e.target.value }))} style={{ width: 120 }} />
+              <input type="date" value={shiftForm.shift_date} onChange={e => setShiftForm(f => ({ ...f, shift_date: e.target.value }))} />
+              <input value={shiftForm.start_time} onChange={e => setShiftForm(f => ({ ...f, start_time: e.target.value }))} style={{ width: 90 }} />
+              <input value={shiftForm.end_time} onChange={e => setShiftForm(f => ({ ...f, end_time: e.target.value }))} style={{ width: 90 }} />
+              <button className="btn primary" disabled={!shiftForm.user_id}>Add</button>
+            </div>
+          </form>
+        )}
+        {shifts.length === 0 && <p className="m">No shifts in the next seven days. Build a week on Auto rota, or add one shift here.</p>}
+        {Object.entries(byDay).sort(([a], [b]) => a.localeCompare(b)).map(([date, dayShifts]) => (
           <div key={date} style={{ marginBottom: 20 }}>
             <h3 style={{ marginBottom: 10 }}>{new Date(date + "T12:00:00").toLocaleDateString("en-GB", { weekday: "long", day: "numeric", month: "short" })}</h3>
             {dayShifts.map(s => (
@@ -83,7 +112,8 @@ export default function HRScreen() {
               </div>
             ))}
           </div>
-        ))
+        ))}
+        </>
       )}
 
       {tab === "clock" && (
@@ -117,8 +147,8 @@ export default function HRScreen() {
                 <span className={`chip ${a.status === "approved" ? "CONFIRMED" : a.status === "declined" ? "CANCELLED" : "ENQUIRY"}`} style={{ fontSize: 11 }}>{a.status}</span>
                 {can("clock.manage") && a.status === "pending" && (
                   <>
-                    <button className="btn" style={{ fontSize: 11, padding: "2px 10px" }} onClick={() => api(`/v1/absence/${a.id}/approve`, { method: "POST" }).then(() => say("Approved")).catch(() => {})}>Approve</button>
-                    <button className="btn" style={{ fontSize: 11, padding: "2px 10px", color: "var(--danger)" }} onClick={() => api(`/v1/absence/${a.id}/decline`, { method: "POST", body: JSON.stringify({ reason: "Not approved" }) }).then(() => say("Declined")).catch(() => {})}>Decline</button>
+                    <button className="btn" style={{ fontSize: 11, padding: "2px 10px" }} onClick={() => api(`/v1/absence/${a.id}/approve`, { method: "POST" }).then(() => api<{ items: Absence[] }>("/v1/absence").then(r => setAbsences(r.items))).then(() => say("Approved")).catch(() => {})}>Approve</button>
+                    <button className="btn" style={{ fontSize: 11, padding: "2px 10px", color: "var(--danger)" }} onClick={() => api(`/v1/absence/${a.id}/decline`, { method: "POST", body: JSON.stringify({ reason: "Not approved" }) }).then(() => api<{ items: Absence[] }>("/v1/absence").then(r => setAbsences(r.items))).then(() => say("Declined")).catch(() => {})}>Decline</button>
                   </>
                 )}
               </div>

@@ -18,9 +18,12 @@ export default function LabourForecast() {
   const [weekOffset, setWeekOffset] = useState(0);
 
   const monday = new Date();
-  monday.setDate(monday.getDate() - monday.getDay() + 1 + weekOffset * 7);
-  const from = monday.toISOString().slice(0, 10);
-  const to = new Date(monday.getTime() + 6 * 86400000).toISOString().slice(0, 10);
+  monday.setHours(12, 0, 0, 0);
+  const dow = monday.getDay();
+  monday.setDate(monday.getDate() + (dow === 0 ? -6 : 1 - dow) + weekOffset * 7);
+  const localISO = (d: Date) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+  const from = localISO(monday);
+  const to = localISO(new Date(monday.getFullYear(), monday.getMonth(), monday.getDate() + 6, 12));
 
   useEffect(() => {
     api<{ rota: RotaRow[]; occupancy: OccRow[] }>(`/v1/labour/forecast?from=${from}&to=${to}`)
@@ -31,8 +34,7 @@ export default function LabourForecast() {
   // Build 7-day grid
   const days: string[] = [];
   for (let i = 0; i < 7; i++) {
-    const d = new Date(monday.getTime() + i * 86400000);
-    days.push(d.toISOString().slice(0, 10));
+    days.push(localISO(new Date(monday.getFullYear(), monday.getMonth(), monday.getDate() + i, 12)));
   }
 
   const depts = [...new Set(rota.map(r => r.department))].sort();
@@ -48,7 +50,7 @@ export default function LabourForecast() {
   const guestsMap: Record<string, number> = {};
   for (const d of days) {
     let g = 0;
-    for (const o of occupancy) { if (o.arrival_date <= d && o.departure_date > d) g += Number(o.guests ?? 0); }
+    for (const o of occupancy) { if (o.arrival_date <= d && o.departure_date >= d) g += Number(o.guests ?? 0); }
     guestsMap[d] = g;
   }
 

@@ -112,7 +112,7 @@ export async function requireActor(req: FastifyRequest, reply: FastifyReply, aud
   let sessAudience: Audience | null = null;
   if (auth?.startsWith("Bearer ")) {
     const tok = auth.slice(7);
-    const s = (await pool.query(`select user_id, audience from session where token=$1 and expires_at > now()`, [tok])).rows[0];
+    const s = (await pool.query(`select user_id, audience from session where token=$1 and expires_at > now() and revoked_at is null`, [tok])).rows[0];
     if (s) { a = await loadActor("where u.id = $1", s.user_id); sessAudience = s.audience; }
   }
   if (!a || !sessAudience || !want.includes(sessAudience)) { reply.code(401).send(problem(401, "unauthenticated", "Sign in to continue")); return null; }
@@ -158,6 +158,8 @@ export default async function authRoutes(f: FastifyInstance) {
     const a = await loadActor("where lower(u.email) = $1", email);
     if (!a) return reply.code(401).send(problem(401, "sign_in_failed", "Sign-in was not recognised"));
     const token = await issueStaffSession(a.userId, a.propertyId, surface);
+    const { recordSignIn } = await import("./sessions.ts");
+    await recordSignIn({ tenantId: a.tenantId, userId: a.userId, propertyId: a.propertyId, provider: "dev", token, req, success: true }).catch(() => {});
     a.audience = surface;
     return { token, user: { email: a.email, name: a.name, role: a.role, role_name: a.roleName, department: a.department, permissions: [...a.perms], surface } };
   });

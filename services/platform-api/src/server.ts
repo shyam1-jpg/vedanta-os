@@ -36,9 +36,12 @@ import financeRoutes from "./finance.ts";
 import emergencyRoutes from "./emergency.ts";
 import stripeRoutes from "./stripe.ts";
 import { assertFieldEncryptionReady } from "./fieldCrypto.ts";
+import { installJsonBody } from "./jsonBody.ts";
+
 assertFieldEncryptionReady();
 
 const app = Fastify({ logger: process.env.NODE_ENV !== "test" });
+installJsonBody(app);
 const isProd = process.env.NODE_ENV === "production";
 
 function truthy(v: string | undefined): boolean {

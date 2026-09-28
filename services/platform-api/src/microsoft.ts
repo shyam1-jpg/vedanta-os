@@ -70,7 +70,7 @@ export default async function microsoft(f: FastifyInstance) {
       email = ((payload.preferred_username ?? payload.email) as string | undefined)?.toLowerCase();
     } catch { return fail("Could not verify the Microsoft token"); }
     if (!email) return fail("Microsoft did not tell us your email address");
-    const u = (await pool.query(`select u.id, m.property_id, r.code role
+    const u = (await pool.query(`select u.id, u.tenant_id, m.property_id, r.code role
       from app_user u
       join membership m on m.user_id=u.id
       join role r on r.id=m.role_id
@@ -80,6 +80,8 @@ export default async function microsoft(f: FastifyInstance) {
       return fail("This system-owner account is not approved in the production allowlist");
     }
     const token = await issueStaffSession(u.id, u.property_id, p.audience);
+    const { recordSignIn } = await import("./sessions.ts");
+    await recordSignIn({ tenantId: u.tenant_id, userId: u.id, propertyId: u.property_id, provider: "microsoft", token, req, success: true }).catch(() => {});
     const back = p.audience === "STAFF" ? `${c.web}/pocket/#token=${token}` : `${c.web}/sign-in/#token=${token}`;
     return reply.redirect(back);
   });

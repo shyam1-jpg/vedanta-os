@@ -8,7 +8,8 @@ export class ApiError extends Error { problem: Problem; constructor(p: Problem) 
 export const token = { get: () => (typeof window === "undefined" ? null : window.sessionStorage.getItem("vedanta.token")), set: (t: string | null) => { if (t) window.sessionStorage.setItem("vedanta.token", t); else window.sessionStorage.removeItem("vedanta.token"); } };
 
 export async function api<T>(path: string, init: RequestInit & { version?: number } = {}): Promise<T> {
-  const headers: Record<string, string> = { "content-type": "application/json", ...(init.headers as Record<string, string> ?? {}) };
+  const headers: Record<string, string> = { ...(init.headers as Record<string, string> ?? {}) };
+  if (init.body != null && init.body !== "") headers["content-type"] = headers["content-type"] ?? "application/json";
   const t = token.get(); if (t) headers.authorization = `Bearer ${t}`;
   if (init.version !== undefined) headers["if-match"] = String(init.version);
   const res = await fetch(API + path, { ...init, headers });

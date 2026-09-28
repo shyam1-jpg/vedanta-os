@@ -6,7 +6,7 @@
  */
 import type { FastifyInstance } from "fastify";
 import { pool } from "./db.ts";
-import { requireActor, allow } from "./auth.ts";
+import { requireActor, allow, problem } from "./auth.ts";
 
 const ANTHROPIC_API = "https://api.anthropic.com/v1/messages";
 
@@ -35,7 +35,7 @@ async function getHouseContext(propertyId: string): Promise<string> {
 
     // Today's arrivals
     pool.query(`
-      SELECT g.name, g.expected_guests, g.arrival_slot, g.arrival_time::text, g.contact_name
+      SELECT g.name, g.expected_guests, g.arrival_slot, g.arrival_time::text, g.organisation AS contact_name
       FROM booking_group g
       WHERE g.property_id=$1 AND g.arrival_date=$2 AND g.status IN ('CONFIRMED','IN_HOUSE')
       ORDER BY g.arrival_time`, [propertyId, today]),
@@ -120,7 +120,7 @@ ${dietary.rows.length === 0 ? "None recorded" : dietary.rows.map(d =>
 
 OPEN MAINTENANCE ISSUES (${maintenance.rows.length}):
 ${maintenance.rows.length === 0 ? "None" : maintenance.rows.map(m =>
-  `- [${m.priority.toUpperCase()}] ${m.title}${m.location ? " in " + m.location : ""} (${m.status})`
+  `- [${String(m.priority ?? "normal").toUpperCase()}] ${m.title}${m.location ? " in " + m.location : ""} (${m.status})`
 ).join("\n")}
 
 OVERDUE TASKS (${tasks.rows.length}):
@@ -184,7 +184,7 @@ export default async function aiDutyManager(f: FastifyInstance) {
     const a = await requireActor(req, reply); if (!a || !allow(a, "group.read", reply)) return;
     const { question } = req.body ?? {};
     if (!question?.trim()) return reply.code(422).send({ error: "question is required" });
-    if (!process.env.ANTHROPIC_API_KEY) return reply.code(503).send({ error: "AI Duty Manager is not configured. Set ANTHROPIC_API_KEY." });
+    if (!process.env.ANTHROPIC_API_KEY) return reply.code(503).send(problem(503, "not_configured", "AI Duty Manager is not configured. Set ANTHROPIC_API_KEY."));
 
     try {
       const context = await getHouseContext(a.propertyId);
@@ -204,7 +204,7 @@ export default async function aiDutyManager(f: FastifyInstance) {
   // Generate morning briefing
   f.get("/v1/duty-manager/morning-briefing", async (req, reply) => {
     const a = await requireActor(req, reply); if (!a || !allow(a, "group.read", reply)) return;
-    if (!process.env.ANTHROPIC_API_KEY) return reply.code(503).send({ error: "AI Duty Manager is not configured. Set ANTHROPIC_API_KEY." });
+    if (!process.env.ANTHROPIC_API_KEY) return reply.code(503).send(problem(503, "not_configured", "AI Duty Manager is not configured. Set ANTHROPIC_API_KEY."));
 
     try {
       const briefing = await generateMorningBriefing(a.propertyId);

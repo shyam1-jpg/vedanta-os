@@ -6,6 +6,16 @@ import type { FastifyInstance } from "fastify";
 import { pool } from "./db.ts";
 import { requireActor, allow, problem } from "./auth.ts";
 
+/** node-pg returns DATE columns as Date objects. The dashboard needs YYYY-MM. */
+function monthKey(value: unknown): string {
+  if (value instanceof Date) {
+    const y = value.getFullYear();
+    const m = String(value.getMonth() + 1).padStart(2, "0");
+    return `${y}-${m}`;
+  }
+  return String(value).slice(0, 7);
+}
+
 export default async function finance(f: FastifyInstance) {
 
   // Monthly finance summary
@@ -23,11 +33,11 @@ export default async function finance(f: FastifyInstance) {
     // Build monthly grid
     const months: Record<string, any> = {};
     for (const r of revenue.rows) {
-      const m = r.month.slice(0, 7);
+      const m = monthKey(r.month);
       months[m] = { month: m, ...r, purchasing: {}, budget: {} };
     }
     for (const p of purchasing.rows) {
-      const m = p.month.slice(0, 7);
+      const m = monthKey(p.month);
       if (!months[m]) months[m] = { month: m, purchasing: {}, budget: {} };
       months[m].purchasing[p.department] = { orders: p.orders, spend: Number(p.total_spend) };
     }
