@@ -376,6 +376,10 @@ export default async function guestPortal(f: FastifyInstance) {
       arrival: x.arrival,
       departure: x.departure,
       notes: x.notes,
+      dietary_notes: x.dietary_notes,
+      accessibility_notes: x.accessibility_notes,
+      arrival_time_note: x.arrival_time_note,
+      travel_notes: x.travel_notes,
       status: x.status,
       programme_name: x.programme_name ? cleanName(x.programme_name) : null,
       rooms: roomsForStay(x.booking_id, rooms),
@@ -384,13 +388,32 @@ export default async function guestPortal(f: FastifyInstance) {
 
   f.get("/guest/enquiries", async (req, reply) => {
     const g = await requireGuest(req, reply); if (!g) return;
-    const r = await pool.query(`select e.id, e.people, e.arrival_date::text arrival, e.departure_date::text departure, e.notes, e.status,
+    const r = await pool.query(`select e.id, e.people, e.arrival_date::text arrival, e.departure_date::text departure, e.notes,
+        e.dietary_notes, e.accessibility_notes, e.arrival_time_note, e.travel_notes, e.status,
         e.programme_id, e.booking_id, bg.name programme_name
       from guest_enquiry e
       left join booking_group bg on bg.id = e.programme_id
       where e.guest_id=$1 order by e.created_at desc`, [g.id]);
     const rooms = await roomsByBooking(r.rows.map((x: { booking_id: string | null }) => x.booking_id).filter(Boolean) as string[]);
     return { items: r.rows.map((x: any) => shapeStay(x, rooms)) };
+  });
+
+  // Guests can keep practical arrival and dietary information current for their own stay.
+  // Room allocation, price, dates and status remain under house control.
+  f.patch("/guest/enquiries/:id/needs", async (req: any, reply) => {
+    const g = await requireGuest(req, reply); if (!g) return;
+    const fields = ["dietary_notes", "accessibility_notes", "arrival_time_note", "travel_notes"] as const;
+    const b = req.body ?? {};
+    if (fields.some(k => typeof b[k] !== "string" || b[k].length > 2000))
+      return reply.code(422).send(problem(422, "validation", "Give short text for each stay detail"));
+    const r = await pool.query(`update guest_enquiry set dietary_notes=$4, accessibility_notes=$5,
+        arrival_time_note=$6, travel_notes=$7
+      where id=$1 and guest_id=$2 and property_id=$3 and status <> 'DECLINED'
+        and departure_date >= current_date
+      returning id`, [req.params.id, g.id, g.propertyId,
+        ...fields.map(k => b[k].trim() || null)]);
+    if (!r.rowCount) return reply.code(404).send(problem(404, "not_found", "No current stay found"));
+    return { ok: true };
   });
 
   f.get("/guest/stay", async (req, reply) => {
