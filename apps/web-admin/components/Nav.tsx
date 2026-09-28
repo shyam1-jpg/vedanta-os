@@ -26,10 +26,10 @@ const ROLE_NAMES: Record<string, string> = {
 export default function Nav() {
   const p = usePathname(); const { user, can, signOut } = useStore();
   const propertyName = (user as any)?.property_name ?? "The Vedanta Way";
-  const propertyKicker = (user as any)?.property_kicker ?? "Retreat Center";
+  const propertyKicker = String((user as any)?.property_kicker ?? "").trim();
   return (
     <nav className="nav">
-      <div className="brand">{propertyName}<small>{propertyKicker}</small></div>
+      <div className="brand">{propertyName}{propertyKicker ? <small>{propertyKicker}</small> : null}</div>
       {user && sections.map(sec => (
         <div key={sec.label} className="nav-group">
           <div className="nav-sec">{sec.label}</div>

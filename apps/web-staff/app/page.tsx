@@ -45,11 +45,11 @@ async function api<T>(path: string, init: RequestInit = {}): Promise<T> {
 }
 
 type Me = { name: string; email: string; role: string; role_name?: string; surface?: string; property_name?: string | null; property_kicker?: string | null };
-type Prop = { name: string; kicker: string };
+type Prop = { name: string; kicker: string | null };
 
 export default function Pocket() {
   const [me, setMe] = useState<Me | null>(null);
-  const [prop, setProp] = useState<Prop>({ name: "The Vedanta Way", kicker: "Retreat Center" });
+  const [prop, setProp] = useState<Prop>({ name: "The Vedanta Way", kicker: "" });
   const [email, setEmail] = useState("");
   const [err, setErr] = useState<string | null>(null);
   const [tab, setTab] = useState<"clock" | "leave" | "duty" | "sop" | "log" | "desk" | "night" | "manual" | "tasks">("clock");
@@ -112,7 +112,7 @@ export default function Pocket() {
     const early = takeEarlyHandoff();
     const handoff = captureFragment();
     let cancelled = false;
-    api<Prop>("/guest/property").then(p => { if (!cancelled) setProp({ name: p.name, kicker: p.kicker }); }).catch(() => {});
+    api<Prop>("/guest/property").then(p => { if (!cancelled) setProp({ name: p.name || "The Vedanta Way", kicker: p.kicker || "" }); }).catch(() => {});
     const providers = api<{ microsoft: boolean; dev: boolean; email?: boolean }>("/auth/providers").then(p => {
       if (!cancelled) setOffer(pocketSignInOffer({ email: p.email ?? !!p.dev, microsoft: !!p.microsoft }));
     }).catch(() => { if (!cancelled) setErr(cur => cur ?? "Cannot reach the house. Try again in a moment."); });
@@ -156,7 +156,7 @@ export default function Pocket() {
 
   if (!me) return (
     <>
-      <div className="hero"><div className="kicker">{prop.kicker}</div><h1>{prop.name}</h1><p>Luxury retreat centre</p></div>
+      <div className="hero">{prop.kicker ? <div className="kicker">{prop.kicker}</div> : null}<h1>{prop.name}</h1><p>Luxury retreat centre</p></div>
       <div className="wrap">
         <div className="card">
           {booting ? <p className="m">Opening Pocket…</p> : offer === "email" ? <>

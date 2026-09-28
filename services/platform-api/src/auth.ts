@@ -64,7 +64,7 @@ async function loadActor(where: string, param: string): Promise<Actor | null> {
   const { rows } = await pool.query(`
     select u.id user_id, u.tenant_id, u.email, u.display_name, m.property_id, r.code role, r.name role_name, d.code department,
            p.name property_name,
-           coalesce(p.settings->>'kicker', 'Retreat Center') property_kicker,
+           nullif(p.settings->>'kicker', '') property_kicker,
            coalesce(array_agg(rp.permission_code) filter (where rp.permission_code is not null), '{}') perms
     from app_user u join membership m on m.user_id = u.id join role r on r.id = m.role_id
     left join department d on d.id = m.department_id

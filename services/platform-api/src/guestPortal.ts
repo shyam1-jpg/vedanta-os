@@ -121,7 +121,7 @@ async function upsertGuestWithCode(prop: any, email: string, name: string): Prom
 async function propertyRow() {
   return (await pool.query(`select p.id, p.tenant_id, p.name, p.check_in_from::text, p.check_out_by::text, t.currency,
       coalesce(p.settings->>'website','https://www.thevedanta.org/') as website,
-      coalesce(p.settings->>'kicker','Retreat Center') as kicker,
+      nullif(p.settings->>'kicker', '') as kicker,
       coalesce(p.settings->>'tagline','Luxury retreat centre') as tagline,
       p.settings->>'about' as about,
       p.settings->>'welcome' as welcome,
@@ -136,7 +136,7 @@ export default async function guestPortal(f: FastifyInstance) {
     const r = await propertyRow();
     return {
       name: r?.name ?? "The Vedanta Way",
-      kicker: r?.kicker ?? "Retreat Center",
+      kicker: r?.kicker ?? null,
       tagline: r?.tagline ?? "Luxury retreat centre",
       about: r?.about ?? "A beautiful grade II-listed luxury retreat centre. Nestled amongst 75 acres of woodlands, meadows and lakes in Lincolnshire — a Grade II listed Elizabethan estate.",
       welcome: r?.welcome ?? "Host your retreats and events with us for an unforgettably meaningful experience. When you arrive, the house is ready. We take care of the rest.",
