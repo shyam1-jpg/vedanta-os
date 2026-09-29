@@ -52,7 +52,8 @@ services:
         value: "true"
       - key: ALLOW_UNVERIFIED_GUEST_BOOTSTRAP
         value: "false"
-      # Microsoft 365 sign-in — add after Entra app registration
+      # Sign-in stays off until MS_TENANT_ID, MS_CLIENT_ID, MS_CLIENT_SECRET and PUBLIC_URL are all set.
+      # Entra redirect URI must be exactly ${PUBLIC_URL}/auth/microsoft/callback.
       - key: MS_TENANT_ID
         sync: false
       - key: MS_CLIENT_ID
