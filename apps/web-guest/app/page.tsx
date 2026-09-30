@@ -271,7 +271,6 @@ export default function Book() {
               <p className="section-kicker">At the table</p>
               <h2>Food made for your retreat</h2>
               <p>Enjoy vegetarian buffet meals together. Tell the house about vegan, Jain, gluten-free and allergy needs when you enquire, then update your details in My Stay.</p>
-              <small>Illustrative image · Guest experience concept</small>
             </div>
           </section>
 
