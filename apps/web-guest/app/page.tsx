@@ -1,5 +1,5 @@
 "use client";
-import { useEffect, useState } from "react";
+import { useEffect, useLayoutEffect, useRef, useState } from "react";
 const API = process.env.NEXT_PUBLIC_API_URL ?? "";
 const tok = {
   get: () => (typeof window === "undefined" ? null : sessionStorage.getItem("vedanta.guest.token")),
@@ -38,6 +38,15 @@ const STEPS: { id: Step; label: string }[] = [
   { id: "pay", label: "Review" },
   { id: "done", label: "Enquiry sent" },
 ];
+
+function scrollAuthCardIntoView(card: HTMLElement | null) {
+  if (!card) return;
+  const header = document.querySelector<HTMLElement>("header.top");
+  const offset = (header?.getBoundingClientRect().height ?? 0) + 16;
+  const top = card.getBoundingClientRect().top + window.scrollY - offset;
+  const reduce = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+  window.scrollTo({ top: Math.max(0, top), behavior: reduce ? "auto" : "smooth" });
+}
 
 const photo = (file: string) => `/book/images/${file}`;
 const GALLERY: { file: string; title: string; caption?: string; alt: string; wide?: boolean }[] = [
@@ -100,6 +109,25 @@ export default function Book() {
   const [ask, setAsk] = useState({ request_text: "", room_label: "" });
   const [bedPreference, setBedPreference] = useState("any");
   const [accessibleOnly, setAccessibleOnly] = useState(false);
+  const authCardRef = useRef<HTMLDivElement>(null);
+  const scrollAuthOnPaint = useRef(false);
+
+  const openAuth = (mode: "login" | "register") => {
+    setOk(null);
+    setErr(null);
+    if (auth === mode && authCardRef.current) {
+      scrollAuthCardIntoView(authCardRef.current);
+      return;
+    }
+    scrollAuthOnPaint.current = true;
+    setAuth(mode);
+  };
+
+  useLayoutEffect(() => {
+    if (!scrollAuthOnPaint.current || auth === "hidden" || me || !authCardRef.current) return;
+    scrollAuthCardIntoView(authCardRef.current);
+    scrollAuthOnPaint.current = false;
+  }, [auth, me]);
 
   const loadPublic = async () => {
     const [p, progs] = await Promise.all([
@@ -223,8 +251,8 @@ export default function Book() {
           {me
             ? <>{me.name} · My Stay · <button onClick={signOut}>Sign out</button></>
             : <>
-              <button onClick={() => { setAuth("login"); setOk(null); setErr(null); }}>Sign in</button>{" "}
-              <button onClick={() => { setAuth("register"); setOk(null); setErr(null); }}>Open My Stay</button>
+              <button onClick={() => openAuth("login")}>Sign in</button>{" "}
+              <button onClick={() => openAuth("register")}>Open My Stay</button>
             </>}
         </div>
       </header>
@@ -275,7 +303,7 @@ export default function Book() {
           </section>
 
           {auth !== "hidden" && !me && (
-            <div className="card" style={{ maxWidth: 480, marginBottom: 28 }}>
+            <div ref={authCardRef} id="guest-auth" className="card" style={{ maxWidth: 480, marginBottom: 28 }}>
               <h2 style={{ fontSize: 26 }}>{auth === "recover" ? "Access code help" : auth === "register" ? "Open My Stay" : "Sign in to My Stay"}</h2>
               <p className="m">{auth === "recover"
                 ? "We will not tell you whether an email is on the book. If it is, the house will help."
