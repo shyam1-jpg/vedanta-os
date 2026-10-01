@@ -117,16 +117,24 @@ Do not make every Microsoft user an administrator automatically.
 
 Public users may browse programmes and availability without an account.
 
-Production currently defaults to:
+Production keeps:
 
 - `GUEST_PORTAL_ENABLED=true`
 - `ALLOW_UNVERIFIED_GUEST_BOOTSTRAP=false`
 
-This means public browsing remains available, but a brand-new private **My Stay** session is not granted merely because a browser typed an email address.
+`ALLOW_UNVERIFIED_GUEST_BOOTSTRAP` must stay false. Turning it on would open a My Stay session from a typed email with no ownership check.
 
-Before enabling first-time self-service private guest accounts in production, implement and test email ownership verification using OTP or a one-time magic link. Then explicitly review the production flag and flow.
+A new guest proves the address first:
 
-Existing guests must sign in to their own My Stay before creating further private enquiries under that email.
+1. `POST /guest/email-code/request` emails a one-time 8-digit code. It does not create an account or a session. The plaintext code is not stored and is not returned by the API.
+2. `POST /guest/register` or `POST /guest/enquiries` includes that `email_code`. The code is single-use, expires in 10 minutes, and must match the email on the request.
+3. Only then is My Stay created. The guest receives an access code and can sign in later with `POST /guest/login`.
+
+Existing guests sign in with their access code. A further enquiry for that email is accepted only when the bearer session belongs to that guest.
+
+`SMTP_URL` and `MAIL_FROM` must be set. Without them the code cannot be sent and a new My Stay stays closed.
+
+Staff Microsoft sign-in and staff email codes are separate and are not used for guest registration.
 
 ## 9. Email
 

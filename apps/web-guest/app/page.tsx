@@ -10,8 +10,16 @@ async function api<T>(path: string, init: RequestInit = {}): Promise<T> {
   const t = tok.get(); if (t) headers.authorization = `Bearer ${t}`;
   const res = await fetch(API + path, { ...init, headers });
   const body = res.status === 204 ? null : await res.json().catch(() => null);
-  if (!res.ok) throw new Error(body?.detail ?? res.statusText);
+  if (!res.ok) {
+    const err = new Error(body?.detail ?? res.statusText) as Error & { code?: string };
+    err.code = body?.code;
+    throw err;
+  }
   return body as T;
+}
+
+function needsEmailCode(e: unknown): boolean {
+  return (e as { code?: string })?.code === "guest_email_verification_required";
 }
 
 type Prop = { name: string; kicker: string; tagline: string; about: string; website: string; company: string; address: string; check_in_from: string; check_out_by: string; rooms: number };
@@ -97,7 +105,7 @@ export default function Book() {
   const [auth, setAuth] = useState<"hidden" | "login" | "register" | "recover">("hidden");
   const [step, setStep] = useState<Step>("browse");
   const [form, setForm] = useState({
-    name: "", email: "", access_code: "", people: "1", arrival: "", departure: "", notes: "",
+    name: "", email: "", email_code: "", access_code: "", people: "1", arrival: "", departure: "", notes: "",
     dietary_notes: "", accessibility_notes: "", room_preference: "", arrival_time_note: "", travel_notes: "",
   });
   const [avail, setAvail] = useState<Avail | null>(null);
@@ -109,6 +117,7 @@ export default function Book() {
   const [ask, setAsk] = useState({ request_text: "", room_label: "" });
   const [bedPreference, setBedPreference] = useState("any");
   const [accessibleOnly, setAccessibleOnly] = useState(false);
+  const [codeSentTo, setCodeSentTo] = useState<string | null>(null);
   const authCardRef = useRef<HTMLDivElement>(null);
   const scrollAuthOnPaint = useRef(false);
 
@@ -185,20 +194,37 @@ export default function Book() {
     (!accessibleOnly || t.accessible) && (bedPreference === "any" || t.beds.toLowerCase().includes(bedPreference))
   );
 
+  const emailAddress = form.email.trim().toLowerCase();
+  const codeReady = codeSentTo === emailAddress && emailAddress.includes("@");
+
+  const sendGuestCode = async () => {
+    const sent = await api<{ message: string }>("/guest/email-code/request", {
+      method: "POST", body: JSON.stringify({ name: form.name, email: form.email }),
+    });
+    setCodeSentTo(emailAddress);
+    setOk(sent.message);
+    setErr(null);
+  };
+
   const doRegister = async () => {
     setBusy(true); setErr(null); setOk(null);
     try {
       const r = await api<{ token: string; user: Me; access_code?: string | null }>("/guest/register", {
-        method: "POST", body: JSON.stringify({ name: form.name, email: form.email }),
+        method: "POST", body: JSON.stringify({ name: form.name, email: form.email, email_code: form.email_code.trim() || undefined }),
       });
       tok.set(r.token);
-      setForm(f => ({ ...f, access_code: r.access_code ?? f.access_code ?? "" }));
+      setForm(f => ({ ...f, access_code: r.access_code ?? f.access_code ?? "", email_code: "" }));
       await loadSigned();
       setAuth("hidden");
       setOk(r.access_code
-        ? `Welcome. Your private access code is ${r.access_code}. It expires in 14 days. Write it down.`
+        ? `Welcome. Your private access code is ${r.access_code}. It expires in 14 days. Write it down. Use it with this email the next time you sign in.`
         : "Welcome back.");
-    } catch (e) { setErr((e as Error).message); } finally { setBusy(false); }
+    } catch (e) {
+      if (needsEmailCode(e) && !codeReady) {
+        try { await sendGuestCode(); }
+        catch (sendErr) { setErr((sendErr as Error).message); }
+      } else setErr((e as Error).message);
+    } finally { setBusy(false); }
   };
 
   const doLogin = async () => {
@@ -227,6 +253,7 @@ export default function Book() {
           name: form.name, email: form.email, people: Number(form.people), notes: form.notes,
           dietary_notes: form.dietary_notes, accessibility_notes: form.accessibility_notes,
           room_preference: form.room_preference, arrival_time_note: form.arrival_time_note, travel_notes: form.travel_notes,
+          ...(form.email_code.trim() ? { email_code: form.email_code.trim() } : {}),
           ...(sel ? { programme_id: sel.id } : { arrival: form.arrival, departure: form.departure }),
         }),
       });
@@ -235,10 +262,16 @@ export default function Book() {
       await loadSigned();
       setStep("done");
       setOk(r.access_code
-        ? `Enquiry sent. Your private access code is ${r.access_code}. It expires in 14 days. Write it down.`
+        ? `Enquiry sent. Your private access code is ${r.access_code}. It expires in 14 days. Write it down. Use it with this email the next time you sign in.`
         : "Your enquiry is with the house. They will confirm availability and terms.");
       return r;
-    } catch (e) { setErr((e as Error).message); return null; } finally { setBusy(false); }
+    } catch (e) {
+      if (needsEmailCode(e) && !codeReady) {
+        try { await sendGuestCode(); }
+        catch (sendErr) { setErr((sendErr as Error).message); }
+      } else setErr((e as Error).message);
+      return null;
+    } finally { setBusy(false); }
   };
 
   const signOut = () => { tok.set(null); setMe(null); setMine(null); setSel(null); setStep("browse"); setOk(null); setErr(null); };
@@ -308,14 +341,20 @@ export default function Book() {
               <p className="m">{auth === "recover"
                 ? "We will not tell you whether an email is on the book. If it is, the house will help."
                 : auth === "register"
-                  ? "Registration is only needed when you save a booking. Browse first if you prefer."
-                  : "Email and the 6-digit code from when you first booked."}</p>
+                  ? (codeReady
+                    ? "Enter the 8-digit code from your email. My Stay opens after it matches. You will then get a separate access code for signing in later."
+                    : "We email a code to confirm this address is yours, then open My Stay. You can browse first if you prefer.")
+                  : "Email and the 6-digit access code from when you first opened My Stay."}</p>
               {auth === "register" && <>
                 <label htmlFor="g-name">Your name</label>
                 <input id="g-name" autoComplete="name" value={form.name} onChange={e => setForm({ ...form, name: e.target.value })} />
               </>}
               <label htmlFor="g-email">Email</label>
               <input id="g-email" type="email" autoComplete="email" value={form.email} onChange={e => setForm({ ...form, email: e.target.value })} />
+              {auth === "register" && codeReady && <>
+                <label htmlFor="g-email-code">Email code</label>
+                <input id="g-email-code" inputMode="numeric" autoComplete="one-time-code" placeholder="8-digit code from your email" value={form.email_code} onChange={e => setForm({ ...form, email_code: e.target.value })} />
+              </>}
               {auth === "login" && <>
                 <label htmlFor="g-code">Access code</label>
                 <input id="g-code" inputMode="numeric" placeholder="6-digit code" value={form.access_code} onChange={e => setForm({ ...form, access_code: e.target.value })} />
@@ -324,6 +363,7 @@ export default function Book() {
                 {busy ? "…" : auth === "recover" ? "Ask the house" : auth === "register" ? "Create My Stay" : "Open My Stay"}
               </button>
               {auth === "login" && <button className="btn sec" onClick={() => { setAuth("recover"); setErr(null); setOk(null); }}>I cannot use my code</button>}
+              {auth === "register" && codeReady && <button className="btn sec" type="button" disabled={busy} onClick={async () => { setBusy(true); setErr(null); setOk(null); try { await sendGuestCode(); } catch (e) { setErr((e as Error).message); } finally { setBusy(false); } }}>Email a new code</button>}
               <button className="btn sec" onClick={() => { setAuth(auth === "login" ? "register" : "login"); setErr(null); setOk(null); }}>
                 {auth === "login" || auth === "recover" ? "I need to register" : "I already have My Stay"}
               </button>
@@ -331,6 +371,8 @@ export default function Book() {
               {err && <div className="note">{err}</div>}
             </div>
           )}
+
+          {(me || step === "done") && ok && <div className="note" role="status" style={{ marginBottom: 18 }}>{ok}</div>}
 
           <div className="split">
             <div>
@@ -440,6 +482,11 @@ export default function Book() {
                   <p className="m"><b>Stay:</b> {form.arrival ? fmt(form.arrival) : "—"} → {form.departure ? fmt(form.departure) : "—"} · {form.people} {Number(form.people) === 1 ? "guest" : "guests"}</p>
                   <p className="m"><b>Room requested:</b> {form.room_preference || "House to advise"}</p>
                   {sel?.price && <p className="m"><b>Published price note:</b> {sel.price}</p>}
+                  {!me && <p className="hint">A new My Stay opens only after you enter the code we email to this address. After that, sign in with your access code.</p>}
+                  {codeReady && <>
+                    <label htmlFor="enquiry-email-code">Email code</label>
+                    <input id="enquiry-email-code" inputMode="numeric" autoComplete="one-time-code" placeholder="8-digit code from your email" value={form.email_code} onChange={e => setForm({ ...form, email_code: e.target.value })} />
+                  </>}
                   <button className="btn sec" style={{ marginTop: 10 }} disabled={busy || !form.name || !form.email.includes("@")} onClick={doEnquiry}>
                     {busy ? "…" : "Send booking enquiry"}
                   </button>

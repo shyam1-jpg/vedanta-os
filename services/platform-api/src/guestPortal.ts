@@ -8,6 +8,7 @@ import type { FastifyInstance } from "fastify";
 import { pool, tx } from "./db.ts";
 import { emailLoginEnabled, problem, requireActor, allow } from "./auth.ts";
 import { audit } from "./groups.ts";
+import { EMAIL_CODE_REQUIRED } from "../../../domains/guest/signup.ts";
 import { cleanName, guestCopy, isPublicProgrammeName, nightsBetween, programmeBasis, programmeKind, publicProgrammeName } from "../../../domains/guest/programmes.ts";
 import { roomsForStay } from "../../../domains/guest/stay.ts";
 import { accessOutcome, issueExpiry, nextFailedAttempts, publicLoginDetail, RECOVERY_OK } from "../../../domains/guest/access.ts";
@@ -84,6 +85,20 @@ async function requireGuest(req: any, reply: any): Promise<Guest | null> {
   return { id: s.id, tenantId: s.tenant_id, propertyId: s.property_id, email: s.email, name: s.display_name };
 }
 
+function unverifiedGuestBootstrap(): boolean {
+  const v = process.env.ALLOW_UNVERIFIED_GUEST_BOOTSTRAP;
+  if (v == null) return false;
+  return ["1", "true", "yes", "on"].includes(v.trim().toLowerCase());
+}
+
+/** Last line of defence: production cannot create My Stay unless the gate allowed it. */
+function guestWritePermitted(req: any, reply: any): boolean {
+  if (process.env.NODE_ENV !== "production" || unverifiedGuestBootstrap()) return true;
+  if (req.guestEmailVerified || req.guestSignupAllowed) return true;
+  reply.code(503).send(problem(503, "guest_email_verification_required", EMAIL_CODE_REQUIRED));
+  return false;
+}
+
 async function issueGuest(guestId: string, email: string, name: string) {
   const token = randomBytes(32).toString("base64url");
   await pool.query(`insert into guest_session (token, guest_id, expires_at) values ($1,$2, now() + interval '12 hours')`, [token, guestId]);
@@ -99,22 +114,28 @@ function hashAccessCode(code: string): string {
 function normAccessCode(v: unknown): string {
   return String(v ?? "").replace(/\s+/g, "").trim();
 }
-async function upsertGuestWithCode(prop: any, email: string, name: string): Promise<{ guest: GuestRow; access_code?: string }> {
+async function upsertGuestWithCode(prop: any, email: string, name: string, verified = false): Promise<{ guest: GuestRow; access_code?: string }> {
   const cur = (await pool.query(`select id, email, display_name, access_code_hash, access_code_expires_at from guest_account where property_id=$1 and lower(email)=$2`, [prop.id, email])).rows[0] as GuestRow | undefined;
   const expired = !!(cur?.access_code_hash && cur.access_code_expires_at && new Date(cur.access_code_expires_at).getTime() < Date.now());
   const issue = !cur?.access_code_hash || expired;
   const accessCode = issue ? newAccessCode() : null;
   const accessHash = accessCode ? hashAccessCode(accessCode) : null;
   const expires = accessCode ? issueExpiry() : null;
-  const guest = (await pool.query(`insert into guest_account (tenant_id, property_id, email, display_name, access_code_hash, access_code_expires_at, access_code_issued_at, access_code_failed_attempts, access_code_locked_until)
-      values ($1,$2,$3,$4,$5::text,$6::timestamptz, case when $5::text is null then null else now() end, 0, null)
+  const guest = (await pool.query(`insert into guest_account (tenant_id, property_id, email, display_name, access_code_hash, access_code_expires_at, access_code_issued_at, access_code_failed_attempts, access_code_locked_until, email_verified, email_verified_at)
+      values ($1,$2,$3,$4,$5::text,$6::timestamptz, case when $5::text is null then null else now() end, 0, null, $7::boolean, case when $7::boolean then now() else null end)
       on conflict (property_id, email) do update
       set display_name=excluded.display_name,
           access_code_hash=coalesce(excluded.access_code_hash, guest_account.access_code_hash),
           access_code_expires_at=coalesce(excluded.access_code_expires_at, guest_account.access_code_expires_at),
-          access_code_issued_at=coalesce(excluded.access_code_issued_at, guest_account.access_code_issued_at)
+          access_code_issued_at=coalesce(excluded.access_code_issued_at, guest_account.access_code_issued_at),
+          email_verified = guest_account.email_verified or excluded.email_verified,
+          email_verified_at = case
+            when guest_account.email_verified_at is not null then guest_account.email_verified_at
+            when excluded.email_verified then now()
+            else null
+          end
       returning id, email, display_name, access_code_hash, access_code_expires_at, access_code_failed_attempts, access_code_locked_until`,
-      [prop.tenant_id, prop.id, email, name, accessHash, expires])).rows[0] as GuestRow;
+      [prop.tenant_id, prop.id, email, name, accessHash, expires, verified])).rows[0] as GuestRow;
   return accessCode ? { guest, access_code: accessCode } : { guest };
 }
 
@@ -237,12 +258,13 @@ export default async function guestPortal(f: FastifyInstance) {
 
   f.post("/guest/register", async (req: any, reply) => {
     if (!emailLoginEnabled()) return reply.code(404).send(problem(404, "not_found", "Guest registration is not open"));
+    if (!guestWritePermitted(req, reply)) return;
     if (!rateOk(`greg:${req.ip || "x"}`)) return reply.code(429).send(problem(429, "rate_limited", "Please wait a minute"));
     const email = String(req.body?.email ?? "").trim().toLowerCase();
     const name = String(req.body?.name ?? "").trim();
     if (!name || !email.includes("@")) return reply.code(422).send(problem(422, "validation", "Name and email are required"));
     const prop = await propertyRow();
-    const r = await upsertGuestWithCode(prop, email, name);
+    const r = await upsertGuestWithCode(prop, email, name, !!req.guestEmailVerified);
     void backupGuestEvent({ id: `guest_reg_${r.guest.id}`, kind: "register", name: r.guest.display_name, email: r.guest.email });
     // Send access code by email so the guest doesn't lose it on page close
     if (r.access_code && emailConfigured()) {
@@ -265,6 +287,7 @@ export default async function guestPortal(f: FastifyInstance) {
   });
 
   f.post("/guest/enquiries", async (req: any, reply) => {
+    if (!guestWritePermitted(req, reply)) return;
     if (!rateOk(`enq:${req.ip || "x"}`)) return reply.code(429).send(problem(429, "rate_limited", "Please wait a minute before sending another enquiry"));
     const b = req.body ?? {};
     const email = String(b.email ?? "").trim().toLowerCase();
@@ -283,7 +306,7 @@ export default async function guestPortal(f: FastifyInstance) {
     }
     if (!arrival || !departure) return reply.code(422).send(problem(422, "validation", "Choose a programme, or give arrival and departure dates"));
     if (departure < arrival) return reply.code(422).send(problem(422, "validation", "Departure must be on or after arrival"));
-    const r = await upsertGuestWithCode(prop, email, name);
+    const r = await upsertGuestWithCode(prop, email, name, !!req.guestEmailVerified);
     const guest = r.guest;
     const e = (await pool.query(`insert into guest_enquiry (tenant_id,property_id,guest_id,name,email,people,arrival_date,departure_date,notes,programme_id,dietary_notes,accessibility_notes,room_preference,arrival_time_note,travel_notes)
       values ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15) returning id, status`,
@@ -652,14 +675,19 @@ export default async function guestPortal(f: FastifyInstance) {
     return { ...session, email_verified: true };
   });
 
-  // Resend access code to existing guest by email (magic link for forgotten code)
+  // Resend an access code to a guest who already has My Stay. Never creates an account:
+  // a new guest has to prove the email through /guest/email-code/request first.
   f.post("/guest/resend-code", async (req: any, reply) => {
-    const { email } = req.body ?? {};
-    if (!email) return reply.code(422).send(problem(422, "validation", "email required"));
+    const email = String(req.body?.email ?? "").trim().toLowerCase();
+    if (!email.includes("@")) return reply.code(422).send(problem(422, "validation", "email required"));
     const prop = await propertyRow();
-    // Re-issue access code (same as registration flow)
-    const r = await upsertGuestWithCode(prop, email, email.split("@")[0]);
-    if (r.access_code && emailConfigured()) {
+    const existing = (await pool.query(
+      `select display_name from guest_account where property_id=$1 and lower(email)=$2 and status='ACTIVE'`,
+      [prop.id, email],
+    )).rows[0];
+    if (!existing || !emailConfigured()) return { ok: true };
+    const r = await upsertGuestWithCode(prop, email, existing.display_name);
+    if (r.access_code) {
       const nodemailer = (await import("nodemailer")).default;
       const transport = nodemailer.createTransport(process.env.SMTP_URL!);
       const FROM = process.env.MAIL_FROM ?? `The Vedanta <bookings@thevedanta.org>`;
