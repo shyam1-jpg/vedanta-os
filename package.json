@@ -2,7 +2,11 @@
   "name": "vedanta-platform",
   "private": true,
   "type": "module",
-  "workspaces": ["apps/*", "services/*", "packages/*"],
+  "workspaces": [
+    "apps/*",
+    "services/*",
+    "packages/*"
+  ],
   "scripts": {
     "build:web-bundle": "node tools/build-web-bundle.mjs",
     "test:domains": "node --test --experimental-strip-types domains/**/*.test.ts",
@@ -12,5 +16,10 @@
     "db:migrate": "npm --workspace services/platform-api run migrate",
     "test:api": "npm --workspace services/platform-api test"
   },
-  "engines": { "node": ">=22" }
+  "engines": {
+    "node": ">=22"
+  },
+  "devDependencies": {
+    "@electric-sql/pglite": "^0.5.8"
+  }
 }

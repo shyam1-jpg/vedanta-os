@@ -1,75 +1,81 @@
-# Vedanta advanced operations programme
+# Vedanta connected operations — implementation and release notes
 
-## Goal
+## Purpose
 
-One retreat record should drive the work of front desk, housekeeping, kitchen,
-restaurant, maintenance, grounds, night porter and management. Staff should see
-what to do, where, by when, the accountable owner, the approved procedure,
-blocking issues and evidence of completion. Managers should see exceptions and
-proposed responses with source data. Worldwide uniqueness is not a verifiable
-acceptance criterion; reliable Vedanta workflows are.
+Extend the existing Vedanta OS with connected workflows inspired by RMS Cloud,
+hotelkit, Lightspeed and Duve. These are independently implemented features,
+not integrations with those vendors or copies of their designs.
 
-## Delivered in this change
+Reference pages reviewed 1 October 2026:
+- https://www.rmscloud.com/blog/hotel-automation
+- https://hotelkit.net/
+- https://www.lightspeedhq.com/uk/pos/restaurant/
+- https://duve.com/
 
-The existing /tasks/ route becomes an operations command centre, keeping the
-current API commands, task state machine, permissions, photos and history.
+## Delivered
 
-- Whole-house totals and explicit loaded-list scope.
-- List and grouped workflow board, search, attention/deadline/newest sorting.
-- Focus on London-date deadlines, blockers, approval, missing owner and critical severity.
-- Department work volume from entered estimates, with missing estimates reported.
-- Nine editable department task templates; selecting one creates no records.
-- Deadline, estimate, severity, equipment, retreat and SOP inputs.
-- Manager owner reassignment and recording a reason when blocking work.
-- Printable handover and links to existing department workspaces.
-- API open-status filter and matched count for loading further pages.
-- Protection against out-of-order responses replacing the selected task or department.
+| Area | Behaviour |
+|---|---|
+| Task command centre /tasks/ | List/board views, explainable triage, loaded-list search/focus, house totals, department work volume, templates, blockers, assignment and printing. |
+| Retreat readiness /readiness/ | Live booking, current room conditions, service-specific meal covers, linked task verification and blockers, reviewed plan history. |
+| Change impact review | Compares booking dates, slots, counts, meal boundaries, dietary notes and status with the last reviewed snapshot. Shows old/new values without changing bookings, shifts or purchases. |
+| Department workflow packs | Eight editable drafts: front desk, housekeeping, kitchen, restaurant, maintenance, grounds, night and management. Manager reviews owners, estimates, deadlines and note, then creates the whole pack atomically. |
+| Staff Pocket /pocket/ | Open/mine task views; instructions, active SOPs, notes, photos, status/blocker actions and history. Handovers can be acknowledged with actor/time. Equipment tab supports QR entry. |
+| Guest book /book/ | Own-stay arrival checklist and published programme schedule. Existing dietary/access/arrival updates now enqueue changes for staff review. |
+| Guest updates /guest-changes/ | Role-gated before/after guest detail review queue. A review note is required and retained with reviewer/time and audit event. |
+| Equipment /assets/ | Existing asset registry and service history, locally generated QR labels linking to staff equipment records, approved manual reference editor and print action. |
 
-Attention is deterministic and explainable, not an AI forecast. Search and workload
-summaries cover loaded tasks. The page displays the matched total and a load-more
-control; it does not claim an unloaded list is complete. London display dates are
-separate from deadline entry, which uses the device local timezone and sends UTC.
-Templates contain illustrative estimates that staff must review.
+## Important behaviour
 
-## Next delivery stages and acceptance gates
+- The source booking version is required when creating packs. Stale submissions
+  fail with 409; the manager reloads and reviews current data.
+- A unique property/booking/version/kind key makes successful retries idempotent.
+  A booking row lock serialises competing submissions. All tasks, their opening
+  events, the snapshot and audit entry are written in one database transaction.
+- Existing tasks/history are preserved. Readiness checks ALL booking-linked work,
+  including blockers in older packs. Obsolete work must be cancelled by a manager;
+  the code does not silently supersede outstanding work.
+- Readiness is recorded preparation, not a safety certificate or allergy clearance.
+  Completed tasks need verification; current room states do not predict future room readiness.
+- Templates contain illustrative work estimates. This is not a rota capacity
+  forecast. Enter deadlines in device-local time; timestamps are sent as UTC and
+  displayed in Europe/London.
+- Guest schedules require ownership of an enquiry linked to a booking, and only
+  published programme items inside that stay are returned. Internal programme
+  notes, staff names and department work lists are excluded.
+- Guest detail edits and their review queue entry are atomic. Identical retries
+  do not add another change. The queue is restricted by guest.read; acknowledgement
+  requires guest.write. Updates are declarations, not dietary approvals.
+- QR links carry an asset UUID, never credentials or guest details. Staff sign-in
+  is required. Pocket preserves the requested equipment selection across sign-in.
+  Staff equipment responses omit financial and serial-number fields.
+- Existing Parslia integration feed remains the kitchen interface. This release
+  uses the existing covers rules and links kitchen, rota and purchasing workspaces.
 
-| Stage | Concrete behaviour | Gate before release |
-|---|---|---|
-| 1. Unified event links | Link tasks to existing booking, room, asset and service records by ID; show source and deep link. | Property isolation; no duplicate guest records; links resolve under the viewer's permissions. |
-| 2. Retreat change review | A change in confirmed dates, guest count or dietary requirements produces a preview of affected department tasks. | Show old/new values, source version, reviewer and reasons; retries do not duplicate work. |
-| 3. Workflow packs | Manager previews an arrival, departure or meal-service pack, edits owners/deadlines, then creates linked tasks. | Atomic creation and idempotency; preserve SOP versions; never auto-approve safety or allergen decisions. |
-| 4. Staffing scenarios | Show required work minutes against confirmed shift availability and skill/role constraints. | Use authoritative rota data; show missing coverage; manager approves shift changes. |
-| 5. Purchasing intelligence | Stock plus confirmed meal demand generates order proposals and comparable supplier offers. | Match pack size, units, VAT, delivery, minimum orders and expiry; show price timestamp and source; approval before purchase. |
-| 6. Equipment readiness | Asset records link fault history, inspection due dates, SOP and service follow-up to department readiness. | Follow authorised safe-use restrictions; competent sign-off before returning failed equipment to service. |
-| 7. Mobile completion | Pocket receives shared task details, blockers, photo evidence and handover acknowledgements. | Offline commands carry idempotency keys and versions; conflict resolution preserves audit history. |
-| 8. Management intelligence | A daily exception brief cites operational records and proposes actions with estimated impact. | No invented financial savings, staff capacity or safety status; role-scoped context and human review. |
+## Database and release
 
-## Example target journey
+Apply additive migration `0039_retreat_workflows.sql`. It creates workflow runs,
+handovers acknowledgements and guest detail changes, adds task workflow_run_id
+and asset sop_slug, and adds indexes. It does not rewrite existing bookings or tasks.
 
-A retreat's confirmed count changes from 30 to 20. The system shows the booking
-version and affected meal counts, rooms, service preparation, planned work and
-orders. Department managers review the proposals. Approved changes record who
-approved them and why; affected staff receive the resulting task updates through
-the chosen communications channel. No automatic shift cancellation or dietary
-substitution is implied.
+Deploy API and all three static apps together (`npm run build:web-bundle`). Existing
+Render startup runs migration files through the established migration runner.
+No production secrets, authentication flags, integration keys or permissions are
+changed by this release. This branch does not issue live guest communications.
 
-## Data and technical approach
+Validation includes domain rules, real PostgreSQL-engine (PGlite) transactional
+workflow checks, guest API ownership/privacy tests and staff asset scope/access
+checks. Test fixtures are synthetic; production records are not accessed.
 
-Extend the Fastify API, Postgres schema and existing Next static apps. Parslia
-remains the kitchen specialist and existing staffing tools remain authoritative.
-Use additive migrations for source IDs, dependencies, recurrence, template
-versions and command idempotency. Add due-date reminders only after selecting a
-channel and ensuring they deduplicate, respect quiet hours and retain delivery
-state. A QR asset label may open an existing asset page; it must not disclose
-private guest or employee data.
+Before production release, run signed-in acceptance for manager pack creation,
+booking-change review, staff task evidence, handover acknowledgement, guest needs
+review, published schedules and QR scanning/printing. The live site requires
+Microsoft 365 sign-in and has not been authenticated or changed in this session.
 
-## Current validation and limitations
+## Remaining external connections
 
-Domain tests cover triage, lifecycle lanes, search, London midnight/DST and
-closed-task handling. Production build verifies frontend compilation and types.
-Live authenticated acceptance and database-backed API checks still need a test
-session/database. The live page currently redirects this browser to Microsoft
-365 sign-in. This change does not alter authentication or make the dashboard public.
-
-Release the API and admin app together for matched_total and the open filter.
-Deploy from the reviewed branch; a pull request alone does not change the live site.
+Live supplier-price collection, Parslia recipe scaling/stock deductions, external
+rota writeback, paid messaging channels, POS/room billing, mobile locks and sensors
+require the relevant service configuration and agreed data contracts. They are not
+represented as connected here. Room readiness and allergen decisions remain with
+authorised staff. No RMS/hotelkit/Lightspeed/Duve subscription is purchased.

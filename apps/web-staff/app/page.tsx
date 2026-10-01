@@ -1,19 +1,9 @@
 "use client";
 import { useEffect, useState } from "react";
 
-const API = process.env.NEXT_PUBLIC_API_URL ?? "";
-const tok = {
-  get: () => (typeof window === "undefined" ? null : sessionStorage.getItem("vedanta.staff.token")),
-  set: (t: string | null) => { if (t) sessionStorage.setItem("vedanta.staff.token", t); else sessionStorage.removeItem("vedanta.staff.token"); },
-};
-async function api<T>(path: string, init: RequestInit = {}): Promise<T> {
-  const headers: Record<string, string> = { "content-type": "application/json", ...(init.headers as Record<string, string> ?? {}) };
-  const t = tok.get(); if (t) headers.authorization = `Bearer ${t}`;
-  const res = await fetch(API + path, { ...init, headers });
-  const body = res.status === 204 ? null : await res.json().catch(() => null);
-  if (!res.ok) throw new Error(body?.detail ?? res.statusText);
-  return body as T;
-}
+import { API,api,tok } from "../lib/api";
+import StaffTaskDetail from "../components/StaffTaskDetail";
+import StaffAssetViewer from "../components/StaffAssetViewer";
 
 type Me = { name: string; email: string; role: string; role_name?: string; property_name?: string | null; property_kicker?: string | null };
 type Prop = { name: string; kicker: string };
@@ -25,7 +15,7 @@ export default function Pocket() {
   const [providers, setProviders] = useState<{ microsoft: boolean; email: boolean; dev: boolean; email_code: boolean } | null>(null);
   const [code, setCode] = useState(""); const [codeSent, setCodeSent] = useState(false); const [busy, setBusy] = useState(false); const [message, setMessage] = useState("");
   const [err, setErr] = useState<string | null>(null);
-  const [tab, setTab] = useState<"clock" | "leave" | "duty" | "sop" | "log" | "desk" | "night" | "manual" | "tasks">("clock");
+  const [tab, setTab] = useState<"clock" | "leave" | "duty" | "sop" | "log" | "desk" | "night" | "manual" | "tasks" | "assets">("clock");
   const [desk, setDesk] = useState<{
     today: { weekday: string; title: string; method: string; ingredients: { name: string; qty: string }[] };
     tomorrow: { weekday: string; title: string; method: string; ingredients: { name: string; qty: string }[] };
@@ -34,7 +24,7 @@ export default function Pocket() {
   const [pay, setPay] = useState<{ hours: number; shifts: { in_at: string; out_at: string | null; hours: number }[] } | null>(null);
   const [ops, setOps] = useState<{
     progress: { done: number; total: number };
-    handover: { id: string; department: string; department_label: string; shift: string; shift_label: string; body: string; author_name: string | null }[];
+    handover: { id: string; department: string; department_label: string; shift: string; shift_label: string; body: string; acknowledged: boolean; author_name: string | null }[];
     checklists: { id: string; department: string; department_label: string; title: string; due_time?: string | null; done: boolean }[];
     guest_requests: { id: string; guest_name: string | null; room_label: string | null; department_label: string; request_text: string; status: string }[];
     notices: { id: string; title: string; body: string }[];
@@ -52,10 +42,14 @@ export default function Pocket() {
     items: { id: string; title: string; department_label: string; status: string; status_label: string; overdue: boolean; room_label: string; next: { status: string; label: string }[] }[];
     counts: { open: number; overdue: number };
   } | null>(null);
+  const [taskScope,setTaskScope]=useState("open");
+  const [taskId,setTaskId]=useState<string|null>(null);
+  const [assetId,setAssetId]=useState("");
   const [taskTitle, setTaskTitle] = useState("");
 
   const load = async () => {
     const u = await api<Me>("/me"); setMe(u);
+    const assetIntent=sessionStorage.getItem("vedanta.asset.intent");if(assetIntent){setAssetId(assetIntent);setTab("assets");}
     setClock(await api("/staff/clock"));
     setLeave(await api("/staff/leave"));
     setSops((await api<{ items: typeof sops }>("/staff/sop")).items);
@@ -64,9 +58,10 @@ export default function Pocket() {
     try { setDesk(await api("/v1/service/front-desk")); } catch { setDesk(null); }
     try { setPay(await api("/staff/payroll")); } catch { setPay(null); }
     try { setManuals((await api<{ items: typeof manuals }>("/v1/manuals")).items); } catch { setManuals([]); }
-    try { setTasks(await api("/v1/ops/tasks")); } catch { setTasks(null); }
+    try { setTasks(await api("/v1/ops/tasks?status=open&limit=100")); } catch { setTasks(null); }
   };
   useEffect(() => {
+    const assetIntent=new URLSearchParams(window.location.search).get("asset");if(assetIntent&&/^[0-9a-f-]{36}$/i.test(assetIntent))sessionStorage.setItem("vedanta.asset.intent",assetIntent);
     api<Prop>("/guest/property").then(p => setProp({ name: p.name, kicker: p.kicker })).catch(() => {});
     api<{ microsoft: boolean; email: boolean; dev: boolean; email_code: boolean }>("/auth/providers").then(setProviders).catch(() => setErr("Cannot reach staff sign-in right now."));
     const returned = window.location.hash.match(/token=([^&]+)/);
@@ -150,6 +145,7 @@ export default function Pocket() {
           <button className={tab === "leave" ? "on" : ""} onClick={() => setTab("leave")}>Holiday</button>
           <button className={tab === "duty" ? "on" : ""} onClick={() => setTab("duty")}>Duty</button>
           <button className={tab === "log" ? "on" : ""} onClick={() => setTab("log")}>House log</button>
+          <button className={tab === "assets" ? "on" : ""} onClick={() => setTab("assets")}>Equipment</button>
           <button className={tab === "tasks" ? "on" : ""} onClick={() => setTab("tasks")}>Tasks</button>
           <button className={tab === "desk" ? "on" : ""} onClick={() => setTab("desk")}>Front desk</button>
           <button className={tab === "night" ? "on" : ""} onClick={() => setTab("night")}>Night</button>
@@ -206,7 +202,7 @@ export default function Pocket() {
             ))}
             <div className="card">
               <h2>Handover</h2>
-              {(ops?.handover ?? []).slice(0, 5).map(h => <div className="row" key={h.id} style={{ display: "block" }}><b>{h.department_label} · {h.shift_label}</b><div>{h.body}</div></div>)}
+              {(ops?.handover ?? []).slice(0, 5).map(h => <div className="row" key={h.id} style={{ display: "block" }}><b>{h.department_label} · {h.shift_label}</b><div>{h.body}</div><button className="btn" disabled={h.acknowledged} onClick={async()=>{try{await api(`/v1/ops/handover/${h.id}/acknowledge`,{method:"POST",body:"{}"});setOps(await api("/v1/ops/board"));}catch(e){setErr((e as Error).message);}}}>{h.acknowledged?"Acknowledged":"Acknowledge handover"}</button></div>)}
               <textarea rows={3} value={note} onChange={e => setNote(e.target.value)} placeholder="What the next shift needs to know" />
               <button className="btn" onClick={async () => { setErr(null); try { await api("/v1/ops/handover", { method: "POST", body: JSON.stringify({ department: "HOUSE", shift: "am", body: note }) }); setNote(""); setOps(await api("/v1/ops/board")); } catch (e) { setErr((e as Error).message); } }}>Leave a morning note</button>
             </div>
@@ -216,7 +212,9 @@ export default function Pocket() {
         {tab === "tasks" && (
           <div>
             <div className="card">
-              <h2>Tasks · {tasks?.counts.open ?? 0} open</h2>
+              <h2>Tasks · {tasks?.counts.open ?? 0} open across the house</h2>
+              <div className="tabs"><button className="btn" onClick={async()=>{setTaskScope("open");setTasks(await api("/v1/ops/tasks?status=open&limit=100"));}}>All open</button><button className="btn" onClick={async()=>{setTaskScope("mine");setTasks(await api("/v1/ops/tasks?status=open&mine=1&limit=100"));}}>Assigned to me</button></div>
+              <p className="m">{taskScope==="mine"?"Your assigned open tasks":"Open house tasks"} · showing up to 100. Open a task for instructions, blockers, photos and history.</p>
               <p className="m">Acknowledge, start, pause, finish. History stays even if the wording is edited later.</p>
               <input value={taskTitle} onChange={e => setTaskTitle(e.target.value)} placeholder="New task for the house" />
               <button className="btn" onClick={async () => {
@@ -224,7 +222,7 @@ export default function Pocket() {
                 try {
                   await api("/v1/ops/tasks", { method: "POST", body: JSON.stringify({ title: taskTitle, assigned_staff_id: undefined }) });
                   setTaskTitle("");
-                  setTasks(await api("/v1/ops/tasks"));
+                  setTasks(await api("/v1/ops/tasks?status=open&limit=100"));
                 } catch (e) { setErr((e as Error).message); }
               }}>Open task</button>
             </div>
@@ -232,21 +230,15 @@ export default function Pocket() {
               <div className="card" key={t.id}>
                 <h2>{t.title}</h2>
                 <p className="m">{t.department_label}{t.room_label ? ` · ${t.room_label}` : ""} · {t.status_label}{t.overdue ? " · overdue" : ""}</p>
-                <div className="tabs">
-                  {t.next.map(a => (
-                    <button key={a.status} className="btn" onClick={async () => {
-                      try {
-                        await api(`/v1/ops/tasks/${t.id}/status`, { method: "POST", body: JSON.stringify({ status: a.status }) });
-                        setTasks(await api("/v1/ops/tasks"));
-                      } catch (e) { setErr((e as Error).message); }
-                    }}>{a.label}</button>
-                  ))}
-                </div>
+                <button className="btn" onClick={()=>setTaskId(taskId===t.id?null:t.id)}>{taskId===t.id?"Close details":"Instructions & evidence"}</button>
+                {taskId===t.id&&<StaffTaskDetail id={t.id} onUpdated={async()=>setTasks(await api(`/v1/ops/tasks?status=open&limit=100${taskScope==="mine"?"&mine=1":""}`))}/>}
+
               </div>
             ))}
             {(!tasks || tasks.items.length === 0) && <p className="m">No tasks on your list.</p>}
           </div>
         )}
+        {tab === "assets" && <StaffAssetViewer initialId={assetId}/>}
         {tab === "desk" && (
           <div>
             <div className="card">
@@ -281,7 +273,7 @@ export default function Pocket() {
             ))}
             <div className="card">
               <h2>Handover to morning</h2>
-              {(ops?.handover ?? []).filter(h => h.shift === "night" || h.department === "NIGHT").slice(0, 4).map(h => <div className="row" key={h.id} style={{ display: "block" }}><b>{h.shift_label}</b><div>{h.body}</div></div>)}
+              {(ops?.handover ?? []).filter(h => h.shift === "night" || h.department === "NIGHT").slice(0, 4).map(h => <div className="row" key={h.id} style={{ display: "block" }}><b>{h.shift_label}</b><div>{h.body}</div><button className="btn" disabled={h.acknowledged} onClick={async()=>{try{await api(`/v1/ops/handover/${h.id}/acknowledge`,{method:"POST",body:"{}"});setOps(await api("/v1/ops/board"));}catch(e){setErr((e as Error).message);}}}>{h.acknowledged?"Acknowledged":"Acknowledge handover"}</button></div>)}
               <textarea rows={3} value={nightNote} onChange={e => setNightNote(e.target.value)} placeholder="Who arrived late, what was unlocked, what ran out" />
               <button className="btn" onClick={async () => { setErr(null); try { await api("/v1/ops/handover", { method: "POST", body: JSON.stringify({ department: "NIGHT", shift: "night", body: nightNote }) }); setNightNote(""); setOps(await api("/v1/ops/board")); } catch (e) { setErr((e as Error).message); } }}>Leave the night note</button>
             </div>

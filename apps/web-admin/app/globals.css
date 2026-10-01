@@ -430,3 +430,9 @@ td.mark-dep { box-shadow: inset 3px 0 0 var(--marigold); }
 .task-command-workspaces { display:flex; flex-wrap:wrap; gap:8px; margin-bottom:18px; }
 .task-command-workspaces a { display:flex; gap:12px; padding:9px 12px; border:1px solid var(--line,#ded9cc); border-radius:8px; color:var(--forest); text-decoration:none; background:#fff; font-size:12px; }
 @media print { .task-command-workspaces { display:none; } }
+.readiness-select{display:block;width:100%;padding:12px;margin-top:8px;background:var(--paper,#fff);border:1px solid var(--line,#ded9cc);border-radius:8px;font:inherit}
+.readiness-table{overflow-x:auto}.readiness-table table{width:100%;border-collapse:collapse;text-align:left}.readiness-table th,.readiness-table td{padding:12px 8px;border-bottom:1px solid var(--line,#ded9cc);overflow-wrap:anywhere}
+.readiness-drafts{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:16px}.readiness-drafts section{padding:16px;border:1px solid var(--line,#ded9cc);border-radius:10px;min-width:0}.readiness-drafts input,.readiness-drafts select,.readiness-drafts textarea{width:100%}.readiness-department{margin:16px 0}.readiness-department .ops-line{flex-wrap:wrap;gap:8px}
+@media(max-width:700px){.readiness-drafts{grid-template-columns:1fr}.readiness-split{display:block}.readiness-split>section{margin-bottom:16px}}
+.asset-qr-label{text-align:center}.asset-qr-label img{max-width:100%;height:auto}
+@media print{body:has(.asset-qr-label) .nav,body:has(.asset-qr-label) .topbar,body:has(.asset-qr-label) .readiness-select,body:has(.asset-qr-label) .split>section:first-child,body:has(.asset-qr-label) button{display:none!important}body:has(.asset-qr-label) .split{display:block}}

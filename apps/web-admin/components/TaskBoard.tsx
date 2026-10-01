@@ -116,6 +116,7 @@ export default function TaskBoard() {
 
   const query = () => {
     const p = new URLSearchParams({ limit: "100" });
+    if (typeof window !== "undefined") { const booking = new URLSearchParams(window.location.search).get("booking"); if (booking) p.set("booking_id", booking); }
     if (dept !== "all") p.set("department", dept);
     if (filter === "mine") p.set("mine", "1");
     if (filter === "overdue") p.set("overdue", "1");
@@ -199,7 +200,7 @@ export default function TaskBoard() {
         <div className="task-command-tools"><button className="btn" disabled={busy} onClick={() => load()}>Refresh</button><button className="btn" onClick={() => window.print()}>Print handover</button></div>
       </div>
       <div className="task-command-workspaces" aria-label="Connected department workspaces">
-        {[{ href: "/groups/", label: "Retreat bookings" }, { href: "/kitchen/", label: "Kitchen & covers" }, { href: "/housekeeping/", label: "Room readiness" }, { href: "/maintenance/", label: "Maintenance" }, { href: "/labour/", label: "Staffing" }, { href: "/purchasing/", label: "Purchasing" }, { href: "/manual/", label: "SOPs & training" }, { href: "/reports/", label: "Reports" }].map(link => <a key={link.href} href={link.href}>{link.label} <span aria-hidden="true">↗</span></a>)}
+        {[{ href: "/readiness/", label: "Retreat readiness" }, { href: "/groups/", label: "Retreat bookings" }, { href: "/kitchen/", label: "Kitchen & covers" }, { href: "/housekeeping/", label: "Room readiness" }, { href: "/maintenance/", label: "Maintenance" }, { href: "/labour/", label: "Staffing" }, { href: "/purchasing/", label: "Purchasing" }, { href: "/manual/", label: "SOPs & training" }, { href: "/reports/", label: "Reports" }].map(link => <a key={link.href} href={link.href}>{link.label} <span aria-hidden="true">↗</span></a>)}
       </div>
       <div className="task-command-stats" aria-label="Whole house task totals">
         {[{ label: "Open across the house", value: board.counts.open }, { label: "Overdue across the house", value: board.counts.overdue }, { label: "Completed or verified", value: board.counts.done }, { label: "All recorded tasks", value: board.counts.total }].map(stat => <div key={stat.label}><strong>{stat.value}</strong><span>{stat.label}</span></div>)}

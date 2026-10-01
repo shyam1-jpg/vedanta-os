@@ -65,6 +65,11 @@ const GALLERY: { file: string; title: string; caption?: string; alt: string; wid
   { file: "lake.jpg", title: "The grounds", caption: "A lake in the grounds.", alt: "A lake in the grounds", },
 ];
 
+function ArrivalPlan({stay,property}:{stay:Mine;property:Prop|null}){
+ const [items,setItems]=useState<{id:string;date:string;start_time:string;end_time:string|null;title:string;location:string|null}[]|null>(null),[error,setError]=useState('');
+ return <div className="arrival-plan"><h3>Your arrival plan</h3><div className="arrival-checks"><span>{stay.rooms.length?'Room allocation available':'Room allocation pending'}</span><span>{stay.arrival_time_note?'Arrival time provided':'Arrival time not provided'}</span><span>{stay.dietary_notes?'Dietary details submitted for review':'Please tell us any dietary needs'}</span></div><p className="m">Arrival {fmt(stay.arrival)} · Check-in from {property?.check_in_from??'15:00'}. Departure {fmt(stay.departure)} · Check-out by {property?.check_out_by??'11:00'}.</p>{stay.arrival_time_note&&<p>Expected arrival: {stay.arrival_time_note}</p>}<p className="m">Room allocation is separate from room readiness. Dietary details require a kitchen review.</p><button className="btn sec" onClick={async()=>{try{setError('');setItems((await api<{items:NonNullable<typeof items>}>(`/guest/enquiries/${stay.id}/schedule`)).items);}catch(e){setError((e as Error).message);}}}>View my published schedule</button>{error&&<p role="alert">{error}</p>}{items&&(!items.length?<p className="m">The house has not published a schedule for this stay yet.</p>:items.map(i=><div className="arrival-session" key={i.id}><b>{i.date} · {i.start_time}{i.end_time?`–${i.end_time}`:''}</b><span>{i.title}{i.location?` · ${i.location}`:''}</span></div>))}</div>;
+}
+
 function StayNeedsEditor({ stay, onSaved }: { stay: Mine; onSaved: () => Promise<void> }) {
   const [editing, setEditing] = useState(false);
   const [busy, setBusy] = useState(false);
@@ -87,7 +92,7 @@ function StayNeedsEditor({ stay, onSaved }: { stay: Mine; onSaved: () => Promise
         setBusy(true); setMessage("");
         try {
           await api(`/guest/enquiries/${stay.id}/needs`, { method: "PATCH", body: JSON.stringify(needs) });
-          await onSaved(); setMessage("Your stay details have been saved for the house."); setEditing(false);
+          await onSaved(); setMessage("Your stay details have been saved and queued for house review."); setEditing(false);
         } catch (e) { setMessage((e as Error).message); }
         finally { setBusy(false); }
       }}>{busy ? "Saving…" : "Save stay details"}</button>
@@ -508,6 +513,7 @@ export default function Book() {
                       {x.rooms?.length
                         ? <div className="rooms">{x.rooms.map(r => <span key={r.number} className="room">{r.number}{r.section ? ` · ${r.section}` : ""}</span>)}</div>
                         : <p className="m" style={{ margin: "8px 0 0" }}>Rooms appear when the house assigns them.</p>}
+                      <ArrivalPlan stay={x} property={prop}/>
                       <StayNeedsEditor stay={x} onSaved={async () => setMine((await api<{ items: Mine[] }>("/guest/enquiries")).items)} />
                     </div>
                   ))}
