@@ -13,8 +13,10 @@ export default function SignIn() {
   const [prop, setProp] = useState<Prop>({ name: "The Vedanta Way", kicker: "Retreat Center", tagline: "A beautiful grade II-listed luxury retreat centre.", website: "https://www.thevedanta.org/", company: "The Vedanta Way Ltd" });
   useEffect(() => {
     api<Prop>("/guest/property").then(p => setProp({ name: p.name, kicker: p.kicker, tagline: p.tagline ?? prop.tagline, website: p.website, company: p.company })).catch(() => {});
+    const requestedNext = new URLSearchParams(window.location.search).get("next");
+    if (requestedNext?.startsWith("/") && !requestedNext.startsWith("//") && !requestedNext.includes("\\")) window.sessionStorage.setItem("vedanta.returnTo", requestedNext);
     const m = window.location.hash.match(/token=([^&]+)/);
-    if (m) { history.replaceState(null, "", window.location.pathname); signInWithToken(m[1]).catch(() => setErr("Sign-in did not complete. Try again.")); return; }
+    if (m) { history.replaceState(null, "", window.location.pathname + window.location.search); signInWithToken(m[1]).catch(() => setErr("Sign-in did not complete. Try again.")); return; }
     const e = new URLSearchParams(window.location.search).get("error"); if (e) setErr(e);
     api<{ microsoft: boolean; dev: boolean; email?: boolean; email_code?: boolean }>("/auth/providers").then(p => {
       const next = { microsoft: !!p.microsoft, dev: !!p.dev, email: p.email ?? !!p.dev, email_code: !!p.email_code };
@@ -23,8 +25,9 @@ export default function SignIn() {
     }).catch(() => setErr("Cannot reach the house. Try again in a moment."));
   }, [signInWithToken]);
   useEffect(() => { if (user) {
-    const next = new URLSearchParams(window.location.search).get("next");
-    router.replace(next?.startsWith("/") && !next.startsWith("//") ? next : "/house/");
+    const next = new URLSearchParams(window.location.search).get("next") || window.sessionStorage.getItem("vedanta.returnTo");
+    window.sessionStorage.removeItem("vedanta.returnTo");
+    router.replace(next?.startsWith("/") && !next.startsWith("//") && !next.includes("\\") ? next : "/house/");
   } }, [user, router]);
   const go = async (e: string) => { setBusy(true); setErr(null); try { await signIn(e); } catch { setErr("No one on the staff list has that email."); } finally { setBusy(false); } };
   const requestCode = async () => { setBusy(true); setErr(null); try {
