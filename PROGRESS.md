@@ -230,3 +230,13 @@ Property facts: config states 45 rooms; live imported inventory is 42 (see Data 
 - Hosting: own VPS/Azure, or managed? Domain for the admin app (admin.thevedanta.org?)
 - Which payment provider (Stripe, Adyen)?
 - Does the restaurant seat non-resident diners, or only guests and retreat attendees?
+
+- 2026-10-01 · Operations command centre proposal
+  - Existing tasks route extended with department workload, list/board views,
+    explainable attention sorting, search/focus, nine editable task templates,
+    manager owner editor, blocker reason, richer task inputs and printable handover.
+  - API adds open-status filtering and matched_total for pagination.
+  - Whole-house counters and loaded-list summaries labelled separately.
+  - Cross-department roadmap: docs/VEDANTA_ADVANCED_OPERATIONS.md.
+  - Proposed branch change; not evidence of production deployment. Live tasks page
+    requires Microsoft sign-in; authenticated verification remains outstanding.

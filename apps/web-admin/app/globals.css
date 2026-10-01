@@ -390,3 +390,43 @@ td.mark-dep { box-shadow: inset 3px 0 0 var(--marigold); }
   .cover-path { grid-template-columns: 1fr; }
   .cover-path > div:nth-child(odd) { border-right: 0; }
 }
+
+/* Task command centre */
+.task-command-hero { display:flex; justify-content:space-between; gap:24px; padding:28px; background:var(--forest); color:#fff; border-radius:16px; margin-bottom:18px; }
+.task-command-hero h1 { color:#fff; margin:8px 0; }
+.task-command-hero p { max-width:700px; line-height:1.6; }
+.task-command-hero .m, .task-command-hero .k { color:#e6ddc9; }
+.task-command-tools { display:flex; align-items:flex-start; gap:8px; flex-shrink:0; }
+.task-command-tools .btn { background:#fff; color:var(--forest); }
+.task-command-stats { display:grid; grid-template-columns:repeat(4,minmax(0,1fr)); gap:12px; margin-bottom:20px; }
+.task-command-stats > div { background:var(--paper,#fff); border:1px solid var(--line,#ded9cc); padding:20px; border-radius:12px; display:flex; flex-direction:column; gap:8px; }
+.task-command-stats strong { font-size:32px; font-family:inherit; color:var(--forest); }
+.task-command-stats span, .task-command-scope { font-size:12px; }
+.task-command-toolbar { display:flex; flex-wrap:wrap; gap:10px; margin-bottom:12px; }
+.task-command-toolbar input { flex:1 1 240px; }
+.task-command-toolbar input, .task-command-toolbar select { border:1px solid var(--line,#ded9cc); padding:10px 12px; border-radius:8px; background:#fff; color:var(--forest); font:inherit; }
+.task-command-departments { display:flex; gap:10px; overflow-x:auto; padding:12px 0; }
+.task-command-departments button { flex:0 0 210px; display:flex; flex-direction:column; gap:7px; padding:14px; border:1px solid var(--line,#ded9cc); border-radius:10px; background:#fff; text-align:left; color:var(--forest); cursor:pointer; }
+.task-command-departments span { font-size:12px; }
+.task-command-list { display:grid; gap:10px; }
+.task-command-card { width:100%; display:flex; flex-direction:column; gap:9px; padding:16px; border:1px solid var(--line,#ded9cc); border-radius:12px; background:#fff; color:var(--forest); text-align:left; cursor:pointer; font:inherit; }
+.task-command-card:hover, .task-command-card.selected { border-color:var(--forest); box-shadow:0 3px 12px #193e2910; }
+.task-command-card > strong { font-size:17px; }
+.task-command-card > span { font-size:12px; }
+.task-command-card-top { display:flex; justify-content:space-between; gap:10px; text-transform:capitalize; }
+.task-signals { display:flex; flex-wrap:wrap; gap:5px; }
+.task-signals > span { background:#f3ead4; border-radius:5px; padding:4px 7px; }
+.task-signals > span.risk { background:#fae3dd; color:#8a2e20; }
+.task-blocker { border-left:3px solid var(--brick,#a33); padding-left:8px; }
+.task-command-board { display:flex; gap:10px; overflow-x:auto; padding-bottom:12px; }
+.task-command-board section { flex:0 0 235px; background:#eeeade; padding:10px; border-radius:12px; }
+.task-command-board h3 { display:flex; justify-content:space-between; font-size:14px; padding:8px 3px; }
+.task-command-board .task-command-card { margin-bottom:10px; }
+.task-command-split { margin-top:18px; }
+.task-command-split > div { min-width:0; }
+.task-command-card:focus-visible, .task-command-departments button:focus-visible { outline:3px solid #b68835; outline-offset:2px; }
+@media(max-width:800px) { .task-command-hero { flex-direction:column; padding:20px; } .task-command-stats { grid-template-columns:repeat(2,minmax(0,1fr)); } .task-command-toolbar select { flex:1; min-width:140px; } }
+@media print { nav, aside, .task-command-tools, .task-command-toolbar, .task-command-departments, .task-command-split form, .task-command-split .detail, .toast { display:none !important; } .task-command-hero { background:#fff; color:#000; padding:0; } .task-command-hero h1, .task-command-hero .m, .task-command-hero .k { color:#000; } .task-command-split { display:block !important; } .task-command-board { display:block; overflow:visible; } .task-command-board section { width:100%; } .task-command-card { break-inside:avoid; } }
+.task-command-workspaces { display:flex; flex-wrap:wrap; gap:8px; margin-bottom:18px; }
+.task-command-workspaces a { display:flex; gap:12px; padding:9px 12px; border:1px solid var(--line,#ded9cc); border-radius:8px; color:var(--forest); text-decoration:none; background:#fff; font-size:12px; }
+@media print { .task-command-workspaces { display:none; } }

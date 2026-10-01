@@ -175,6 +175,8 @@ export default async function tasks(f: FastifyInstance) {
     }
     if (status === "done" || status === "closed") {
       where.push(`t.status in ('completed','verified')`);
+    } else if (status === "open") {
+      where.push(`t.status not in ('completed','verified','cancelled')`);
     } else if (status && status !== "all" && status !== "overdue") {
       params.push(status);
       where.push(`t.status = $${params.length}`);
@@ -207,6 +209,9 @@ export default async function tasks(f: FastifyInstance) {
        limit ${limit} offset ${offset}`,
       params,
     )).rows;
+    const matchedTotal = (await pool.query(
+      `select count(*)::int total from ops_task t where ${where.join(" and ")}`, params,
+    )).rows[0].total;
     const now = new Date();
     const items = rows.map(r => shape(r, now));
     const counts = (await pool.query(
@@ -220,6 +225,7 @@ export default async function tasks(f: FastifyInstance) {
     )).rows[0];
     return {
       items,
+      matched_total: matchedTotal,
       counts,
       departments: OPS_DEPARTMENTS,
       ...TASK_CATALOGUE,
