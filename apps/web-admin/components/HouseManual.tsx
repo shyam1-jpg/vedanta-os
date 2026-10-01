@@ -28,6 +28,7 @@ function slugFromSearch() {
 }
 
 export default function HouseManual() {
+  const [loadError, setLoadError] = useState<string | null>(null);
   const [list, setList] = useState<List | null>(null);
   const [slug, setSlug] = useState(slugFromSearch);
   const [edit, setEdit] = useState(false);
@@ -36,7 +37,11 @@ export default function HouseManual() {
   const [showWithdrawn, setShowWithdrawn] = useState(false);
   const [view, setView] = useState<"standard" | "absence">("standard");
   const say = (t: string) => { setToast(t); setTimeout(() => setToast(null), 3200); };
-  const load = () => api<List>(`/v1/manuals${showWithdrawn ? "?include=withdrawn" : ""}`).then(setList).catch(e => say(e instanceof ApiError ? e.problem.detail : "Could not open the manual"));
+  const load = () => {
+    setLoadError(null);
+    return api<List>(`/v1/manuals${showWithdrawn ? "?include=withdrawn" : ""}`).then(setList).catch(e => setLoadError(e instanceof ApiError ? e.problem.detail : "Could not reach the manual. Try again."));
+  };
+  useEffect(() => { setSlug(slugFromSearch()); }, []);
   useEffect(() => { load(); }, [showWithdrawn]); // eslint-disable-line
   const items = list?.items ?? [];
   const chapter = items.find(c => c.slug === slug) ?? items[0];
@@ -59,11 +64,13 @@ export default function HouseManual() {
     if (typeof window !== "undefined") window.history.replaceState(null, "", `/manual/?slug=${s}`);
   };
 
+  if (!list && loadError) return <div className="empty" role="alert"><p>{loadError}</p><button className="btn" onClick={() => { load(); }}>Try again</button><a className="btn" href={"/sign-in/?next=" + encodeURIComponent("/manual/?slug=" + slug)}>Sign in again</a></div>;
   if (!list) return <div className="empty">Opening the house manual…</div>;
   if (!chapter) return <div className="empty">No chapters yet.</div>;
 
   return (
     <>
+      {loadError && <div className="note" role="alert">{loadError} <button className="btn" onClick={() => { load(); }}>Try again</button></div>}
       <div className="topbar">
         <div>
           <h1>House manual</h1>

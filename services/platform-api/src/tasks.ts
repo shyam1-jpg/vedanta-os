@@ -165,6 +165,8 @@ export default async function tasks(f: FastifyInstance) {
     const overdueOnly = String(q.overdue ?? "") === "1" || String(q.overdue ?? "") === "true";
     const search = String(q.q ?? "").trim();
     const parent = parseUuid(q.parent_id);
+    const booking = parseUuid(q.booking_id);
+    if (q.booking_id && !booking) return reply.code(422).send(problem(422, "validation", "Invalid booking filter"));
     const limit = Math.min(100, Math.max(1, Number(q.limit) || 80));
     const offset = Math.max(0, Number(q.offset) || 0);
     const params: unknown[] = [a.propertyId];
@@ -175,6 +177,8 @@ export default async function tasks(f: FastifyInstance) {
     }
     if (status === "done" || status === "closed") {
       where.push(`t.status in ('completed','verified')`);
+    } else if (status === "open") {
+      where.push(`t.status not in ('completed','verified','cancelled')`);
     } else if (status && status !== "all" && status !== "overdue") {
       params.push(status);
       where.push(`t.status = $${params.length}`);
@@ -186,6 +190,7 @@ export default async function tasks(f: FastifyInstance) {
     if (overdueOnly) {
       where.push(`t.due_at is not null and t.due_at < now() and t.status not in ('completed','verified','cancelled')`);
     }
+    if (booking) { params.push(booking); where.push(`t.booking_id = $${params.length}`); }
     if (parent) {
       params.push(parent);
       where.push(`t.parent_id = $${params.length}`);
@@ -207,6 +212,9 @@ export default async function tasks(f: FastifyInstance) {
        limit ${limit} offset ${offset}`,
       params,
     )).rows;
+    const matchedTotal = (await pool.query(
+      `select count(*)::int total from ops_task t where ${where.join(" and ")}`, params,
+    )).rows[0].total;
     const now = new Date();
     const items = rows.map(r => shape(r, now));
     const counts = (await pool.query(
@@ -220,6 +228,7 @@ export default async function tasks(f: FastifyInstance) {
     )).rows[0];
     return {
       items,
+      matched_total: matchedTotal,
       counts,
       departments: OPS_DEPARTMENTS,
       ...TASK_CATALOGUE,
@@ -273,6 +282,7 @@ export default async function tasks(f: FastifyInstance) {
     const a = await requireTaskWriter(req, reply); if (!a) return;
     const draft = sanitizeTaskInput(req.body);
     if (!draft.title) return reply.code(422).send(problem(422, "validation", "Give the task a title"));
+    if (draft.booking_id && !(await pool.query(`select id from booking_group where id=$1 and property_id=$2`, [draft.booking_id, a.propertyId])).rowCount) return reply.code(422).send(problem(422, "invalid_booking", "Choose a booking at this property"));
     if (draft.assigned_staff_id && draft.assigned_staff_id !== a.userId && !canAssign(a)) {
       return reply.code(403).send(problem(403, "forbidden", "You can assign a task to yourself, not to someone else"));
     }

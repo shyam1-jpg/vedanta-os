@@ -28,3 +28,4 @@ input[type=checkbox] { width: auto; flex: none; margin: 0 10px 0 0; }
 .hero-status span { padding: 5px 9px; border: 1px solid rgba(255,255,255,.36); border-radius: 999px; background: rgba(0,0,0,.16); font-size: 12px; }
 :focus-visible { outline: 2px solid var(--gold); outline-offset: 3px; }
 @media (prefers-reduced-motion: no-preference) { .card, .btn, .tabs button { transition: box-shadow .2s ease, background .2s ease, transform .2s ease; } .btn:hover { transform: translateY(-1px); } }
+.pocket-task-detail{margin-top:14px;padding-top:14px;border-top:1px solid #ccc}.pocket-task-detail label{display:block;margin-top:14px}.pocket-task-detail textarea{display:block;width:100%}.pocket-task-detail details{margin:14px 0}.pocket-task-detail summary{font-weight:600;padding:8px 0}

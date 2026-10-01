@@ -429,14 +429,23 @@ export default async function guestPortal(f: FastifyInstance) {
     const b = req.body ?? {};
     if (fields.some(k => typeof b[k] !== "string" || b[k].length > 2000))
       return reply.code(422).send(problem(422, "validation", "Give short text for each stay detail"));
-    const r = await pool.query(`update guest_enquiry set dietary_notes=$4, accessibility_notes=$5,
-        arrival_time_note=$6, travel_notes=$7
-      where id=$1 and guest_id=$2 and property_id=$3 and status <> 'DECLINED'
-        and departure_date >= current_date
-      returning id`, [req.params.id, g.id, g.propertyId,
-        ...fields.map(k => b[k].trim() || null)]);
-    if (!r.rowCount) return reply.code(404).send(problem(404, "not_found", "No current stay found"));
-    return { ok: true };
+    return tx(async c=>{
+      const current=(await c.query(`select e.*,ga.tenant_id from guest_enquiry e join guest_account ga on ga.id=e.guest_id where e.id=$1 and e.guest_id=$2 and e.property_id=$3 and e.status<>'DECLINED' and e.departure_date >= (timezone('Europe/London',now()))::date for update of e`,[req.params.id,g.id,g.propertyId])).rows[0];
+      if(!current)return reply.code(404).send(problem(404,'not_found','No current stay found'));
+      const changed=fields.filter(k=>(current[k]??'')!==b[k].trim()).map(field=>({field,before:current[field]??null,after:b[field].trim()||null}));
+      await c.query(`update guest_enquiry set dietary_notes=$4,accessibility_notes=$5,arrival_time_note=$6,travel_notes=$7 where id=$1 and guest_id=$2 and property_id=$3`,[req.params.id,g.id,g.propertyId,...fields.map(k=>b[k].trim()||null)]);
+      if(changed.length)await c.query(`insert into guest_needs_change(tenant_id,property_id,enquiry_id,changes) values($1,$2,$3,$4)`,[current.tenant_id,g.propertyId,current.id,JSON.stringify(changed)]);
+      return {ok:true,review_pending:changed.length>0};
+    });
+  });
+
+  f.get('/guest/enquiries/:id/schedule',async(req:any,reply)=>{
+    const g=await requireGuest(req,reply);if(!g)return;
+    const e=(await pool.query(`select booking_id,arrival_date::text arrival,departure_date::text departure from guest_enquiry where id=$1 and guest_id=$2 and property_id=$3 and status<>'DECLINED'`,[req.params.id,g.id,g.propertyId])).rows[0];
+    if(!e)return reply.code(404).send(problem(404,'not_found','No such stay'));
+    if(!e.booking_id)return {items:[]};
+    const items=(await pool.query(`select i.id,(p.arrival+i.day_offset)::text date,to_char(i.start_time,'HH24:MI') start_time,to_char(i.end_time,'HH24:MI') end_time,i.kind,i.title,i.location from programme_item i join programme p on p.id=i.programme_id where p.group_id=$1 and p.property_id=$2 and p.status='published' and p.arrival+i.day_offset between $3::date and $4::date order by date,i.start_time`,[e.booking_id,g.propertyId,e.arrival,e.departure])).rows;
+    return {items};
   });
 
   f.get("/guest/stay", async (req, reply) => {

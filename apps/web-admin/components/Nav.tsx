@@ -4,11 +4,11 @@ import { usePathname } from "next/navigation";
 import { useStore } from "@/lib/store";
 
 const sections: { label: string; items: [string, string, string | null][] }[] = [
-  { label: "The house", items: [["/house/", "Today", "group.read"], ["/groups/", "Bookings", "group.read"], ["/rooms/", "Room board", "group.read"]] },
+  { label: "The house", items: [["/house/", "Today", "group.read"], ["/readiness/", "Retreat readiness", "group.read"], ["/groups/", "Bookings", "group.read"], ["/rooms/", "Room board", "group.read"]] },
   { label: "In service", items: [["/ops/", "House log", "group.read"], ["/tasks/", "Tasks", "group.read"], ["/front/", "Front desk", "group.read"], ["/night/", "Night porter", "group.read"], ["/service/", "Department boards", "group.read"], ["/manual/", "Manual", "group.read"], ["/housekeeping/", "Housekeeping", "group.read"], ["/maintenance/", "Maintenance", "maintenance.read"], ["/kitchen/", "Kitchen", "covers.read"]] },
   { label: "Intelligence", items: [["/duty-manager/", "AI Duty Manager", "group.read"], ["/programme/", "Programme sheet", "group.read"], ["/finance/", "Finance dashboard", "report.read"]] },
-  { label: "People", items: [["/guests/", "Guests", "guest.read"], ["/guest-360/", "Guest 360", "guest.read"], ["/hr/", "HR & Rota", "group.read"], ["/labour/", "Labour forecast", "clock.manage"], ["/staff-corner/", "Staff corner", "cover.read"], ["/payroll/", "Payroll", "clock.manage"], ["/users/", "Names & positions", "user.manage"], ["/sessions/", "My devices", null]] },
-  { label: "The estate", items: [["/review/", "Imported bookings", "group.update"], ["/quality/", "Data quality", "group.update"], ["/reports/", "Reports", "report.read"], ["/purchasing/", "Purchasing", "group.read"], ["/emergency/", "Emergency & compliance", "group.read"], ["/settings/", "Settings", "package.manage"]] },
+  { label: "People", items: [["/guests/", "Guests", "guest.read"], ["/guest-changes/", "Guest updates", "guest.read"], ["/guest-360/", "Guest 360", "guest.read"], ["/hr/", "HR & Rota", "group.read"], ["/labour/", "Labour forecast", "clock.manage"], ["/staff-corner/", "Staff corner", "cover.read"], ["/payroll/", "Payroll", "clock.manage"], ["/users/", "Names & positions", "user.manage"], ["/sessions/", "My devices", null]] },
+  { label: "The estate", items: [["/review/", "Imported bookings", "group.update"], ["/quality/", "Data quality", "group.update"], ["/reports/", "Reports", "report.read"], ["/purchasing/", "Purchasing", "group.read"], ["/emergency/", "Emergency & compliance", "group.read"], ["/assets/", "Equipment & QR", "maintenance.read"], ["/settings/", "Settings", "package.manage"]] },
 ];
 const ROLE_NAMES: Record<string, string> = {
   SYSTEM_OWNER: "System", GENERAL_MANAGER: "General manager", OPERATIONS_MANAGER: "Operations manager", ROTA_MANAGER: "Rota manager",

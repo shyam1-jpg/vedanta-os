@@ -24,11 +24,15 @@ function HouseShell({ children }: { children: ReactNode }) {
 
   useEffect(() => {
     if (hasToken === false) {
-      router.replace("/sign-in/?next=" + encodeURIComponent(p || "/house/"));
+      const next = window.location.pathname + window.location.search + window.location.hash;
+      window.sessionStorage.setItem("vedanta.returnTo", next);
+      router.replace("/sign-in/?next=" + encodeURIComponent(next));
       return;
     }
     if (hasToken && ready && !user) {
-      router.replace("/sign-in/?error=" + encodeURIComponent("Your session ended. Sign in again."));
+      const next = window.location.pathname + window.location.search + window.location.hash;
+      window.sessionStorage.setItem("vedanta.returnTo", next);
+      router.replace("/sign-in/?next=" + encodeURIComponent(next) + "&error=" + encodeURIComponent("Your session ended. Sign in again."));
     }
   }, [hasToken, ready, user, router, p]);
 

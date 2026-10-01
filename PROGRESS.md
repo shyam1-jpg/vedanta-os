@@ -230,3 +230,24 @@ Property facts: config states 45 rooms; live imported inventory is 42 (see Data 
 - Hosting: own VPS/Azure, or managed? Domain for the admin app (admin.thevedanta.org?)
 - Which payment provider (Stripe, Adyen)?
 - Does the restaurant seat non-resident diners, or only guests and retreat attendees?
+
+- 2026-10-01 · Operations command centre proposal
+  - Existing tasks route extended with department workload, list/board views,
+    explainable attention sorting, search/focus, nine editable task templates,
+    manager owner editor, blocker reason, richer task inputs and printable handover.
+  - API adds open-status filtering and matched_total for pagination.
+  - Whole-house counters and loaded-list summaries labelled separately.
+  - Cross-department roadmap: docs/VEDANTA_ADVANCED_OPERATIONS.md.
+  - Proposed branch change; not evidence of production deployment. Live tasks page
+    requires Microsoft sign-in; authenticated verification remains outstanding.
+
+- 2026-10-01 · Connected retreat operations
+  - Booking-linked readiness, reviewed snapshots and atomic/idempotent eight-department
+    workflow packs with stale-version checks and reviewed owner/deadline estimates.
+  - Pocket task details, SOPs, evidence/history, handover acknowledgement and QR equipment access.
+  - Own-stay guest arrival plans/published schedules, transactional guest-detail change queue
+    and permission-gated manager review. Equipment library, service history and QR labels.
+  - Additive migration 0039; all existing tasks and bookings retained.
+  - Automated PostgreSQL-engine transaction, privacy and role-scope tests added.
+  - External supplier/POS/messaging/stock integrations still require configuration; no live
+    data or production authentication changes have been made by this branch.

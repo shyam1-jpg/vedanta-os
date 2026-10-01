@@ -65,6 +65,7 @@ function shapeBoard(
       body: row.body,
       author_name: row.author_name,
       created_at: row.created_at,
+      acknowledged: Boolean(row.acknowledged),
     })),
     notices: notices.map(row => ({
       id: row.id,
@@ -90,15 +91,16 @@ function shapeBoard(
   };
 }
 
-async function loadBoard(propertyId: string, date: string) {
+async function loadBoard(propertyId: string, date: string, userId: string) {
   const [handover, notices, checks, ticks, requests] = await Promise.all([
     pool.query(
-      `select id, department, shift, for_date::text, body, author_name, created_at
+      `select id, department, shift, for_date::text, body, author_name, created_at,
+        exists(select 1 from ops_handover_ack a where a.handover_id=ops_handover.id and a.user_id=$3) acknowledged
        from ops_handover
        where property_id = $1 and for_date >= $2::date - 1
        order by created_at desc
        limit 40`,
-      [propertyId, date],
+      [propertyId, date, userId],
     ),
     pool.query(
       `select id, department, title, body, author_name, pinned, created_at
@@ -134,9 +136,17 @@ async function loadBoard(propertyId: string, date: string) {
 }
 
 export default async function ops(f: FastifyInstance) {
+  f.post("/v1/ops/handover/:id/acknowledge",async(req:any,reply)=>{
+    const a=await requireLogActor(req,reply);if(!a)return;
+    const h=(await pool.query(`select id from ops_handover where id=$1 and property_id=$2`,[req.params.id,a.propertyId])).rows[0];
+    if(!h)return reply.code(404).send(problem(404,'not_found','Handover not found'));
+    await pool.query(`insert into ops_handover_ack(handover_id,user_id) values($1,$2) on conflict do nothing`,[h.id,a.userId]);
+    return {ok:true};
+  });
+
   f.get("/v1/ops/board", async (req, reply) => {
     const a = await requireLogActor(req, reply); if (!a) return;
-    return loadBoard(a.propertyId, await londonDate());
+    return loadBoard(a.propertyId, await londonDate(), a.userId);
   });
 
   f.post("/v1/ops/handover", async (req: any, reply) => {

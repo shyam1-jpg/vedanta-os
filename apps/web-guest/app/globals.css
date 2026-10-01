@@ -176,3 +176,4 @@ input, textarea { width: 100%; margin-top: 6px; padding: 11px 12px; border: 1px 
 @media (prefers-reduced-motion: reduce) {
   html { scroll-behavior: auto; }
 }
+.arrival-plan{margin:16px 0;padding-top:12px;border-top:1px solid #dad6ca}.arrival-checks{display:flex;flex-wrap:wrap;gap:7px;margin:10px 0}.arrival-checks span{padding:6px 8px;background:#f1ecdf;border-radius:6px;font-size:12px}.arrival-session{display:flex;flex-direction:column;gap:6px;margin-top:12px;padding:10px 0;border-bottom:1px solid #dad6ca}
