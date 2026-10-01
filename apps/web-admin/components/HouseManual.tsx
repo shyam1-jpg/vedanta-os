@@ -1,6 +1,7 @@
 "use client";
 import { useEffect, useMemo, useState } from "react";
 import { api, ApiError } from "@/lib/api";
+import { useStore } from "@/lib/store";
 
 const COVER: Record<string, { priority: string; protect: string; handover: string; route: string; action: string }> = {
   HOUSE: { priority: "Name the duty lead and check the whole-house gaps", protect: "Arrivals, guest safety, meals and an open front door", handover: "Record who owns each gap, the next check time and any service change", route: "/ops/", action: "Open house log" },
@@ -28,6 +29,7 @@ function slugFromSearch() {
 }
 
 export default function HouseManual() {
+  const { can } = useStore();
   const [loadError, setLoadError] = useState<string | null>(null);
   const [list, setList] = useState<List | null>(null);
   const [slug, setSlug] = useState(slugFromSearch);
@@ -82,6 +84,19 @@ export default function HouseManual() {
           </label>
         )}
       </div>
+
+      <section className="house-panel" aria-label="Connected operations" style={{ marginBottom: 24, background: "var(--forest)", color: "var(--paper)", padding: 28 }}>
+        <div className="k" style={{ color: "inherit" }}>VEDANTA OPERATIONS</div>
+        <h2 style={{ color: "inherit" }}>The whole retreat, connected</h2>
+        <p>Use the live workspaces below. Managers review department plans, owners and deadlines before creating work. Staff record progress, evidence and handovers.</p>
+        <div style={{ display: "flex", flexWrap: "wrap", gap: 12, marginTop: 18 }}>
+          {can("task.read") && <a className="btn" href="/tasks/">Task command centre →</a>}
+          {can("group.read") && <a className="btn" href="/readiness/">Retreat readiness →</a>}
+          {can("guest.read") && <a className="btn" href="/guest-changes/">Guest update review →</a>}
+          {can("maintenance.read") && <a className="btn" href="/assets/">Equipment and QR labels →</a>}
+        </div>
+        <p style={{ marginTop: 18, fontSize: 13 }}>Sign in using Microsoft or an enabled email-code option. Access follows your role. These workspaces are part of the app; the saved manual chapters below are maintained separately.</p>
+      </section>
 
       <div className="manual-map">
         {groups.map(([label, chs]) => (
