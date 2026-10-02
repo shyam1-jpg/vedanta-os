@@ -80,7 +80,7 @@ export function supplierCodeFromName(name: string): string {
 }
 
 export function sortSuppliers<T extends { code: string; name: string; regular?: boolean; score?: number | null }>(items: T[]): T[] {
-  const regularOrder = new Map(REGULAR_SUPPLIERS.map((s, i) => [s.code, i]));
+  const regularOrder = new Map<string, number>(REGULAR_SUPPLIERS.map((s, i) => [s.code, i]));
   return [...items].sort((a, b) => {
     const ar = Boolean(a.regular) || regularOrder.has(a.code);
     const br = Boolean(b.regular) || regularOrder.has(b.code);
