@@ -21,11 +21,6 @@ type Estate = {
   timeline?: { time: string; label: string }[];
 };
 
-function money(n: number | null | undefined, currency = "GBP") {
-  if (n == null) return "—";
-  return new Intl.NumberFormat("en-GB", { style: "currency", currency, maximumFractionDigits: 0 }).format(n);
-}
-
 export default function HouseToday() {
   const { user, ready, can } = useStore();
   const [e, setE] = useState<Estate | null>(null);
@@ -52,7 +47,7 @@ export default function HouseToday() {
 
   if (!ready || (!e && !err)) return <div className="empty">Opening the house…</div>;
   if (err) return (
-    <div style={{ padding: 32 }}>
+    <div style={{ padding: "24px 32px", maxWidth: 1200 }}>
       <div className="note">{err}</div>
       <button className="btn" style={{ marginTop: 12 }} onClick={load}>Try again</button>
     </div>
@@ -61,14 +56,36 @@ export default function HouseToday() {
   const d = fmt(e.today, { weekday: "long", day: "numeric", month: "long" });
   const p = e.pulse;
   const nowHm = new Date().toLocaleTimeString("en-GB", { timeZone: "Europe/London", hour: "2-digit", minute: "2-digit", hour12: false });
+  const tasks = p.open_tasks ?? 0;
+  const attention = [
+    { title: "House log & handover", body: "Record guest requests, decisions and unfinished work for the next shift.", href: "/ops/", action: "Open house log" },
+    { title: `${tasks} open ${tasks === 1 ? "task" : "tasks"}`, body: "Give each job an owner and follow it through to completion.", href: "/tasks/", action: "Review tasks" },
+    { title: `${p.rooms_dirty ?? "—"} rooms need a turn`, body: "Prioritise arrival rooms, then inspect before marking them ready.", href: "/housekeeping/", action: "Open housekeeping" },
+    { title: "Procedures & cover", body: "See the steps for a department or decide what to protect if someone is absent.", href: "/manual/", action: "Open manual" },
+  ];
+  const metrics: { label: string; value: string; sub: string; danger?: boolean }[] = [
+    { label: "Occupancy", value: `${p.rooms_tonight} / ${p.guest_rooms}`, sub: "rooms tonight" },
+    { label: "Arrivals", value: String(p.arriving), sub: "groups due today" },
+    { label: "Departures", value: String(p.departing), sub: "leaving today" },
+    { label: "In-house guests", value: p.in_house_guests == null ? "—" : String(p.in_house_guests), sub: "from the book" },
+    { label: "Rooms ready", value: p.rooms_ready == null ? "—" : String(p.rooms_ready), sub: "clean or inspected" },
+    { label: "Rooms dirty", value: p.rooms_dirty == null ? "—" : String(p.rooms_dirty), sub: "need a turn" },
+    { label: "Inspected", value: p.rooms_inspected == null ? "—" : String(p.rooms_inspected), sub: "passed today" },
+    { label: "Out of order", value: String(p.out_of_order ?? 0), sub: "not sellable" },
+    { label: "Payments due", value: payments?.total_due_fmt ?? "—", sub: payments?.overdue ? `£${payments.overdue.toLocaleString()} overdue` : "across open folios" },
+    { label: "Open tasks", value: String(tasks), sub: "across the house" },
+    { label: "Critical issues", value: String(p.critical_issues ?? 0), sub: "need a manager now", danger: (p.critical_issues ?? 0) > 0 },
+  ];
+
   return (
-    <>
-      <div className="house-masthead">
+    <div style={{ padding: "24px 32px", maxWidth: 1200 }}>
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 12, marginBottom: 24, flexWrap: "wrap" }}>
         <div>
-          <h1>Today at the house</h1>
-          <p>{d}. Check-in from {e.property.check_in_from}, departure by {e.property.check_out_by}. {e.property.dining ? `${e.property.dining.name}, ${e.property.dining.max_covers} covers.` : ""}</p>
+          <div className="kicker">The house</div>
+          <h1 style={{ margin: 0 }}>Today</h1>
+          <p className="m" style={{ color: "var(--ink-2)", margin: "8px 0 0" }}>{d}. Check-in from {e.property.check_in_from}, departure by {e.property.check_out_by}. {e.property.dining ? `${e.property.dining.name}, ${e.property.dining.max_covers} covers.` : ""}</p>
         </div>
-        <div className="actions">
+        <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
           {book > 0 && <Link className="btn" href="/groups/">{book} guest portal {book === 1 ? "enquiry" : "enquiries"}</Link>}
           <Link className="btn" href="/front/">Front desk</Link>
           <Link className="btn" href="/night/">Night porter</Link>
@@ -76,60 +93,38 @@ export default function HouseToday() {
           <Link className="btn primary" href="/groups/">Open the book</Link>
         </div>
       </div>
-      <section className="service-hub" aria-labelledby="service-hub-title">
-        <div className="service-hub-heading">
-          <div><span className="k">THE HOUSE IN SERVICE</span><h2 id="service-hub-title">What needs attention</h2></div>
-          <p>One starting point for the next action and the next handover.</p>
-        </div>
-        <div className="service-hub-grid">
-          <article className="service-hub-card">
-            <span className="service-hub-index">01 · COORDINATE</span>
-            <h3>House log & handover</h3>
-            <p>Record guest requests, decisions and unfinished work for the next shift.</p>
-            {can("group.read") && <Link href="/ops/">Open house log <span aria-hidden>↗</span></Link>}
-          </article>
-          <article className="service-hub-card">
-            <span className="service-hub-index">02 · ASSIGN</span>
-            <h3>{p.open_tasks ?? 0} open {(p.open_tasks ?? 0) === 1 ? "task" : "tasks"}</h3>
-            <p>Give each job an owner and follow it through to completion.</p>
-            {can("group.read") && <Link href="/tasks/">Review tasks <span aria-hidden>↗</span></Link>}
-          </article>
-          <article className="service-hub-card">
-            <span className="service-hub-index">03 · PREPARE</span>
-            <h3>{p.rooms_dirty ?? "—"} rooms need a turn</h3>
-            <p>Prioritise arrival rooms, then inspect before marking them ready.</p>
-            {can("group.read") && <Link href="/housekeeping/">Open housekeeping <span aria-hidden>↗</span></Link>}
-          </article>
-          <article className="service-hub-card">
-            <span className="service-hub-index">04 · CONTINUE</span>
-            <h3>Procedures & cover</h3>
-            <p>See the steps for a department or decide what to protect if someone is absent.</p>
-            {can("group.read") && <Link href="/manual/">Open manual <span aria-hidden>↗</span></Link>}
-          </article>
-        </div>
-      </section>
-      <div className="pulse pulse-wide">
-        <article><div className="k">Occupancy</div><b>{p.rooms_tonight} / {p.guest_rooms}</b><div className="s">rooms tonight</div></article>
-        <article><div className="k">Arrivals</div><b>{p.arriving}</b><div className="s">groups due today</div></article>
-        <article><div className="k">Departures</div><b>{p.departing}</b><div className="s">leaving today</div></article>
-        <article><div className="k">In-house guests</div><b>{p.in_house_guests ?? "—"}</b><div className="s">from the book</div></article>
-        <article><div className="k">Rooms ready</div><b>{p.rooms_ready ?? "—"}</b><div className="s">clean or inspected</div></article>
-        <article><div className="k">Rooms dirty</div><b>{p.rooms_dirty ?? "—"}</b><div className="s">need a turn</div></article>
-        <article><div className="k">Inspected</div><b>{p.rooms_inspected ?? "—"}</b><div className="s">passed today</div></article>
-        <article><div className="k">Out of order</div><b>{p.out_of_order ?? 0}</b><div className="s">not sellable</div></article>
-        <article style={{ opacity: payments ? 1 : 0.4 }}><div className="k">Payments due</div><b>{payments?.total_due_fmt ?? "—"}</b><div className="s">{payments?.overdue ? `£${payments.overdue.toLocaleString()} overdue` : "across open folios"}</div></article>
-        <article><div className="k">Open tasks</div><b>{p.open_tasks ?? 0}</b><div className="s">across the house</div></article>
-        <article className={(p.critical_issues ?? 0) > 0 ? "crit" : ""}><div className="k">Critical issues</div><b>{p.critical_issues ?? 0}</b><div className="s">need a manager now</div></article>
-      </div>
-      {aiBriefing && (
-        <div style={{ margin: "0 0 20px", background: "var(--forest)", color: "var(--cream)", borderRadius: 12, padding: "18px 22px" }}>
-          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 10 }}>
-            <div style={{ fontSize: 12, opacity: 0.7, fontFamily: "var(--font-outfit)", letterSpacing: "0.08em", textTransform: "uppercase" }}>AI Duty Manager · Morning briefing</div>
-            <a href="/duty-manager/" style={{ color: "var(--gold, #c9a84c)", fontSize: 12, textDecoration: "none" }}>Full briefing →</a>
+
+      <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit,minmax(140px,1fr))", gap: 12, marginBottom: 24 }}>
+        {metrics.map(k => (
+          <div key={k.label} style={{ background: "var(--surface-2)", borderRadius: 10, padding: "14px 16px" }}>
+            <div className="m" style={{ color: "var(--ink-2)", fontSize: 12, marginBottom: 4 }}>{k.label}</div>
+            <div style={{ fontSize: 22, fontWeight: 700, lineHeight: 1, color: k.danger ? "var(--danger)" : undefined }}>{k.value}</div>
+            <div className="m" style={{ color: "var(--ink-3)", fontSize: 11, marginTop: 4 }}>{k.sub}</div>
           </div>
-          <pre style={{ whiteSpace: "pre-wrap", fontFamily: "inherit", fontSize: 13, lineHeight: 1.65, margin: 0, opacity: 0.92 }}>{aiBriefing.slice(0, 600)}{aiBriefing.length > 600 ? "…" : ""}</pre>
-        </div>
+        ))}
+      </div>
+
+      <h3 style={{ marginBottom: 12 }}>What needs attention</h3>
+      <div style={{ display: "grid", gridTemplateColumns: "repeat(4, 1fr)", gap: 12, marginBottom: 24 }}>
+        {attention.map(item => (
+          <div key={item.href} style={{ background: "var(--surface-2)", borderRadius: 10, padding: "14px 16px" }}>
+            <div style={{ fontWeight: 700 }}>{item.title}</div>
+            <p className="m" style={{ color: "var(--ink-2)", marginTop: 8, fontSize: 13 }}>{item.body}</p>
+            {can("group.read") && <div style={{ marginTop: 12 }}><Link className="btn" href={item.href}>{item.action}</Link></div>}
+          </div>
+        ))}
+      </div>
+
+      {aiBriefing && (
+        <section className="house-panel" style={{ marginBottom: 16 }}>
+          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: 12 }}>
+            <div className="k">Morning briefing</div>
+            <Link href="/duty-manager/">Full briefing</Link>
+          </div>
+          <pre style={{ whiteSpace: "pre-wrap", fontFamily: "inherit", fontSize: 13, lineHeight: 1.65, margin: 0 }}>{aiBriefing.slice(0, 600)}{aiBriefing.length > 600 ? "…" : ""}</pre>
+        </section>
       )}
+
       <div className="house-grid">
         <section className="house-panel">
           <div className="k">Today&apos;s timeline</div>
@@ -164,6 +159,6 @@ export default function HouseToday() {
         </section>
         <OpsBoard compact />
       </div>
-    </>
+    </div>
   );
 }
