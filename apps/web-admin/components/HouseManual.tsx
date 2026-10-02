@@ -92,6 +92,7 @@ export default function HouseManual() {
         <div style={{ display: "flex", flexWrap: "wrap", gap: 12, marginTop: 18 }}>
           {can("task.read") && <a className="btn" href="/tasks/">Task command centre →</a>}
           {can("group.read") && <a className="btn" href="/readiness/">Retreat readiness →</a>}
+          {can("group.read") && <a className="btn" href="/pre-retreat/">Pre-retreat readiness →</a>}
           {can("guest.read") && <a className="btn" href="/guest-changes/">Guest update review →</a>}
           {can("maintenance.read") && <a className="btn" href="/assets/">Equipment and QR labels →</a>}
         </div>

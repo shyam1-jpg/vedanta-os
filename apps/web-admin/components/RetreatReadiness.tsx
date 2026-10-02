@@ -34,7 +34,7 @@ export default function RetreatReadiness(){
   catch(e){setError(e instanceof ApiError?e.problem.detail:'Could not create the workflow.');}finally{setBusy(false);}
  };
  return <>
- <div className="task-command-hero"><div><div className="k">The Vedanta Way · Connected retreat operations</div><h1>Retreat readiness</h1><p>One booking, eight department plans. Review source changes before approving new work.</p></div><button className="btn" disabled={busy||!id} onClick={load}>Refresh</button></div>
+ <div className="task-command-hero"><div><div className="k">The Vedanta Way · Connected retreat operations</div><h1>Retreat readiness</h1><p>One booking, eight department plans. Review source changes before approving new work. The day-before check is separate: <a href="/pre-retreat/">Pre-retreat readiness</a>.</p></div><button className="btn" disabled={busy||!id} onClick={load}>Refresh</button></div>
  <label>Retreat<select className="readiness-select" value={id} onChange={e=>setId(e.target.value)}><option value="">Choose a confirmed retreat</option>{choices.map(g=><option key={g.id} value={g.id}>{g.name} · {g.arrival} → {g.departure}</option>)}</select></label>
  {!choices.length&&<p>No upcoming confirmed retreats are available.</p>}
  {error&&<div className="note" role="alert">{error}</div>}{message&&<div className="note" role="status">{message}</div>}
