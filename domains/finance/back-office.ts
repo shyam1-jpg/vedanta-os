@@ -5,6 +5,7 @@
  */
 import { addDaysIso, payFromHours, shiftsFromPunches, weekStartMonday } from "../staff/payroll.ts";
 import type { Punch } from "../staff/hours.ts";
+import { breaksDiet } from "../house/rules.ts";
 
 export const HOUSE_DEPARTMENTS = [
   { code: "HK", name: "Housekeeping" },
@@ -268,6 +269,7 @@ export type MoneyView = {
   foodSpend: number;
   otherSpend: number;
   labourCost: number;
+  pettySpent: number;
   unratedHours: number;
   openShiftsCapped: number;
   guestNights: number;
@@ -308,19 +310,23 @@ export function buildMoneyView(input: {
   labour: LabourLine[];
   stays: Stay[];
   budgets: MonthBudget[];
+  /** Daily floats already signed out. Added to money out once, never to a supplier bill. */
+  petty?: { date: string; amount: number }[];
 }): MoneyView {
   const { from, to } = periodBounds(input.anchor, input.period);
   const income = input.income.filter(r => inRange(r.date, from, to));
   const expenses = input.expenses.filter(r => inRange(r.date, from, to));
   const labour = input.labour.filter(r => inRange(r.date, from, to));
+  const pettyLines = (input.petty ?? []).filter(r => inRange(r.date, from, to));
   const moneyIn = money(income.reduce((n, r) => n + r.amount, 0));
   const supplierSpend = money(expenses.reduce((n, r) => n + r.amount, 0));
   const foodSpend = money(expenses.filter(r => r.kind === "food").reduce((n, r) => n + r.amount, 0));
   const otherSpend = money(expenses.filter(r => r.kind === "other").reduce((n, r) => n + r.amount, 0));
   const labourCost = money(labour.reduce((n, r) => n + (r.cost ?? 0), 0));
+  const pettySpent = money(pettyLines.reduce((n, r) => n + r.amount, 0));
   const unratedHours = money(labour.filter(r => r.cost == null).reduce((n, r) => n + r.hours, 0));
   const openShiftsCapped = labour.filter(r => r.capped).length;
-  const moneyOut = money(supplierSpend + labourCost);
+  const moneyOut = money(supplierSpend + labourCost + pettySpent);
   const guests = guestNights(input.stays, from, to);
   const guestsInHouse = input.period === "day" ? guestsOnDate(input.stays, from) : guests.peak;
   const denominator = input.period === "day" ? guestsInHouse : guests.nights;
@@ -352,13 +358,15 @@ export function buildMoneyView(input: {
       const moneyInPoint = money(income.filter(r => r.date.startsWith(key)).reduce((n, r) => n + r.amount, 0));
       const supplierPoint = expenses.filter(r => r.date.startsWith(key)).reduce((n, r) => n + r.amount, 0);
       const labourPoint = labour.filter(r => r.date.startsWith(key)).reduce((n, r) => n + (r.cost ?? 0), 0);
-      return { key, label: monthLabel(key), moneyIn: moneyInPoint, moneyOut: money(supplierPoint + labourPoint) };
+      const pettyPoint = pettyLines.filter(r => r.date.startsWith(key)).reduce((n, r) => n + r.amount, 0);
+      return { key, label: monthLabel(key), moneyIn: moneyInPoint, moneyOut: money(supplierPoint + labourPoint + pettyPoint) };
     })
     : datesInRange(from, to).map(date => {
       const moneyInPoint = money(income.filter(r => r.date === date).reduce((n, r) => n + r.amount, 0));
       const supplierPoint = expenses.filter(r => r.date === date).reduce((n, r) => n + r.amount, 0);
       const labourPoint = labour.filter(r => r.date === date).reduce((n, r) => n + (r.cost ?? 0), 0);
-      return { key: date, label: dayLabel(input.period, date), moneyIn: moneyInPoint, moneyOut: money(supplierPoint + labourPoint) };
+      const pettyPoint = pettyLines.filter(r => r.date === date).reduce((n, r) => n + r.amount, 0);
+      return { key: date, label: dayLabel(input.period, date), moneyIn: moneyInPoint, moneyOut: money(supplierPoint + labourPoint + pettyPoint) };
     });
 
   return {
@@ -371,6 +379,7 @@ export function buildMoneyView(input: {
     foodSpend,
     otherSpend,
     labourCost,
+    pettySpent,
     unratedHours,
     openShiftsCapped,
     guestNights: guests.nights,
@@ -385,4 +394,66 @@ export function buildMoneyView(input: {
     departments,
     series,
   };
+}
+
+const DAIRY = ["milk", "cheese", "butter", "yoghurt", "yogurt", "cream", "ghee", "paneer", "dairy"];
+
+/** A logged bill is the department actual. A score is not added to it. */
+export function billActual(amount: number): number {
+  return money(amount);
+}
+
+export function foodBillBreaksHouse(text: string): string | null {
+  const diet = breaksDiet(text);
+  if (diet) return diet;
+  const hay = text.toLowerCase();
+  for (const word of DAIRY) {
+    if (new RegExp(`\\b${word}\\b`, "i").test(hay)) return word;
+  }
+  return null;
+}
+
+export function retreatIncomeNote(note: string): string | null {
+  const trimmed = note.trim();
+  if (trimmed.length > 500) return "Keep the note short";
+  if (/\b(meal ticket|breakfast|lunch|dinner|buffet)\b/i.test(trimmed)) {
+    return "Guests do not pay for food. The restaurant is buffet only. Enter guest or retreat revenue.";
+  }
+  return null;
+}
+
+export function resolveSupplier(input: { code?: string | null; localName?: string | null }):
+  { ok: true; code: string; name: string; regular: boolean; local: boolean } | { ok: false; error: string } {
+  const code = (input.code ?? "").trim().toUpperCase();
+  const known = DEFAULT_SUPPLIERS.find(s => s.code === code);
+  if (known) return { ok: true, code: known.code, name: known.name, regular: known.regular, local: false };
+  if (code && code !== "LOCAL") return { ok: false, error: "That shop is not on the house list. Pick a named shop or type a local one." };
+  const name = (input.localName ?? "").trim().replace(/\s+/g, " ");
+  if (name.length < 2 || name.length > 80) return { ok: false, error: "Type the local shop name." };
+  const named = DEFAULT_SUPPLIERS.find(s => s.name.toLowerCase() === name.toLowerCase());
+  if (named) return { ok: false, error: `${named.name} is already on the list. Pick it there.` };
+  return { ok: true, code: supplierCodeFromName(name), name, regular: false, local: true };
+}
+
+export function deliveryScores(input: {
+  delivered: boolean;
+  quality: number | null;
+  price: number | null;
+  reliability: number | null;
+}): { ok: true; quality: number | null; price: number | null; reliability: number | null } | { ok: false; error: string } {
+  const values = [input.quality, input.price, input.reliability];
+  const any = values.some(n => n != null);
+  if (!input.delivered) {
+    return any ? { ok: false, error: "Scores are entered only after a delivery." } : { ok: true, quality: null, price: null, reliability: null };
+  }
+  for (const n of values) {
+    if (n == null) continue;
+    if (!Number.isInteger(n) || n < 1 || n > 5) return { ok: false, error: "A score is from 1 to 5, or left blank." };
+  }
+  return { ok: true, quality: input.quality, price: input.price, reliability: input.reliability };
+}
+
+/** Blank when the house has not entered the figure. Zero is a figure only after an entry. */
+export function enteredOrBlank(entered: boolean, amount: number): number | null {
+  return entered ? amount : null;
 }

@@ -1,6 +1,7 @@
 "use client";
 import { useEffect, useState } from "react";
 import { api } from "@/lib/api";
+import SupplierBills from "@/components/SupplierBills";
 
 type Supplier = { id: string; name: string; code: string; contact_email: string | null; payment_terms: number };
 type Requisition = { id: string; department: string; title: string; urgency: string; status: string; required_by: string | null; requested_by_name: string; item_count: number };
@@ -12,7 +13,7 @@ const URG: Record<string, string> = { normal: "ENQUIRY", urgent: "PROVISIONAL", 
 const MATCH: Record<string, string> = { "3way_ok": "CONFIRMED", price_variance: "PROVISIONAL", qty_variance: "PROVISIONAL", no_po: "ENQUIRY" };
 
 export default function PurchasingScreen() {
-  const [tab, setTab] = useState<"requisitions" | "orders" | "invoices" | "suppliers">("requisitions");
+  const [tab, setTab] = useState<"bills" | "requisitions" | "orders" | "invoices" | "suppliers">("bills");
   const [suppliers, setSuppliers] = useState<Supplier[]>([]);
   const [requisitions, setRequisitions] = useState<Requisition[]>([]);
   const [orders, setOrders] = useState<PO[]>([]);
@@ -59,12 +60,12 @@ export default function PurchasingScreen() {
       </div>
 
       <div className="seg" style={{ marginBottom: 20 }}>
-        {(["requisitions", "orders", "invoices", "suppliers"] as const).map(t => (
-          <button key={t} className={tab === t ? "active" : ""} onClick={() => setTab(t)}>
-            {t.charAt(0).toUpperCase() + t.slice(1)}
-          </button>
+        {([["bills", "Bills"], ["requisitions", "Requisitions"], ["orders", "Orders"], ["invoices", "Invoices"], ["suppliers", "Suppliers"]] as const).map(([t, label]) => (
+          <button key={t} className={tab === t ? "active" : ""} onClick={() => setTab(t)}>{label}</button>
         ))}
       </div>
+
+      {tab === "bills" && <SupplierBills />}
 
       {tab === "requisitions" && (
         <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 14 }}>
