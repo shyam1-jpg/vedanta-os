@@ -13,6 +13,7 @@ import { buildOrganogram } from "../../../domains/staff/organogram.ts";
 import { hoursFromPunches, canPunch, type Punch } from "../../../domains/staff/hours.ts";
 import { splitTips, type TipMethod } from "../../../domains/staff/tips.ts";
 import { payrollRow, shiftsFromPunches, weekStartMonday, addDaysIso } from "../../../domains/staff/payroll.ts";
+import { shiftHours } from "../../../domains/finance/back-office.ts";
 import { parseDutySlot } from "../../../domains/ops/night.ts";
 
 const weekStart = (iso: string) => {
@@ -257,7 +258,12 @@ export default async function workforce(f: FastifyInstance) {
     const items = [];
     for (const u of users) {
       const p = await punches(a.propertyId, u.id, from, to);
-      const hours = hoursFromPunches(p);
+      const now = new Date();
+      const shifts = shiftsFromPunches(p).map(s => {
+        const timed = shiftHours(s.inAt, s.outAt, now);
+        return { in_at: s.inAt.toISOString(), out_at: s.outAt ? s.outAt.toISOString() : null, hours: timed.hours, open: timed.open, capped: timed.capped };
+      });
+      const hours = Math.round(shifts.reduce((n, s) => n + s.hours, 0) * 100) / 100;
       const rate = u.hourly_rate != null ? Number(u.hourly_rate) : null;
       const contracted = u.contracted_hours != null ? Number(u.contracted_hours) : null;
       const row = payrollRow({ hours, hourlyRate: rate, contractedHours: contracted });
@@ -273,11 +279,7 @@ export default async function workforce(f: FastifyInstance) {
         pay: a.perms.has("hr.read") ? row.pay : null,
         variance: row.variance,
         last: p.at(-1)?.kind ?? null,
-        shifts: shiftsFromPunches(p).map(s => ({
-          in_at: s.inAt.toISOString(),
-          out_at: s.outAt ? s.outAt.toISOString() : null,
-          hours: s.hours,
-        })),
+        shifts,
         duty: duty.filter((d: { user_id: string }) => d.user_id === u.id).map((d: any) => ({
           on_date: d.on_date, slot: d.slot, kind: d.kind,
         })),
@@ -287,7 +289,7 @@ export default async function workforce(f: FastifyInstance) {
       from,
       to,
       kiteline: "https://kiteline.uk",
-      note: "Hours come from Vedanta clock in and out. Kiteline keeps its own rota and PINs.",
+      note: "Clock in and clock out feed labour cost. An open clock-in counts at most 16 hours. This is not legal payroll.",
       items,
     };
   });
@@ -298,16 +300,17 @@ export default async function workforce(f: FastifyInstance) {
     const from = weekStartMonday(today);
     const to = today;
     const p = await punches(a.propertyId, a.userId, from, to);
+    const now = new Date();
+    const shifts = shiftsFromPunches(p).map(s => {
+      const timed = shiftHours(s.inAt, s.outAt, now);
+      return { in_at: s.inAt.toISOString(), out_at: s.outAt ? s.outAt.toISOString() : null, hours: timed.hours, open: timed.open, capped: timed.capped };
+    });
     return {
       from,
       to,
-      hours: hoursFromPunches(p),
+      hours: Math.round(shifts.reduce((n, s) => n + s.hours, 0) * 100) / 100,
       last: await lastKind(a.propertyId, a.userId),
-      shifts: shiftsFromPunches(p).map(s => ({
-        in_at: s.inAt.toISOString(),
-        out_at: s.outAt ? s.outAt.toISOString() : null,
-        hours: s.hours,
-      })),
+      shifts,
     };
   });
   f.post("/v1/workforce/contracts", async (req: any, reply) => {

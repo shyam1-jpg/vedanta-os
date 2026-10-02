@@ -3,7 +3,7 @@ import { useEffect, useState } from "react";
 import { api, ApiError } from "@/lib/api";
 import { useStore } from "@/lib/store";
 
-type Shift = { in_at: string; out_at: string | null; hours: number };
+type Shift = { in_at: string; out_at: string | null; hours: number; open?: boolean; capped?: boolean };
 type Duty = { on_date: string; slot: string; kind: string };
 type Row = {
   id: string; name: string; role: string; department: string | null; designation: string | null;
@@ -48,7 +48,7 @@ export default function Payroll() {
       <div className="topbar">
         <div>
           <h1>Payroll</h1>
-          <p>Hours start when someone clocks in and stop when they clock out. Pay is house-only. Kiteline still holds the published rota and PIN clock — this page uses the Vedanta clock and the house duty board.</p>
+          <p>Clock in and clock out feed labour cost on the finance page. An open clock-in counts at most 16 hours. This is not legal payroll. Guests do not pay for food.</p>
         </div>
         <div style={{ display: "flex", gap: 8 }}>
           <button className="btn primary" onClick={() => punch("IN")}>Clock in</button>
@@ -77,7 +77,7 @@ export default function Payroll() {
               {r.shifts.length > 0 && (
                 <ul className="house-list">
                   {r.shifts.map((s, i) => (
-                    <li key={i}><span>{fmtTime(s.in_at)} → {s.out_at ? fmtTime(s.out_at) : "still on"}</span><span className="m">{s.hours} hrs</span></li>
+                    <li key={i}><span>{fmtTime(s.in_at)} → {s.out_at ? fmtTime(s.out_at) : "still on"}{s.capped ? " · capped at 16 hours" : ""}</span><span className="m">{s.hours} hrs</span></li>
                   ))}
                 </ul>
               )}

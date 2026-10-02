@@ -3,14 +3,20 @@ import assert from "node:assert/strict";
 import {
   DEFAULT_SUPPLIERS,
   HOUSE_DEPARTMENTS,
+  billActual,
   budgetForRange,
   buildMoneyView,
+  deliveryScores,
   departmentForStaff,
+  enteredOrBlank,
+  foodBillBreaksHouse,
   guestsOnDate,
   labourFromPunches,
   periodBounds,
   planGuestCount,
   requiredFor,
+  resolveSupplier,
+  retreatIncomeNote,
   shiftHours,
   sortSuppliers,
 } from "./back-office.ts";
@@ -64,6 +70,7 @@ describe("staffing plan", () => {
     assert.equal(planGuestCount(plans, 25), 30);
     assert.equal(planGuestCount(plans, 40), 30);
     assert.deepEqual(requiredFor(plans, 25, "KITCHEN"), { planFor: 30, required: 4 });
+    assert.deepEqual(requiredFor([], 25, "KITCHEN"), { planFor: null, required: null });
   });
 });
 
@@ -175,6 +182,45 @@ describe("buildMoneyView", () => {
     assert.equal(empty.shortOfBreakEven, 10);
     assert.equal(empty.series.length, 1);
     assert.equal(empty.series[0].moneyOut, 10);
+  });
+
+  it("counts a bill once and adds a signed-out float once", () => {
+    const withFloat = buildMoneyView({
+      anchor: day,
+      period: "day",
+      income: [],
+      expenses: [{ date: day, amount: 10, department: "KITCHEN", kind: "food" }],
+      labour: [],
+      stays: [],
+      budgets: [],
+      petty: [{ date: day, amount: 4 }],
+    });
+    assert.equal(withFloat.supplierSpend, 10);
+    assert.equal(withFloat.pettySpent, 4);
+    assert.equal(withFloat.moneyOut, 14);
+    assert.equal(billActual(10), 10);
+    assert.equal(enteredOrBlank(false, 0), null);
+    assert.equal(enteredOrBlank(true, 0), 0);
+  });
+});
+
+describe("supplier bills and retreat income", () => {
+  it("accepts a named shop or a local shop and refuses an invented chain", () => {
+    assert.deepEqual(resolveSupplier({ code: "SUMA" }), { ok: true, code: "SUMA", name: "Suma", regular: true, local: false });
+    const local = resolveSupplier({ code: "LOCAL", localName: "Lincoln wholefoods" });
+    assert.equal(local.ok, true);
+    if (local.ok) assert.equal(local.local, true);
+    assert.equal(resolveSupplier({ code: "WAITROSE" }).ok, false);
+    assert.equal(resolveSupplier({ code: "LOCAL", localName: "Tesco" }).ok, false);
+  });
+  it("keeps scores off the bill until after delivery", () => {
+    assert.equal(deliveryScores({ delivered: false, quality: 4, price: null, reliability: null }).ok, false);
+    assert.deepEqual(deliveryScores({ delivered: true, quality: 4, price: null, reliability: 5 }), { ok: true, quality: 4, price: null, reliability: 5 });
+    assert.equal(foodBillBreaksHouse("onion bhaji").toLowerCase(), "onion");
+    assert.equal(foodBillBreaksHouse("milk"), "milk");
+    assert.equal(foodBillBreaksHouse("oats"), null);
+    assert.match(retreatIncomeNote("lunch tickets") ?? "", /buffet/i);
+    assert.equal(retreatIncomeNote("Retreat balance"), null);
   });
 });
 

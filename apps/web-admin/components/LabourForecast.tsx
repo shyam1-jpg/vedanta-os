@@ -1,6 +1,7 @@
 "use client";
 import { useEffect, useState } from "react";
 import { api } from "@/lib/api";
+import StaffingRules from "@/components/StaffingRules";
 
 type RotaRow = { shift_date: string; department: string; shifts: number; scheduled_hours: number };
 type OccRow = { arrival_date: string; departure_date: string; guests: number };
@@ -65,6 +66,8 @@ export default function LabourForecast() {
           <button className="btn" onClick={() => setWeekOffset(0)} style={{ color: "var(--ink-2)", fontSize: 12 }}>This week</button>
         </div>
       </div>
+
+      <StaffingRules />
 
       {expiring.length > 0 && (
         <div className="note" style={{ marginBottom: 20, background: "#fff3cd", borderColor: "#ffc107" }}>

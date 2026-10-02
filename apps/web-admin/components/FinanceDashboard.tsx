@@ -1,6 +1,7 @@
 "use client";
 import { useEffect, useState } from "react";
 import { api } from "@/lib/api";
+import HouseMoney from "@/components/HouseMoney";
 
 type KPI = { this_month: string; revenue_received: number; revenue_agreed: number; balance_outstanding: number; occupancy_pct: number | null; adr: number | null; bookings: number; guest_nights: number; py_revenue: number; py_occupancy: number | null; ytd_purchasing_spend: number };
 type MonthRow = { month: string; revenue_received: number; revenue_agreed: number; balance_outstanding: number; occupancy_pct: number | null; adr: number | null; bookings: number; guest_nights: number; purchasing: Record<string, { spend: number }>; budget: Record<string, number> };
@@ -14,7 +15,7 @@ export default function FinanceDashboard() {
   const [kpi, setKpi] = useState<KPI | null>(null);
   const [summary, setSummary] = useState<Summary | null>(null);
   const [year, setYear] = useState(new Date().getFullYear());
-  const [tab, setTab] = useState<"revenue" | "purchasing" | "sustainability">("revenue");
+  const [tab, setTab] = useState<"house" | "revenue" | "purchasing" | "sustainability">("house");
   const [sustainability, setSustainability] = useState<{ reading_date: string; category: string; value: number }[]>([]);
 
   useEffect(() => {
@@ -77,10 +78,12 @@ export default function FinanceDashboard() {
 
       {/* Tabs */}
       <div className="seg" style={{ marginBottom: 16 }}>
-        {(["revenue", "purchasing", "sustainability"] as const).map(t => (
-          <button key={t} className={tab === t ? "active" : ""} onClick={() => setTab(t)}>{t.charAt(0).toUpperCase() + t.slice(1)}</button>
+        {([["house", "House money"], ["revenue", "Revenue"], ["purchasing", "Purchasing"], ["sustainability", "Sustainability"]] as const).map(([t, label]) => (
+          <button key={t} className={tab === t ? "active" : ""} onClick={() => setTab(t)}>{label}</button>
         ))}
       </div>
+
+      {tab === "house" && <HouseMoney />}
 
       {tab === "revenue" && summary && (
         <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 14 }}>
