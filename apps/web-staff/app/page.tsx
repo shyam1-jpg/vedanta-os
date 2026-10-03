@@ -4,6 +4,7 @@ import { useEffect, useState } from "react";
 import { API,api,tok } from "../lib/api";
 import StaffTaskDetail from "../components/StaffTaskDetail";
 import StaffAssetViewer from "../components/StaffAssetViewer";
+import { staffTrainingSections } from "../../../domains/staff/training.ts";
 
 type Me = { name: string; email: string; role: string; role_name?: string; property_name?: string | null; property_kicker?: string | null };
 type Prop = { name: string; kicker: string };
@@ -15,7 +16,7 @@ export default function Pocket() {
   const [providers, setProviders] = useState<{ microsoft: boolean; email: boolean; dev: boolean; email_code: boolean } | null>(null);
   const [code, setCode] = useState(""); const [codeSent, setCodeSent] = useState(false); const [busy, setBusy] = useState(false); const [message, setMessage] = useState("");
   const [err, setErr] = useState<string | null>(null);
-  const [tab, setTab] = useState<"clock" | "leave" | "duty" | "sop" | "log" | "desk" | "night" | "manual" | "tasks" | "assets">("clock");
+  const [tab, setTab] = useState<"clock" | "leave" | "duty" | "sop" | "log" | "desk" | "night" | "manual" | "training" | "tasks" | "assets">("clock");
   const [desk, setDesk] = useState<{
     today: { weekday: string; title: string; method: string; ingredients: { name: string; qty: string }[] };
     tomorrow: { weekday: string; title: string; method: string; ingredients: { name: string; qty: string }[] };
@@ -35,7 +36,9 @@ export default function Pocket() {
   const [form, setForm] = useState({ kind: "HOLIDAY", starts_on: "", ends_on: "", note: "" });
   const [sops, setSops] = useState<{ id: string; title: string; body: string; read_at: string | null }[]>([]);
   const [duty, setDuty] = useState<{ id: string; on_date: string; slot: string; kind: string; note: string | null }[]>([]);
-  const [manuals, setManuals] = useState<{ slug: string; title: string; department_label: string; kind_label: string; summary: string; body: string; steps: { title: string; look: string; act: string }[]; diagram: { title: string; caption: string }[] }[]>([]);
+  const [manuals, setManuals] = useState<{ slug: string; title: string; department: string; department_label: string; kind: string; kind_label: string; summary: string; body: string; sort_order?: number; steps: { title: string; look: string; act: string }[]; diagram: { title: string; caption: string }[] }[]>([]);
+  const [manualsReady, setManualsReady] = useState(false);
+  const [manualsError, setManualsError] = useState(false);
   const [manualSlug, setManualSlug] = useState("app-how-to-use");
   const [nightNote, setNightNote] = useState("");
   const [tasks, setTasks] = useState<{
@@ -57,7 +60,7 @@ export default function Pocket() {
     try { setOps(await api("/v1/ops/board")); } catch { setOps(null); }
     try { setDesk(await api("/v1/service/front-desk")); } catch { setDesk(null); }
     try { setPay(await api("/staff/payroll")); } catch { setPay(null); }
-    try { setManuals((await api<{ items: typeof manuals }>("/v1/manuals")).items); } catch { setManuals([]); }
+    try { setManuals((await api<{ items: typeof manuals }>("/v1/manuals")).items); setManualsError(false); } catch { setManuals([]); setManualsError(true); } finally { setManualsReady(true); }
     try { setTasks(await api("/v1/ops/tasks?status=open&limit=100")); } catch { setTasks(null); }
   };
   useEffect(() => {
@@ -150,6 +153,7 @@ export default function Pocket() {
           <button className={tab === "desk" ? "on" : ""} onClick={() => setTab("desk")}>Front desk</button>
           <button className={tab === "night" ? "on" : ""} onClick={() => setTab("night")}>Night</button>
           <button className={tab === "manual" ? "on" : ""} onClick={() => setTab("manual")}>Manual</button>
+          <button className={tab === "training" ? "on" : ""} onClick={() => setTab("training")}>Training</button>
           <button className={tab === "sop" ? "on" : ""} onClick={() => setTab("sop")}>SOP</button>
         </div>
         {tab === "clock" && (
@@ -299,6 +303,27 @@ export default function Pocket() {
                     <h2>{s.title}</h2>
                     <p><b>Look.</b> {s.look}</p>
                     <p><b>Act.</b> {s.act}</p>
+                  </div>
+                ))}
+              </div>
+            ))}
+          </div>
+        )}
+        {tab === "training" && (
+          <div>
+            <p className="m">One section for each department. A lesson is a chapter already in the manual.</p>
+            {!manualsReady && <p className="m">Opening staff training…</p>}
+            {manualsReady && manualsError && <p className="note">Could not open training. Try again.</p>}
+            {manualsReady && !manualsError && staffTrainingSections(manuals).map(section => (
+              <div className="card" key={section.code}>
+                <h2>{section.name}</h2>
+                {section.empty && <p className="m">{section.empty}</p>}
+                {section.items.map(item => (
+                  <div key={item.slug} className="row" style={{ display: "block" }}>
+                    <b>{item.title}</b>
+                    <div className="m">{item.kind_label}</div>
+                    <div>{item.summary}</div>
+                    <button className="btn" onClick={() => { setManualSlug(item.slug); setTab("manual"); }}>Open in the manual</button>
                   </div>
                 ))}
               </div>
