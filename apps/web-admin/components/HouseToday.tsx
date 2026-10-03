@@ -21,6 +21,9 @@ type Estate = {
   timeline?: { time: string; label: string }[];
 };
 
+type TodoTask = { id: string; title: string; department: string; department_label: string; location_label: string | null; room_label: string | null; status: string; priority: string; overdue: boolean; due_at: string | null; assigned_name: string | null };
+const DEPTS: [string, string][] = [["ALL", "Everyone"], ["FRONT", "Reception"], ["RESTAURANT", "Restaurant"], ["KITCHEN", "Kitchen"], ["HK", "Housekeeping"], ["MAINT", "Maintenance"], ["GROUNDS", "Garden"]];
+
 export default function HouseToday() {
   const { user, ready, can } = useStore();
   const [e, setE] = useState<Estate | null>(null);
@@ -28,11 +31,25 @@ export default function HouseToday() {
   const [err, setErr] = useState<string | null>(null);
   const [payments, setPayments] = useState<{ total_due: number; total_due_fmt: string; overdue: number } | null>(null);
   const [aiBriefing, setAiBriefing] = useState<string | null>(null);
+  const [todo, setTodo] = useState<TodoTask[]>([]);
+  const [dept, setDept] = useState("ALL");
+  const [simple, setSimple] = useState(false);
+  useEffect(() => { try { setSimple(localStorage.getItem("vedanta.today.simple") === "1"); } catch {} }, []);
+  const setView = (v: boolean) => { setSimple(v); try { localStorage.setItem("vedanta.today.simple", v ? "1" : "0"); } catch {} };
+  const loadTodo = () => api<{ items: TodoTask[] }>("/v1/ops/tasks?status=open&limit=60").then(r => setTodo(r.items ?? [])).catch(() => {});
+  const finish = async (t: TodoTask) => {
+    try {
+      if (!["in_progress", "paused", "waiting", "blocked", "awaiting_approval"].includes(t.status)) await api(`/v1/ops/tasks/${t.id}/status`, { method: "POST", body: JSON.stringify({ status: "in_progress" }) });
+      await api(`/v1/ops/tasks/${t.id}/status`, { method: "POST", body: JSON.stringify({ status: "completed" }) });
+    } catch { /* the task page explains why if a manager step is needed */ }
+    loadTodo();
+  };
 
   const load = () => {
     setErr(null);
     api<Estate>("/v1/estate").then(setE).catch(() => setErr("The house ledger could not be opened. Check the API is running."));
     api<{ items: unknown[] }>("/v1/guest-enquiries").then(r => setBook(r.items.length)).catch(() => {});
+    loadTodo();
     api<{ total_due: number; total_due_fmt: string; overdue: number }>("/v1/estate/payments-due").then(setPayments).catch(() => {});
     // Load AI morning briefing silently — only if configured
     api<{ briefing: string }>("/v1/duty-manager/morning-briefing").then(r => setAiBriefing(r.briefing)).catch(() => {});
@@ -57,6 +74,7 @@ export default function HouseToday() {
   const p = e.pulse;
   const nowHm = new Date().toLocaleTimeString("en-GB", { timeZone: "Europe/London", hour: "2-digit", minute: "2-digit", hour12: false });
   const tasks = p.open_tasks ?? 0;
+  const shownTodo = todo.filter(t => dept === "ALL" || t.department === dept);
   const first = (user?.name ?? "").split(" ")[0];
   const hour = Number(nowHm.slice(0, 2));
   const hello = hour < 12 ? "Good morning" : hour < 18 ? "Good afternoon" : "Good evening";
@@ -104,6 +122,13 @@ export default function HouseToday() {
         </div>
       </section>
 
+      <div className="ht-viewbar">
+        <div className="ht-seg" role="group" aria-label="View">
+          <button type="button" aria-pressed={simple} className={simple ? "on" : ""} onClick={() => setView(true)}>Simple</button>
+          <button type="button" aria-pressed={!simple} className={!simple ? "on" : ""} onClick={() => setView(false)}>Full view</button>
+        </div>
+      </div>
+
       {(p.critical_issues ?? 0) > 0 && (
         <Link href="/maintenance/" className="ht-alert">{plural(p.critical_issues ?? 0, "critical issue needs", "critical issues need")} a manager now →</Link>
       )}
@@ -119,6 +144,23 @@ export default function HouseToday() {
           <p>{aiBriefing.slice(0, 600)}{aiBriefing.length > 600 ? "…" : ""}</p>
         </section>
       )}
+
+      <section className="ht-card ht-todo">
+        <div className="ht-todo-head"><h2>To do today</h2><span>{shownTodo.length} open{dept !== "ALL" ? ` · ${DEPTS.find(d => d[0] === dept)?.[1]}` : ""}</span></div>
+        <div className="ht-tabs" role="tablist" aria-label="Department">
+          {DEPTS.map(([code, label]) => <button key={code} type="button" role="tab" aria-selected={dept === code} className={dept === code ? "on" : ""} onClick={() => setDept(code)}>{label}</button>)}
+        </div>
+        {shownTodo.length === 0 ? <p className="ht-muted">Nothing open here. Well done.</p> : (
+          <ul className="ht-tasks">{shownTodo.slice(0, 8).map(t => (
+            <li key={t.id} className={t.overdue || t.priority === "urgent" ? "hot" : ""}>
+              <input type="checkbox" aria-label={`Mark done: ${t.title}`} onChange={() => finish(t)} />
+              <span><b>{t.title}</b><small>{t.department_label}{t.room_label ? ` · Room ${t.room_label}` : t.location_label ? ` · ${t.location_label}` : ""}{t.assigned_name ? ` · ${t.assigned_name}` : ""}</small></span>
+              <em>{t.overdue ? "Overdue" : t.due_at ? new Date(t.due_at).toLocaleTimeString("en-GB", { hour: "2-digit", minute: "2-digit" }) : t.priority === "urgent" ? "Urgent" : ""}</em>
+            </li>
+          ))}</ul>
+        )}
+        {shownTodo.length > 8 && <Link className="ht-link" href="/tasks/">See all {shownTodo.length} →</Link>}
+      </section>
 
       <div className="ht-grid">
         <section className="ht-card">
@@ -154,6 +196,7 @@ export default function HouseToday() {
         </section>
       </div>
 
+      {!simple && (<>
       <h2 className="ht-h2">Needs attention</h2>
       <div className="ht-attn">
         {attention.map(a => (
@@ -171,6 +214,7 @@ export default function HouseToday() {
         ))}
       </div>
       <OpsBoard compact />
+      </>)}
     </div>
   );
 }
