@@ -39,7 +39,8 @@ export default function HouseToday() {
   const loadTodo = () => api<{ items: TodoTask[] }>("/v1/ops/tasks?status=open&limit=60").then(r => setTodo(r.items ?? [])).catch(() => {});
   const finish = async (t: TodoTask) => {
     try {
-      if (!["in_progress", "paused", "waiting", "blocked", "awaiting_approval"].includes(t.status)) await api(`/v1/ops/tasks/${t.id}/status`, { method: "POST", body: JSON.stringify({ status: "in_progress" }) });
+      // Paused, waiting and blocked cannot jump straight to completed.
+      if (!["in_progress", "awaiting_approval"].includes(t.status)) await api(`/v1/ops/tasks/${t.id}/status`, { method: "POST", body: JSON.stringify({ status: "in_progress" }) });
       await api(`/v1/ops/tasks/${t.id}/status`, { method: "POST", body: JSON.stringify({ status: "completed" }) });
     } catch { /* the task page explains why if a manager step is needed */ }
     loadTodo();

@@ -791,7 +791,7 @@ input, select, textarea { font: inherit; }
 .arrive-card .btn.primary { border-radius: 14px; min-height: 52px; }
 .arrive-card p a { color: var(--lake); }
 @media (max-width: 900px) {
-  .arrive { min-height: 100dvh; }
+  .arrive { min-height: 100dvh; grid-template-columns: 1fr; }
   .arrive-hero { min-height: 220px; padding: 32px 24px; }
   .arrive-hero::after { inset: 14px; }
   .arrive-hero h1 { font-size: 40px; line-height: 1; overflow-wrap: anywhere; }
