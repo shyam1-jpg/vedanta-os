@@ -20,6 +20,28 @@ export type SafetyPart = {
   detail: string;
 };
 
+/** Existing staff page where a real record for this line can be saved. */
+export const OPEN_HREF = {
+  rooms: "/rooms/",
+  meals: "/kitchen/",
+  rota: "/hr/",
+  suppliers: "/purchasing/",
+  safety: "/emergency/",
+  incident_note: "/emergency/",
+  pre_arrival: "/emergency/",
+  risk_assessment: "/emergency/",
+  first_aid: "/emergency/",
+  contact_tree: "/emergency/",
+} as const;
+
+export type OpenKey = keyof typeof OPEN_HREF;
+
+/** Open lines go to the page that can close them. A done line has no control. */
+export function openTarget(state: LineState, key: string): string | null {
+  if (state !== "open" || !Object.prototype.hasOwnProperty.call(OPEN_HREF, key)) return null;
+  return OPEN_HREF[key as OpenKey];
+}
+
 const PLACED = new Set([
   "ordered",
   "sent",

@@ -1,6 +1,7 @@
 "use client";
 import { useEffect, useState } from "react";
 import { api, ApiError } from "@/lib/api";
+import { OPEN_HREF, openTarget } from "../../../domains/retreat/pre-retreat.ts";
 
 type Retreat = {
   id: string;
@@ -24,6 +25,12 @@ type Detail = {
 };
 
 const fmt = (iso: string) => new Date(iso + "T12:00:00Z").toLocaleDateString("en-GB", { day: "numeric", month: "short", year: "numeric", timeZone: "UTC" });
+
+function LineControl({ state, lineKey, label }: { state: "open" | "done"; lineKey: string; label: string }) {
+  const href = openTarget(state, lineKey);
+  if (!href) return <span>Done</span>;
+  return <a className="linkbtn" href={href} style={{ fontSize: "inherit" }} aria-label={`Open ${label}`}>Open</a>;
+}
 
 export default function PreRetreat() {
   const [items, setItems] = useState<Retreat[] | null>(null);
@@ -87,28 +94,28 @@ export default function PreRetreat() {
             <div key={line.key} style={{ padding: "12px 0", borderTop: "1px solid var(--line)" }}>
               <div style={{ display: "flex", justifyContent: "space-between", gap: 12 }}>
                 <strong>{line.label}</strong>
-                <span>{line.state === "done" ? "Done" : "Open"}</span>
+                <LineControl state={line.state} lineKey={line.key} label={line.label} />
               </div>
               <p className="m" style={{ margin: "4px 0 0" }}>{line.detail}</p>
               {line.key === "safety" && detail.safety_parts.map(part => (
                 <div key={part.key} style={{ display: "flex", justifyContent: "space-between", gap: 12, marginTop: 8, paddingLeft: 12 }}>
                   <span>{part.label}<span className="m"> · {part.detail}</span></span>
-                  <span>{part.state === "done" ? "Done" : "Open"}</span>
+                  <LineControl state={part.state} lineKey={part.key} label={part.label} />
                 </div>
               ))}
             </div>
           ))}
           <p className="m">Records are read from the room board, the programme menu, the rota, purchases already marked placed, and safety notes saved for this retreat.</p>
           <p className="m">
-            <a href="/rooms/">Room board</a>
+            <a href={OPEN_HREF.rooms}>Room board</a>
             {" · "}
-            <a href="/kitchen/">Kitchen</a>
+            <a href={OPEN_HREF.meals}>Kitchen</a>
             {" · "}
-            <a href="/hr/">Rota</a>
+            <a href={OPEN_HREF.rota}>Rota</a>
             {" · "}
-            <a href="/purchasing/">Purchasing</a>
+            <a href={OPEN_HREF.suppliers}>Purchasing</a>
             {" · "}
-            <a href="/emergency/">Emergency and compliance</a>
+            <a href={OPEN_HREF.safety}>Emergency and compliance</a>
           </p>
         </section>
       )}
