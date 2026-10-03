@@ -1,7 +1,8 @@
 "use client";
 import { useEffect, useState, type ReactNode } from "react";
 import { usePathname, useRouter } from "next/navigation";
-import Nav from "@/components/Nav";
+import Nav, { PAGE_LABELS } from "@/components/Nav";
+import { PageMark } from "@/components/icons";
 import PwaRegister from "@/components/PwaRegister";
 import { StoreProvider, useStore } from "@/lib/store";
 import { token } from "@/lib/api";
@@ -37,5 +38,5 @@ function HouseShell({ children }: { children: ReactNode }) {
   }, [hasToken, ready, user, router, p]);
 
   if (hasToken === false || (ready && !user) || !user) return null;
-  return <div className="shell"><Nav /><main className="main">{children}</main><PwaRegister /></div>;
+  return <div className="shell"><Nav /><main className="main"><PageMark labels={PAGE_LABELS} />{children}</main><PwaRegister /></div>;
 }

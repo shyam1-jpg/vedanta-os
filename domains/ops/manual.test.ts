@@ -44,4 +44,15 @@ describe("house manuals", () => {
     assert.equal(parseManualStatus("live"), "live");
     assert.ok(MANUAL_KINDS.includes("APP"));
   });
+  it("includes the advanced house SOPs with Look / Act on every step", () => {
+    for (const slug of ["app-report-a-problem", "front-group-arrival", "front-departure-billing", "hk-turnaround",
+      "kitchen-allergen-plate", "house-service-recovery", "house-fire-evacuation", "house-medical-emergency"]) {
+      const ch = defaultManual(slug);
+      assert.ok(ch, slug);
+      assert.ok(ch!.steps.length >= 4, slug);
+      assert.ok(ch!.steps.every(st => st.look && st.act), slug);
+    }
+    assert.match(defaultManual("house-fire-evacuation")!.body, /999/);
+    assert.match(defaultManual("kitchen-allergen-plate")!.body, /may contain/i);
+  });
 });
