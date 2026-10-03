@@ -2,6 +2,7 @@
 import { useEffect, useState } from "react";
 import { api, ApiError } from "@/lib/api";
 import { useStore } from "@/lib/store";
+import ExternalConnections from "@/components/ExternalConnections";
 
 type Shift = { in_at: string; out_at: string | null; hours: number; open?: boolean; capped?: boolean };
 type Duty = { on_date: string; slot: string; kind: string };
@@ -55,6 +56,7 @@ export default function Payroll() {
           <button className="btn" onClick={() => punch("OUT")}>Clock out</button>
         </div>
       </div>
+      <ExternalConnections />
       {mine && <div className="note">You have {mine.hours} hours this week{mine.last === "IN" ? " and you are on the clock." : "."}</div>}
       <div className="seg" style={{ marginBottom: 16 }}>
         {DEPTS.map(([c, n]) => <button key={c || "all"} className={dept === c ? "on" : ""} onClick={() => setDept(c)}>{n}</button>)}

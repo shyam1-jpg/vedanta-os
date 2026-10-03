@@ -347,6 +347,17 @@ td.mark-dep { box-shadow: inset 3px 0 0 var(--marigold); }
 .manual-dept b { display: block; font-family: var(--serif); font-size: 18px; font-weight: 500; }
 .manual-dept span { color: var(--ink-2); font-size: 12px; }
 .manual-dept.on { border-color: var(--forest); background: #e7e9df; box-shadow: inset 0 3px 0 var(--gold); }
+.training-section { margin-bottom: 16px; }
+.training-section h2 { margin-bottom: 8px; }
+.training-empty { color: var(--ink-2); margin: 0; }
+.training-item { border-top: 1px solid var(--line); margin-top: 14px; padding-top: 14px; }
+.training-item h3 { font-size: 22px; margin-bottom: 4px; }
+.training-item .btn { margin-top: 8px; }
+.connections { margin: 8px 0 24px; }
+.connect-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 12px; margin-top: 14px; }
+.connect-card { background: var(--stone); border: 1px solid var(--line); padding: 16px; }
+.connect-card h3 { font-size: 22px; margin-bottom: 4px; }
+.connect-status { margin: 8px 0; font-size: 12px; letter-spacing: 0.08em; text-transform: uppercase; color: var(--brick); }
 .manual-layout { grid-template-columns: minmax(220px, 280px) 1fr; }
 .manual-toc { margin: 12px 0; }
 .manual-toc-h { font-size: 11px; letter-spacing: 0.14em; text-transform: uppercase; color: var(--gold); margin-bottom: 6px; }

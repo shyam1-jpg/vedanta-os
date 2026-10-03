@@ -14,6 +14,7 @@ const HOUSE_LINKS: { href: string; label: string }[] = [
   { href: "/night/", label: "Night porter" },
   { href: "/service/", label: "Department boards" },
   { href: "/manual/", label: "Manual" },
+  { href: "/training/", label: "Training" },
   { href: "/housekeeping/", label: "Housekeeping" },
   { href: "/maintenance/", label: "Maintenance" },
   { href: "/kitchen/", label: "Kitchen" },

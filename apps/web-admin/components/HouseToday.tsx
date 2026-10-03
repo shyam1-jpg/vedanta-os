@@ -73,6 +73,7 @@ export default function HouseToday() {
     { href: "/groups/", title: "New booking", sub: "For a group or one person" },
     { href: "/maintenance/", title: "Report a problem", sub: "In a room, the kitchen or garden" },
     { href: "/rooms/", title: "Today\u2019s rooms", sub: "See who is in each room" },
+    { href: "/training/", title: "Staff training", sub: "Each department, from the house book" },
   ];
   const attention = [
     { title: plural(tasks, "open job", "open jobs"), body: "Give each job an owner and see it through.", href: "/tasks/", action: "Review jobs" },

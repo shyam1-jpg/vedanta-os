@@ -2,6 +2,7 @@
 import { useEffect, useState } from "react";
 import { api } from "@/lib/api";
 import SupplierBills from "@/components/SupplierBills";
+import ExternalConnections from "@/components/ExternalConnections";
 
 type Supplier = { id: string; name: string; code: string; contact_email: string | null; payment_terms: number };
 type Requisition = { id: string; department: string; title: string; urgency: string; status: string; required_by: string | null; requested_by_name: string; item_count: number };
@@ -43,6 +44,8 @@ export default function PurchasingScreen() {
           }}>+ Requisition</button>
         </div>
       </div>
+
+      <ExternalConnections />
 
       {/* Summary strip */}
       <div style={{ display: "grid", gridTemplateColumns: "repeat(4, 1fr)", gap: 12, marginBottom: 24 }}>
