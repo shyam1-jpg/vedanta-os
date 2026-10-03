@@ -26,7 +26,7 @@ describe("staff training", () => {
     const byCode = Object.fromEntries(sections.map(s => [s.code, s]));
     assert.deepEqual(
       byCode.KITCHEN.items.map(item => item.slug),
-      ["kitchen-brigade", "kitchen-safety", "kitchen-open-close"],
+      ["kitchen-brigade", "kitchen-safety", "kitchen-allergen-plate", "kitchen-open-close"],
     );
     assert.equal(byCode.KITCHEN.items[0].summary, HOUSE_MANUALS.find(c => c.slug === "kitchen-brigade")!.summary);
     assert.equal(byCode.HK.items[0].slug, "hk-room");
