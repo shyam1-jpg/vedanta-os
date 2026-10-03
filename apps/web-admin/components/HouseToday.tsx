@@ -57,108 +57,119 @@ export default function HouseToday() {
   const p = e.pulse;
   const nowHm = new Date().toLocaleTimeString("en-GB", { timeZone: "Europe/London", hour: "2-digit", minute: "2-digit", hour12: false });
   const tasks = p.open_tasks ?? 0;
+  const first = (user?.name ?? "").split(" ")[0];
+  const hour = Number(nowHm.slice(0, 2));
+  const hello = hour < 12 ? "Good morning" : hour < 18 ? "Good afternoon" : "Good evening";
+  const plural = (n: number, one: string, many: string) => `${n} ${n === 1 ? one : many}`;
+  const headline = p.arriving && p.departing
+    ? `${plural(p.departing, "group leaves", "groups leave")}, ${plural(p.arriving, "arrives", "arrive")}.`
+    : p.arriving ? `${plural(p.arriving, "group arrives", "groups arrive")} today.`
+    : p.departing ? `${plural(p.departing, "group leaves", "groups leave")} today.`
+    : "A quiet day at the house.";
+  // House rule from the kitchen: per 35 guests, 1 chef + 1 assistant + 1 porter; restaurant 1–2.
+  const teams = p.dinner > 0 ? Math.ceil(p.dinner / 35) : 0;
+  const quick = [
+    { href: "/front/", title: "Check in a guest", sub: "Find the booking, give out the key" },
+    { href: "/groups/", title: "New booking", sub: "For a group or one person" },
+    { href: "/maintenance/", title: "Report a problem", sub: "In a room, the kitchen or garden" },
+    { href: "/rooms/", title: "Today\u2019s rooms", sub: "See who is in each room" },
+  ];
   const attention = [
-    { title: "House log & handover", body: "Record guest requests, decisions and unfinished work for the next shift.", href: "/ops/", action: "Open house log" },
-    { title: `${tasks} open ${tasks === 1 ? "task" : "tasks"}`, body: "Give each job an owner and follow it through to completion.", href: "/tasks/", action: "Review tasks" },
-    { title: `${p.rooms_dirty ?? "—"} rooms need a turn`, body: "Prioritise arrival rooms, then inspect before marking them ready.", href: "/housekeeping/", action: "Open housekeeping" },
-    { title: "Procedures & cover", body: "See the steps for a department or decide what to protect if someone is absent.", href: "/manual/", action: "Open manual" },
+    { title: plural(tasks, "open job", "open jobs"), body: "Give each job an owner and see it through.", href: "/tasks/", action: "Review jobs" },
+    { title: `${p.rooms_dirty ?? "—"} rooms to clean`, body: "Arrival rooms first, then check before marking ready.", href: "/housekeeping/", action: "Open housekeeping" },
+    { title: "House log & handover", body: "Guest requests, decisions and unfinished work for the next shift.", href: "/ops/", action: "Open house log" },
+    { title: "Procedures & cover", body: "Steps for each department, and what to do if someone is off.", href: "/manual/", action: "Open manual" },
   ];
-  const metrics: { label: string; value: string; sub: string; danger?: boolean }[] = [
-    { label: "Occupancy", value: `${p.rooms_tonight} / ${p.guest_rooms}`, sub: "rooms tonight" },
-    { label: "Arrivals", value: String(p.arriving), sub: "groups due today" },
-    { label: "Departures", value: String(p.departing), sub: "leaving today" },
-    { label: "In-house guests", value: p.in_house_guests == null ? "—" : String(p.in_house_guests), sub: "from the book" },
-    { label: "Rooms ready", value: p.rooms_ready == null ? "—" : String(p.rooms_ready), sub: "clean or inspected" },
-    { label: "Rooms dirty", value: p.rooms_dirty == null ? "—" : String(p.rooms_dirty), sub: "need a turn" },
-    { label: "Inspected", value: p.rooms_inspected == null ? "—" : String(p.rooms_inspected), sub: "passed today" },
-    { label: "Out of order", value: String(p.out_of_order ?? 0), sub: "not sellable" },
-    { label: "Payments due", value: payments?.total_due_fmt ?? "—", sub: payments?.overdue ? `£${payments.overdue.toLocaleString()} overdue` : "across open folios" },
-    { label: "Open tasks", value: String(tasks), sub: "across the house" },
-    { label: "Critical issues", value: String(p.critical_issues ?? 0), sub: "need a manager now", danger: (p.critical_issues ?? 0) > 0 },
+  const stats: { k: string; v: string; pct?: number; danger?: boolean }[] = [
+    { k: "Rooms in use tonight", v: `${p.rooms_tonight} / ${p.guest_rooms}`, pct: p.guest_rooms ? p.rooms_tonight / p.guest_rooms : 0 },
+    { k: "Guests in the house", v: p.in_house_guests == null ? "—" : String(p.in_house_guests) },
+    { k: "Rooms ready", v: p.rooms_ready == null ? "—" : String(p.rooms_ready) },
+    { k: "Checked today", v: p.rooms_inspected == null ? "—" : String(p.rooms_inspected) },
+    { k: "Out of use", v: String(p.out_of_order ?? 0) },
+    { k: "Payments due", v: payments?.total_due_fmt ?? "—", danger: !!payments?.overdue },
   ];
-
   return (
-    <div style={{ padding: "24px 32px", maxWidth: 1200 }}>
-      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 12, marginBottom: 24, flexWrap: "wrap" }}>
-        <div>
-          <div className="kicker">The house</div>
-          <h1 style={{ margin: 0 }}>Today</h1>
-          <p className="m" style={{ color: "var(--ink-2)", margin: "8px 0 0" }}>{d}. Check-in from {e.property.check_in_from}, departure by {e.property.check_out_by}. {e.property.dining ? `${e.property.dining.name}, ${e.property.dining.max_covers} covers.` : ""}</p>
+    <div className="ht">
+      <section className="ht-hero">
+        <div className="ht-hero-copy">
+          <span className="ht-date">{d}</span>
+          <h1>{hello}{first ? `, ${first}` : ""}.<br /><em>{headline}</em></h1>
+          <p>Check-in from {e.property.check_in_from}, departure by {e.property.check_out_by}.{e.next ? ` Next arrival: ${e.next.name}, ${fmt(e.next.arrival, { weekday: "short", day: "numeric", month: "short" })}.` : ""}</p>
         </div>
-        <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
-          {book > 0 && <Link className="btn" href="/groups/">{book} guest portal {book === 1 ? "enquiry" : "enquiries"}</Link>}
-          <Link className="btn" href="/front/">Front desk</Link>
-          <Link className="btn" href="/night/">Night porter</Link>
-          <Link className="btn" href="/manual/">Manual</Link>
-          <Link className="btn primary" href="/groups/">Open the book</Link>
+        <div className="ht-hero-nums">
+          <div><b>{p.arriving}</b><span>arriving</span></div>
+          <div><b>{p.departing}</b><span>leaving</span></div>
+          <div><b>{p.dinner}</b><span>for dinner</span></div>
         </div>
-      </div>
+      </section>
 
-      <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit,minmax(140px,1fr))", gap: 12, marginBottom: 24 }}>
-        {metrics.map(k => (
-          <div key={k.label} style={{ background: "var(--surface-2)", borderRadius: 10, padding: "14px 16px" }}>
-            <div className="m" style={{ color: "var(--ink-2)", fontSize: 12, marginBottom: 4 }}>{k.label}</div>
-            <div style={{ fontSize: 22, fontWeight: 700, lineHeight: 1, color: k.danger ? "var(--danger)" : undefined }}>{k.value}</div>
-            <div className="m" style={{ color: "var(--ink-3)", fontSize: 11, marginTop: 4 }}>{k.sub}</div>
-          </div>
-        ))}
-      </div>
+      {(p.critical_issues ?? 0) > 0 && (
+        <Link href="/maintenance/" className="ht-alert">{plural(p.critical_issues ?? 0, "critical issue needs", "critical issues need")} a manager now →</Link>
+      )}
 
-      <h3 style={{ marginBottom: 12 }}>What needs attention</h3>
-      <div style={{ display: "grid", gridTemplateColumns: "repeat(4, 1fr)", gap: 12, marginBottom: 24 }}>
-        {attention.map(item => (
-          <div key={item.href} style={{ background: "var(--surface-2)", borderRadius: 10, padding: "14px 16px" }}>
-            <div style={{ fontWeight: 700 }}>{item.title}</div>
-            <p className="m" style={{ color: "var(--ink-2)", marginTop: 8, fontSize: 13 }}>{item.body}</p>
-            {can("group.read") && <div style={{ marginTop: 12 }}><Link className="btn" href={item.href}>{item.action}</Link></div>}
-          </div>
-        ))}
-      </div>
+      <nav className="ht-quick" aria-label="Quick actions">
+        {quick.map(q => <Link key={q.href} href={q.href}><b>{q.title}</b><span>{q.sub}</span></Link>)}
+        {book > 0 && <Link href="/groups/" className="hot"><b>{plural(book, "new enquiry", "new enquiries")}</b><span>From the guest website</span></Link>}
+      </nav>
 
       {aiBriefing && (
-        <section className="house-panel" style={{ marginBottom: 16 }}>
-          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: 12 }}>
-            <div className="k">Morning briefing</div>
-            <Link href="/duty-manager/">Full briefing</Link>
-          </div>
-          <pre style={{ whiteSpace: "pre-wrap", fontFamily: "inherit", fontSize: 13, lineHeight: 1.65, margin: 0 }}>{aiBriefing.slice(0, 600)}{aiBriefing.length > 600 ? "…" : ""}</pre>
+        <section className="ht-ai">
+          <div className="ht-ai-head"><h2>Ask Parslia · morning briefing</h2><Link href="/duty-manager/">Full briefing &amp; questions →</Link></div>
+          <p>{aiBriefing.slice(0, 600)}{aiBriefing.length > 600 ? "…" : ""}</p>
         </section>
       )}
 
-      <div className="house-grid">
-        <section className="house-panel">
-          <div className="k">Today&apos;s timeline</div>
-          <h2>The live pulse</h2>
-          <ol className="day-beats">
+      <div className="ht-grid">
+        <section className="ht-card">
+          <h2>Up next</h2>
+          <ol className="ht-beats">
             {(e.timeline ?? []).map(b => (
-              <li key={b.time} className={b.time <= nowHm ? "done" : ""}>
-                <span className="t">{b.time}</span>
-                <span>{b.label}</span>
-              </li>
+              <li key={b.time + b.label} className={b.time <= nowHm ? "done" : ""}><span className="t">{b.time}</span><span>{b.label}</span></li>
             ))}
           </ol>
         </section>
-        <section className="house-panel">
-          <div className="k">Arrivals</div>
+        <section className="ht-card">
           <h2>Coming in</h2>
-          {e.arriving.length === 0 ? <p className="m" style={{ color: "var(--ink-2)" }}>No arrivals today. A quiet morning.</p> : (
-            <ul className="house-list">{e.arriving.map(g => (
-              <li key={g.id}><span><div className="t">{g.name}</div><div className="m">{g.organisation || "Private"} · {g.expected_guests ?? "—"} guests</div></span><span className="chip CONFIRMED">{g.arrival_slot}</span></li>
+          {e.arriving.length === 0 ? <p className="ht-muted">No arrivals today.</p> : (
+            <ul className="ht-list">{e.arriving.map(g => (
+              <li key={g.id}><span><b>{g.name}</b><small>{g.organisation || "Private"} · {g.expected_guests ?? "—"} guests</small></span><em>{g.arrival_slot}</em></li>
+            ))}</ul>
+          )}
+          <h2 style={{ marginTop: 18 }}>Leaving</h2>
+          {e.departing.length === 0 ? <p className="ht-muted">No departures today.</p> : (
+            <ul className="ht-list">{e.departing.map(g => (
+              <li key={g.id}><span><b>{g.name}</b><small>{g.organisation || "Private"} · {g.expected_guests ?? "—"} guests</small></span><em className="out">{g.departure_slot}</em></li>
             ))}</ul>
           )}
         </section>
-        <section className="house-panel">
-          <div className="k">Departures</div>
-          <h2>Leaving</h2>
-          {e.departing.length === 0 ? <p className="m" style={{ color: "var(--ink-2)" }}>No departures today.</p> : (
-            <ul className="house-list">{e.departing.map(g => (
-              <li key={g.id}><span><div className="t">{g.name}</div><div className="m">{g.organisation || "Private"} · {g.expected_guests ?? "—"} guests</div></span><span className="chip ENQUIRY">{g.departure_slot}</span></li>
-            ))}</ul>
-          )}
-          {e.next && <div className="next-stay">Next: {e.next.name} · {fmt(e.next.arrival, { weekday: "short", day: "numeric", month: "short" })} {e.next.arrival_slot}{e.next.expected_guests ? ` · ${e.next.expected_guests} guests` : ""}</div>}
+        <section className="ht-card">
+          <h2>Who we need tonight</h2>
+          <p className="ht-muted">Worked out from {p.dinner} dinner guests: 3 kitchen staff per 35 guests.</p>
+          <div className="ht-staff">
+            <div><b>{teams * 3}</b><span>Kitchen · {teams} chef, {teams} assistant, {teams} porter</span></div>
+            <div className="warm"><b>{teams}–{teams * 2}</b><span>Restaurant staff</span></div>
+          </div>
+          <Link href="/labour/" className="ht-link">Open labour forecast →</Link>
         </section>
-        <OpsBoard compact />
       </div>
+
+      <h2 className="ht-h2">Needs attention</h2>
+      <div className="ht-attn">
+        {attention.map(a => (
+          <div key={a.href} className="ht-card">
+            <b>{a.title}</b><p className="ht-muted">{a.body}</p>
+            {can("group.read") && <Link className="ht-link" href={a.href}>{a.action} →</Link>}
+          </div>
+        ))}
+      </div>
+
+      <h2 className="ht-h2">House details</h2>
+      <div className="ht-stats">
+        {stats.map(s => (
+          <div key={s.k} className="ht-stat"><span>{s.k}</span><b className={s.danger ? "danger" : ""}>{s.v}</b>{s.pct != null && <i><s style={{ width: `${Math.round(s.pct * 100)}%` }} /></i>}</div>
+        ))}
+      </div>
+      <OpsBoard compact />
     </div>
   );
 }
