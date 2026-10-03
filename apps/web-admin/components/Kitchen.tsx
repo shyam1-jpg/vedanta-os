@@ -58,17 +58,18 @@ export default function Kitchen() {
   const dayLabel = (date: string) => fmt(date, { weekday: "short", day: "numeric", month: "short" });
 
   return (
-    <div style={{ padding: "24px 32px", maxWidth: 1200 }}>
+    <div className="kitchen-sheet" style={{ padding: "24px 32px", maxWidth: 1200 }}>
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 12, marginBottom: 24, flexWrap: "wrap" }}>
         <div>
           <div className="kicker">Kitchen</div>
           <h1 style={{ margin: 0 }}>Covers</h1>
         </div>
         <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
-          <button className="btn" onClick={() => setStart(addDays(start, -7))} aria-label="Earlier">‹ Prev</button>
-          <span style={{ padding: "0 12px", fontWeight: 600, fontSize: 14 }}>{dayLabel(start)} – {dayLabel(end)}</span>
-          <button className="btn" onClick={() => setStart(addDays(start, 7))} aria-label="Later">Next ›</button>
-          <button className="btn" onClick={() => setStart(TODAY)} style={{ color: "var(--ink-2)", fontSize: 12 }}>This week</button>
+          <button className="btn kitchen-no-print" onClick={() => setStart(addDays(start, -7))} aria-label="Earlier">‹ Prev</button>
+          <span className="kitchen-range" style={{ padding: "0 12px", fontWeight: 600, fontSize: 14 }}>{dayLabel(start)} – {dayLabel(end)}</span>
+          <button className="btn kitchen-no-print" onClick={() => setStart(addDays(start, 7))} aria-label="Later">Next ›</button>
+          <button className="btn kitchen-no-print" onClick={() => setStart(TODAY)} style={{ color: "var(--ink-2)", fontSize: 12 }}>This week</button>
+          <button className="btn kitchen-no-print" type="button" onClick={() => window.print()}>Print week</button>
         </div>
       </div>
 
@@ -77,13 +78,13 @@ export default function Kitchen() {
       {err && <div className="note">Live kitchen data could not be loaded: {err}</div>}
 
       {highRisk.length > 0 && (
-        <div className="note" style={{ marginBottom: 20, background: "#fff3cd", borderColor: "#ffc107" }}>
+        <div className="note kitchen-alert" style={{ marginBottom: 20, background: "#fff3cd", borderColor: "#ffc107" }}>
           <b>{highRisk.length} allergy or anaphylaxis {highRisk.length === 1 ? "flag" : "flags"} today:</b>{" "}
           {highRisk.map(f => `${f.name}${f.room ? `, room ${f.room}` : ""}`).join("; ")}
         </div>
       )}
 
-      <div style={{ display: "grid", gridTemplateColumns: "repeat(4, 1fr)", gap: 12, marginBottom: 24 }}>
+      <div className="kitchen-stats" style={{ display: "grid", gridTemplateColumns: "repeat(4, 1fr)", gap: 12, marginBottom: 24 }}>
         {[
           { label: `${nextMeal[0]} covers`, value: nextMeal[1], sub: `Next service · capacity ${max}` },
           { label: "Today peak", value: todayPeak, sub: "Highest single sitting" },
@@ -99,7 +100,7 @@ export default function Kitchen() {
       </div>
 
       <h3 style={{ marginBottom: 12 }}>Seven-day service</h3>
-      <div style={{ display: "grid", gridTemplateColumns: "120px repeat(7, 1fr)", gap: 4, marginBottom: 4 }}>
+      <div className="kitchen-grid" style={{ display: "grid", gridTemplateColumns: "120px repeat(7, 1fr)", gap: 4, marginBottom: 4 }}>
         <div style={{ fontSize: 12, color: "var(--ink-2)", fontWeight: 600, padding: "6px 8px" }}>Service</div>
         {week.map(date => (
           <div key={date} style={{ fontSize: 12, fontWeight: 600, padding: "6px 8px", background: "var(--surface-2)", borderRadius: 6, textAlign: "center" }}>
@@ -109,13 +110,13 @@ export default function Kitchen() {
         ))}
       </div>
       {MEALS.map(meal => (
-        <div key={meal} style={{ display: "grid", gridTemplateColumns: "120px repeat(7, 1fr)", gap: 4, marginBottom: 4 }}>
+        <div key={meal} className="kitchen-grid" style={{ display: "grid", gridTemplateColumns: "120px repeat(7, 1fr)", gap: 4, marginBottom: 4 }}>
           <div style={{ padding: "8px 10px", fontSize: 13, fontWeight: 600, textTransform: "capitalize" }}>{meal}</div>
           {week.map(date => {
             const n = byDate.get(date)?.[meal] ?? 0;
             const over = n > max;
             return (
-              <div key={date} style={{
+              <div key={date} className={over ? "kitchen-over" : undefined} style={{
                 padding: "8px 10px", borderRadius: 6, textAlign: "center",
                 background: over ? "#ffe0e0" : "var(--surface-2)",
                 fontSize: 13, fontWeight: n > 0 ? 600 : 400,
@@ -134,7 +135,7 @@ export default function Kitchen() {
       {groups.length === 0
         ? <p className="m" style={{ color: "var(--ink-2)" }}>No groups in house.</p>
         : (
-          <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 14 }}>
+          <table className="kitchen-groups" style={{ width: "100%", borderCollapse: "collapse", fontSize: 14 }}>
             <thead>
               <tr style={{ borderBottom: "2px solid var(--rule)", textAlign: "left" }}>
                 {["Day", "Group", "Guests", "Meals", "Note", "Dietary", "Status"].map(h => <th key={h} style={th}>{h}</th>)}
@@ -145,7 +146,7 @@ export default function Kitchen() {
                 <tr key={g.date + g.id} style={{ borderBottom: "1px solid var(--rule)" }}>
                   <td style={{ ...td, fontWeight: 600 }}>{fmt(g.date, { weekday: "short", day: "numeric", month: "short" })}</td>
                   <td style={td}>
-                    <span style={{ display: "inline-block", width: 8, height: 8, borderRadius: "50%", background: g.colour, marginRight: 8 }} />
+                    <span className="kitchen-swatch" style={{ display: "inline-block", width: 8, height: 8, borderRadius: "50%", background: g.colour, marginRight: 8 }} />
                     {g.name}
                   </td>
                   <td style={td}>{g.guests}</td>
@@ -166,7 +167,7 @@ export default function Kitchen() {
           const dayFlags = flags.filter(f => f.date === date);
           if (!dayFlags.length) return null;
           return (
-            <div key={date} style={{ marginBottom: 12 }}>
+            <div key={date} className="kitchen-day" style={{ marginBottom: 12 }}>
               <div style={{ fontWeight: 600, fontSize: 13 }}>{fmt(date, { weekday: "long", day: "numeric", month: "short" })}</div>
               <ul className="flags">
                 {dayFlags.map(f => (
@@ -183,10 +184,10 @@ export default function Kitchen() {
       {orders.length === 0
         ? <p className="m" style={{ color: "var(--ink-2)" }}>No open requests.</p>
         : (
-          <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 14 }}>
+          <table className="kitchen-orders" style={{ width: "100%", borderCollapse: "collapse", fontSize: 14 }}>
             <thead>
               <tr style={{ borderBottom: "2px solid var(--rule)", textAlign: "left" }}>
-                {["Date", "Items", "Raised by", "Notes", ""].map(h => <th key={h || "action"} style={th}>{h}</th>)}
+                {["Date", "Items", "Raised by", "Notes", ""].map(h => <th key={h || "action"} className={h ? undefined : "kitchen-no-print"} style={th}>{h}</th>)}
               </tr>
             </thead>
             <tbody>
@@ -196,7 +197,7 @@ export default function Kitchen() {
                   <td style={td}>{o.items.map(i => `${i.qty} ${i.name}`).join(", ")}</td>
                   <td style={{ ...td, color: "var(--ink-2)" }}>{o.raised_by_name || "—"}</td>
                   <td style={{ ...td, color: "var(--ink-2)" }}>{o.notes || "—"}</td>
-                  <td style={td}>
+                  <td className="kitchen-no-print" style={td}>
                     <button className="btn" style={{ fontSize: 11, padding: "2px 10px" }} onClick={async () => { await api(`/v1/service/orders/${o.id}`, { method: "PATCH", body: JSON.stringify({ status: "done" }) }); setOrders(orders.filter(x => x.id !== o.id)); }}>Done</button>
                   </td>
                 </tr>
@@ -205,7 +206,7 @@ export default function Kitchen() {
           </table>
         )}
 
-      <div style={{ marginTop: 28 }}>
+      <div className="kitchen-no-print" style={{ marginTop: 28 }}>
         <h3 style={{ marginBottom: 12 }}>Open</h3>
         <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 12 }}>
           {modules.map(([title, desc, href]) => (
