@@ -2,7 +2,7 @@ import Fastify from "fastify";
 import { pool } from "./db.ts";
 import { problem } from "./auth.ts";
 import authRoutes from "./auth.ts";
-import microsoft from "./microsoft.ts";
+import microsoft, { loggableRequestUrl } from "./microsoft.ts";
 import groups from "./groups.ts";
 import occupancy from "./occupancy.ts";
 import users from "./users.ts";
@@ -50,7 +50,22 @@ import {
   type GuestSignupPath,
 } from "../../../domains/guest/signup.ts";
 
-const app = Fastify({ logger: process.env.NODE_ENV !== "test" });
+const app = Fastify({
+  logger: process.env.NODE_ENV === "test" ? false : {
+    serializers: {
+      req(req) {
+        return {
+          method: req.method,
+          url: loggableRequestUrl(req.url),
+          version: req.headers?.["accept-version"],
+          host: req.host,
+          remoteAddress: req.ip,
+          remotePort: req.socket ? req.socket.remotePort : undefined,
+        };
+      },
+    },
+  },
+});
 const isProd = process.env.NODE_ENV === "production";
 
 function truthy(v: string | undefined): boolean {
