@@ -2,9 +2,10 @@
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useStore } from "@/lib/store";
+import { PageIcon } from "@/components/icons";
 
-const sections: { label: string; items: [string, string, string | null][] }[] = [
-  { label: "The house", items: [["/house/", "Today", "group.read"], ["/readiness/", "Retreat readiness", "group.read"], ["/pre-retreat/", "Pre-retreat", "group.read"], ["/groups/", "Bookings", "group.read"], ["/rooms/", "Room board", "group.read"]] },
+export const sections: { label: string; items: [string, string, string | null][] }[] = [
+  { label: "The house", items: [["/house/", "Today", "group.read"], ["/hub/", "Staff hub", "group.read"], ["/manager/", "Manager view", "report.read"], ["/readiness/", "Retreat readiness", "group.read"], ["/pre-retreat/", "Pre-retreat", "group.read"], ["/groups/", "Bookings", "group.read"], ["/rooms/", "Room board", "group.read"]] },
   { label: "In service", items: [["/ops/", "House log", "group.read"], ["/tasks/", "Tasks", "group.read"], ["/front/", "Front desk", "group.read"], ["/night/", "Night porter", "group.read"], ["/service/", "Department boards", "group.read"], ["/manual/", "Manual", "group.read"], ["/training/", "Training", "group.read"], ["/housekeeping/", "Housekeeping", "group.read"], ["/maintenance/", "Maintenance", "maintenance.read"], ["/kitchen/", "Kitchen", "covers.read"]] },
   { label: "Intelligence", items: [["/duty-manager/", "AI Duty Manager", "group.read"], ["/programme/", "Programme sheet", "group.read"], ["/finance/", "Finance dashboard", "report.read"]] },
   { label: "People", items: [["/guests/", "Guests", "guest.read"], ["/guest-changes/", "Guest updates", "guest.read"], ["/guest-360/", "Guest 360", "guest.read"], ["/hr/", "HR & Rota", "group.read"], ["/labour/", "Labour forecast", "clock.manage"], ["/staff-corner/", "Staff corner", "cover.read"], ["/payroll/", "Payroll", "clock.manage"], ["/users/", "Names & positions", "user.manage"], ["/sessions/", "My devices", null]] },
@@ -35,7 +36,7 @@ export default function Nav() {
           <div className="nav-sec">{sec.label}</div>
           {sec.items.map(([href, label, perm], i) => {
             const off = perm && !can(perm);
-            return <Link key={i} href={off ? "#" : href} className={p === href ? "active" : ""} aria-disabled={!!off} style={off ? { opacity: .35, pointerEvents: "none" } : undefined}>{label}</Link>;
+            return <Link key={i} href={off ? "#" : href} className={p === href ? "active" : ""} aria-disabled={!!off} style={off ? { opacity: .35, pointerEvents: "none" } : undefined}><PageIcon href={href} />{label}</Link>;
           })}
         </div>
       ))}
@@ -43,3 +44,8 @@ export default function Nav() {
     </nav>
   );
 }
+
+/** Page name + section for each menu link, used by the page header icon. */
+export const PAGE_LABELS: Record<string, { label: string; section: string }> = Object.fromEntries(
+  sections.flatMap(sec => sec.items.map(([href, label]) => [href, { label, section: sec.label }])),
+);
