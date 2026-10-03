@@ -15,6 +15,7 @@ const MEALS = ["breakfast", "lunch", "dinner"] as const;
 const modules = [
   ["Tasks", "Open shift jobs, handovers and manager verification.", "/tasks/"],
   ["SOPs & manuals", "Open approved house procedures and operating guidance.", "/manual/"],
+  ["Training", "What each department is already taught in the house book.", "/training/"],
   ["Purchasing", "Supplier orders, approvals, deliveries and buying workflow.", "/purchasing/"],
   ["Maintenance", "Report equipment faults and follow repairs to completion.", "/maintenance/"],
   ["Staff & rota", "Kitchen staffing, labour and operational coverage.", "/staff-corner/"],

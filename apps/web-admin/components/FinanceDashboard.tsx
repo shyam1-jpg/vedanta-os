@@ -2,6 +2,7 @@
 import { useEffect, useState } from "react";
 import { api } from "@/lib/api";
 import HouseMoney from "@/components/HouseMoney";
+import ExternalConnections from "@/components/ExternalConnections";
 
 type KPI = { this_month: string; revenue_received: number; revenue_agreed: number; balance_outstanding: number; occupancy_pct: number | null; adr: number | null; bookings: number; guest_nights: number; py_revenue: number; py_occupancy: number | null; ytd_purchasing_spend: number };
 type MonthRow = { month: string; revenue_received: number; revenue_agreed: number; balance_outstanding: number; occupancy_pct: number | null; adr: number | null; bookings: number; guest_nights: number; purchasing: Record<string, { spend: number }>; budget: Record<string, number> };
@@ -44,6 +45,8 @@ export default function FinanceDashboard() {
           ))}
         </div>
       </div>
+
+      <ExternalConnections />
 
       {/* KPI strip */}
       {kpi && (
