@@ -47,7 +47,7 @@ export default function PwaRegister() {
   if (online && !installPrompt) return null;
 
   return (
-    <div style={{ position: "fixed", right: 16, bottom: 16, zIndex: 1000, display: "flex", gap: 8, alignItems: "center", background: "#1a3328", color: "#fff", borderRadius: 12, padding: "10px 12px", boxShadow: "0 8px 28px rgba(0,0,0,.22)", fontSize: 13 }}>
+    <div className="pwa-status" style={{ position: "fixed", right: 16, bottom: 16, zIndex: 1000, display: "flex", gap: 8, alignItems: "center", background: "#1a3328", color: "#fff", borderRadius: 12, padding: "10px 12px", boxShadow: "0 8px 28px rgba(0,0,0,.22)", fontSize: 13 }}>
       {!online && <span>Offline · saved screens remain available</span>}
       {installPrompt && <button onClick={install} style={{ border: 0, borderRadius: 8, padding: "7px 10px", fontWeight: 700, cursor: "pointer" }}>Install Vedanta OS</button>}
     </div>
