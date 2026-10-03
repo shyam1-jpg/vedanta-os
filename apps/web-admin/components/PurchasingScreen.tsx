@@ -2,6 +2,7 @@
 import { useEffect, useState } from "react";
 import { api } from "@/lib/api";
 import SupplierBills from "@/components/SupplierBills";
+import InvoiceSpend from "@/components/InvoiceSpend";
 import ExternalConnections from "@/components/ExternalConnections";
 
 type Supplier = { id: string; name: string; code: string; contact_email: string | null; payment_terms: number };
@@ -14,7 +15,7 @@ const URG: Record<string, string> = { normal: "ENQUIRY", urgent: "PROVISIONAL", 
 const MATCH: Record<string, string> = { "3way_ok": "CONFIRMED", price_variance: "PROVISIONAL", qty_variance: "PROVISIONAL", no_po: "ENQUIRY" };
 
 export default function PurchasingScreen() {
-  const [tab, setTab] = useState<"bills" | "requisitions" | "orders" | "invoices" | "suppliers">("bills");
+  const [tab, setTab] = useState<"bills" | "requisitions" | "orders" | "invoices" | "attach" | "suppliers">("bills");
   const [suppliers, setSuppliers] = useState<Supplier[]>([]);
   const [requisitions, setRequisitions] = useState<Requisition[]>([]);
   const [orders, setOrders] = useState<PO[]>([]);
@@ -63,12 +64,14 @@ export default function PurchasingScreen() {
       </div>
 
       <div className="seg" style={{ marginBottom: 20 }}>
-        {([["bills", "Bills"], ["requisitions", "Requisitions"], ["orders", "Orders"], ["invoices", "Invoices"], ["suppliers", "Suppliers"]] as const).map(([t, label]) => (
+        {([["bills", "Bills"], ["requisitions", "Requisitions"], ["orders", "Orders"], ["invoices", "Invoices"], ["attach", "Attach invoice"], ["suppliers", "Suppliers"]] as const).map(([t, label]) => (
           <button key={t} className={tab === t ? "active" : ""} onClick={() => setTab(t)}>{label}</button>
         ))}
       </div>
 
       {tab === "bills" && <SupplierBills />}
+
+      {tab === "attach" && <InvoiceSpend />}
 
       {tab === "requisitions" && (
         <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 14 }}>
