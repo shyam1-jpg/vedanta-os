@@ -2,7 +2,7 @@ import { readFileSync } from "node:fs";
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { HARI_REMINDER } from "../house/rules.ts";
-import { contactTreeSaved, dayBefore, preRetreatReadiness, purchaseMarkedPlaced, riskAssessmentSaved, type SafetyRow } from "./pre-retreat.ts";
+import { contactTreeSaved, dayBefore, OPEN_HREF, openTarget, preRetreatReadiness, purchaseMarkedPlaced, riskAssessmentSaved, type SafetyRow } from "./pre-retreat.ts";
 
 const bookingId = "11111111-1111-4111-8111-111111111111";
 
@@ -103,4 +103,32 @@ test("health and safety is done only when every saved record for the retreat is 
 test("day before an arrival is the previous calendar date", () => {
   assert.equal(dayBefore("2026-10-01"), "2026-09-30");
   assert.equal(dayBefore("not-a-date"), null);
+});
+
+test("an open line points at the page that can save its record", () => {
+  assert.deepEqual(OPEN_HREF, {
+    rooms: "/rooms/",
+    meals: "/kitchen/",
+    rota: "/hr/",
+    suppliers: "/purchasing/",
+    safety: "/emergency/",
+    incident_note: "/emergency/",
+    pre_arrival: "/emergency/",
+    risk_assessment: "/emergency/",
+    first_aid: "/emergency/",
+    contact_tree: "/emergency/",
+  });
+  const view = check();
+  for (const line of [...view.lines, ...view.safetyParts]) {
+    assert.equal(line.state, "open");
+    assert.equal(openTarget(line.state, line.key), OPEN_HREF[line.key]);
+  }
+  assert.equal(openTarget("done", "rooms"), null);
+  assert.equal(openTarget("open", "unknown"), null);
+  const ui = readFileSync(new URL("../../apps/web-admin/components/PreRetreat.tsx", import.meta.url), "utf8");
+  assert.match(ui, /const href = openTarget\(state, lineKey\)/);
+  assert.match(ui, /<LineControl state=\{line\.state\} lineKey=\{line\.key\}/);
+  assert.match(ui, /<LineControl state=\{part\.state\} lineKey=\{part\.key\}/);
+  assert.match(ui, /<a className="linkbtn" href=\{href\}[\s\S]*?>Open<\/a>/);
+  assert.equal(ui.includes('? "Done" : "Open"'), false);
 });
