@@ -10,15 +10,19 @@ type FohOrder = { id: string; for_date: string; items: { name: string; qty: stri
 
 const TODAY = new Date().toISOString().slice(0, 10);
 const LABEL: Record<string, string> = { celery: "celery", cereals_gluten: "gluten", crustaceans: "crustaceans", eggs: "eggs", fish: "fish", lupin: "lupin", milk: "milk", molluscs: "molluscs", mustard: "mustard", nuts: "tree nuts", peanuts: "peanuts", sesame: "sesame", soya: "soya", sulphites: "sulphites" };
+const MEALS = ["breakfast", "lunch", "dinner"] as const;
 
 const modules = [
-  ["Tasks", "Open shift jobs, handovers and manager verification.", "/tasks/", "↗"],
-  ["SOPs & manuals", "Open approved house procedures and operating guidance.", "/manual/", "↗"],
-  ["Purchasing", "Supplier orders, approvals, deliveries and buying workflow.", "/purchasing/", "↗"],
-  ["Maintenance", "Report equipment faults and follow repairs to completion.", "/maintenance/", "↗"],
-  ["Staff & rota", "Kitchen staffing, labour and operational coverage.", "/staff-corner/", "↗"],
-  ["Reports", "Review operational performance and management reporting.", "/reports/", "↗"],
+  ["Tasks", "Open shift jobs, handovers and manager verification.", "/tasks/"],
+  ["SOPs & manuals", "Open approved house procedures and operating guidance.", "/manual/"],
+  ["Purchasing", "Supplier orders, approvals, deliveries and buying workflow.", "/purchasing/"],
+  ["Maintenance", "Report equipment faults and follow repairs to completion.", "/maintenance/"],
+  ["Staff & rota", "Kitchen staffing, labour and operational coverage.", "/staff-corner/"],
+  ["Reports", "Review operational performance and management reporting.", "/reports/"],
 ] as const;
+
+const th: CSSProperties = { padding: "8px 12px", color: "var(--ink-2)", fontWeight: 600 };
+const td: CSSProperties = { padding: "10px 12px" };
 
 export default function Kitchen() {
   const [start, setStart] = useState(TODAY);
@@ -37,13 +41,12 @@ export default function Kitchen() {
 
   const byDate = new Map(days.map(d => [d.date, d]));
   const week = Array.from({ length: 7 }, (_, i) => addDays(start, i));
-  const total = (d?: Day) => d ? d.breakfast + d.lunch + d.dinner : 0;
-  const busiest = Math.max(1, ...days.flatMap(d => [d.breakfast, d.lunch, d.dinner]));
   const today = byDate.get(TODAY);
   const todayFlags = flags.filter(f => f.date === TODAY);
   const highRisk = todayFlags.filter(f => f.severity === "ANAPHYLAXIS" || f.severity === "ALLERGY");
   const todayOrders = orders.filter(o => o.for_date === TODAY || !o.for_date);
   const todayPeak = Math.max(today?.breakfast ?? 0, today?.lunch ?? 0, today?.dinner ?? 0);
+  const groups = week.flatMap(date => (byDate.get(date)?.groups ?? []).map(g => ({ ...g, date })));
 
   const nextMeal = useMemo<[string, number]>(() => {
     const hour = new Date().getHours();
@@ -52,79 +55,167 @@ export default function Kitchen() {
     return ["Dinner", today?.dinner ?? 0];
   }, [today]);
 
-  const card: CSSProperties = { background: "var(--paper, #fff)", border: "1px solid var(--line, #e6e0d5)", borderRadius: 16, padding: 16, minHeight: 110 };
-  const metric: CSSProperties = { fontSize: 30, fontWeight: 700, lineHeight: 1.05, marginTop: 8 };
+  const dayLabel = (date: string) => fmt(date, { weekday: "short", day: "numeric", month: "short" });
 
   return (
-    <>
-      <div className="topbar">
+    <div style={{ padding: "24px 32px", maxWidth: 1200 }}>
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 12, marginBottom: 24, flexWrap: "wrap" }}>
         <div>
-          <div style={{ fontSize: 12, textTransform: "uppercase", letterSpacing: ".12em", fontWeight: 800, color: "var(--gold, #9c7b3d)" }}>Kitchen operations</div>
-          <h1>Kitchen command centre</h1>
-          <p>Live covers, guest dietary risk, FOH requests and the operational tools needed to run the kitchen.</p>
+          <div className="kicker">Kitchen</div>
+          <h1 style={{ margin: 0 }}>Covers</h1>
         </div>
-        <div className="seg"><button onClick={() => setStart(addDays(start, -7))} aria-label="Earlier">‹</button><button onClick={() => setStart(TODAY)}>This week</button><button onClick={() => setStart(addDays(start, 7))} aria-label="Later">›</button></div>
+        <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
+          <button className="btn" onClick={() => setStart(addDays(start, -7))} aria-label="Earlier">‹ Prev</button>
+          <span style={{ padding: "0 12px", fontWeight: 600, fontSize: 14 }}>{dayLabel(start)} – {dayLabel(end)}</span>
+          <button className="btn" onClick={() => setStart(addDays(start, 7))} aria-label="Later">Next ›</button>
+          <button className="btn" onClick={() => setStart(TODAY)} style={{ color: "var(--ink-2)", fontSize: 12 }}>This week</button>
+        </div>
       </div>
+
+      <p>Pure vegetarian. No eggs and no onion-family ingredients. Dairy is not taken from the retreat cows. Guests do not pay for food.</p>
 
       {err && <div className="note">Live kitchen data could not be loaded: {err}</div>}
 
-      <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit,minmax(180px,1fr))", gap: 12, marginBottom: 18 }}>
-        <div style={card}><div className="m">{nextMeal[0]} covers</div><div style={metric}>{nextMeal[1]}</div><div className="m">Next service · capacity {max}</div></div>
-        <div style={card}><div className="m">Today peak</div><div style={metric}>{todayPeak}</div><div className="m">Highest single sitting</div></div>
-        <div style={{ ...card, borderColor: highRisk.length ? "#b44" : "var(--line, #e6e0d5)" }}><div className="m">Allergy alerts</div><div style={metric}>{highRisk.length}</div><div className="m">Allergy / anaphylaxis flags today</div></div>
-        <div style={card}><div className="m">FOH requests</div><div style={metric}>{todayOrders.length}</div><div className="m">Open requests requiring kitchen action</div></div>
-      </div>
-
-      <section style={{ marginBottom: 22 }}>
-        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "end", gap: 12, marginBottom: 10 }}>
-          <div><h2 style={{ margin: 0 }}>Run the kitchen</h2><div className="m">One place for the main operational workflows.</div></div>
-        </div>
-        <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit,minmax(220px,1fr))", gap: 10 }}>
-          {modules.map(([title, desc, href, icon]) => <Link key={href} href={href} style={{ ...card, minHeight: 122, textDecoration: "none", color: "inherit", display: "block" }}>
-            <div style={{ display: "flex", justifyContent: "space-between", gap: 12 }}><strong>{title}</strong><span aria-hidden="true">{icon}</span></div>
-            <p className="m" style={{ marginTop: 12, lineHeight: 1.5 }}>{desc}</p>
-          </Link>)}
-        </div>
-      </section>
-
-      {orders.length > 0 && (
-        <div className="panel" style={{ marginBottom: 18 }}>
-          <h3>Front of house needs</h3>
-          {orders.map(o => (
-            <div className="urow" key={o.id}>
-              <div><div className="t">{o.for_date} · {o.items.map(i => `${i.qty} ${i.name}`).join(", ")}</div><div className="m">{o.raised_by_name}{o.notes ? ` · ${o.notes}` : ""}</div></div>
-              <button className="btn" onClick={async () => { await api(`/v1/service/orders/${o.id}`, { method: "PATCH", body: JSON.stringify({ status: "done" }) }); setOrders(orders.filter(x => x.id !== o.id)); }}>Done</button>
-            </div>
-          ))}
+      {highRisk.length > 0 && (
+        <div className="note" style={{ marginBottom: 20, background: "#fff3cd", borderColor: "#ffc107" }}>
+          <b>{highRisk.length} allergy or anaphylaxis {highRisk.length === 1 ? "flag" : "flags"} today:</b>{" "}
+          {highRisk.map(f => `${f.name}${f.room ? `, room ${f.room}` : ""}`).join("; ")}
         </div>
       )}
 
-      <div style={{ display: "flex", alignItems: "end", justifyContent: "space-between", gap: 10, marginBottom: 10 }}>
-        <div><h2 style={{ margin: 0 }}>Seven-day service forecast</h2><div className="m">Breakfast, lunch and dinner covers with group and dietary detail.</div></div>
+      <div style={{ display: "grid", gridTemplateColumns: "repeat(4, 1fr)", gap: 12, marginBottom: 24 }}>
+        {[
+          { label: `${nextMeal[0]} covers`, value: nextMeal[1], sub: `Next service · capacity ${max}` },
+          { label: "Today peak", value: todayPeak, sub: "Highest single sitting" },
+          { label: "Allergy alerts", value: highRisk.length, sub: "Allergy / anaphylaxis flags today" },
+          { label: "FOH requests", value: todayOrders.length, sub: "Open requests requiring kitchen action" },
+        ].map(k => (
+          <div key={k.label} style={{ background: "var(--surface-2)", borderRadius: 10, padding: "14px 16px" }}>
+            <div className="m" style={{ color: "var(--ink-2)", fontSize: 12, marginBottom: 4 }}>{k.label}</div>
+            <div style={{ fontSize: 28, fontWeight: 700 }}>{k.value}</div>
+            <div className="m" style={{ color: "var(--ink-3)", fontSize: 11, marginTop: 4 }}>{k.sub}</div>
+          </div>
+        ))}
       </div>
 
-      <div className="kweek">
-        {week.map(date => { const d = byDate.get(date); return (
-          <section key={date} className={"kday" + (date === TODAY ? " today" : "") + (total(d) === 0 ? " quiet" : "")}>
-            <h3>{fmt(date, { weekday: "long" })}<small>{fmt(date, { day: "numeric", month: "short" })}</small></h3>
-            <div className="meals">
-              {(["breakfast", "lunch", "dinner"] as const).map(m => { const n = d?.[m] ?? 0; return (
-                <div key={m} className={"meal" + (n > max ? " over" : n === 0 ? " none" : "")}>
-                  <span>{m}</span><b>{n}</b><i style={{ width: `${Math.min(100, (n / Math.max(busiest, max)) * 100)}%` }} />
-                </div>); })}
-            </div>
-            {d?.groups.length ? <ul className="kgroups">{d.groups.map(g => (
-              <li key={g.id}><i style={{ background: g.colour }} /><div><div className="n">{g.name} <span>{g.guests}</span></div>
-                {g.note && <div className="m">{g.note} · {g.meals.length ? g.meals.join(", ") : "no meals"}</div>}
-                {g.dietary && <div className="diet">{g.dietary}</div>}
-                {g.status === "PROVISIONAL" && <div className="m warn">provisional</div>}
-              </div></li>))}</ul> : <div className="m" style={{ color: "var(--ink-2)" }}>No groups in house.</div>}
-            {flags.filter(f => f.date === date).length > 0 && <ul className="flags">{flags.filter(f => f.date === date).map(f => (
-              <li key={f.name + f.room} className={f.severity === "ANAPHYLAXIS" ? "sev-high" : f.severity === "ALLERGY" ? "sev-mid" : "sev-low"}>
-                <b>{f.name}</b> · room {f.room}{f.allergens?.length ? <> · <b>{f.allergens.map(a => LABEL[a] ?? a).join(", ")}</b>{f.severity === "ANAPHYLAXIS" ? " — life-threatening" : ""}</> : null}{f.diet?.length ? ` · ${f.diet.join(", ").replace(/_/g, " ")}` : ""}{f.notes ? ` · ${f.notes}` : ""}
-              </li>))}</ul>}
-          </section>); })}
+      <h3 style={{ marginBottom: 12 }}>Seven-day service</h3>
+      <div style={{ display: "grid", gridTemplateColumns: "120px repeat(7, 1fr)", gap: 4, marginBottom: 4 }}>
+        <div style={{ fontSize: 12, color: "var(--ink-2)", fontWeight: 600, padding: "6px 8px" }}>Service</div>
+        {week.map(date => (
+          <div key={date} style={{ fontSize: 12, fontWeight: 600, padding: "6px 8px", background: "var(--surface-2)", borderRadius: 6, textAlign: "center" }}>
+            <div>{fmt(date, { weekday: "short" })}</div>
+            <div style={{ color: "var(--ink-2)", fontSize: 11, marginTop: 2 }}>{fmt(date, { day: "numeric", month: "short" })}{date === TODAY ? " · today" : ""}</div>
+          </div>
+        ))}
       </div>
-    </>
+      {MEALS.map(meal => (
+        <div key={meal} style={{ display: "grid", gridTemplateColumns: "120px repeat(7, 1fr)", gap: 4, marginBottom: 4 }}>
+          <div style={{ padding: "8px 10px", fontSize: 13, fontWeight: 600, textTransform: "capitalize" }}>{meal}</div>
+          {week.map(date => {
+            const n = byDate.get(date)?.[meal] ?? 0;
+            const over = n > max;
+            return (
+              <div key={date} style={{
+                padding: "8px 10px", borderRadius: 6, textAlign: "center",
+                background: over ? "#ffe0e0" : "var(--surface-2)",
+                fontSize: 13, fontWeight: n > 0 ? 600 : 400,
+                color: n === 0 ? "var(--ink-3)" : "var(--ink)",
+              }}>
+                {n}
+                {over && <div style={{ fontSize: 10, color: "var(--brick)" }}>over {max}</div>}
+              </div>
+            );
+          })}
+        </div>
+      ))}
+      <p className="m" style={{ color: "var(--ink-2)", marginTop: 8 }}>A red cell is over the house capacity of {max}.</p>
+
+      <h3 style={{ margin: "28px 0 12px" }}>Groups</h3>
+      {groups.length === 0
+        ? <p className="m" style={{ color: "var(--ink-2)" }}>No groups in house.</p>
+        : (
+          <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 14 }}>
+            <thead>
+              <tr style={{ borderBottom: "2px solid var(--rule)", textAlign: "left" }}>
+                {["Day", "Group", "Guests", "Meals", "Note", "Dietary", "Status"].map(h => <th key={h} style={th}>{h}</th>)}
+              </tr>
+            </thead>
+            <tbody>
+              {groups.map(g => (
+                <tr key={g.date + g.id} style={{ borderBottom: "1px solid var(--rule)" }}>
+                  <td style={{ ...td, fontWeight: 600 }}>{fmt(g.date, { weekday: "short", day: "numeric", month: "short" })}</td>
+                  <td style={td}>
+                    <span style={{ display: "inline-block", width: 8, height: 8, borderRadius: "50%", background: g.colour, marginRight: 8 }} />
+                    {g.name}
+                  </td>
+                  <td style={td}>{g.guests}</td>
+                  <td style={{ ...td, color: "var(--ink-2)" }}>{g.meals.length ? g.meals.join(", ") : "no meals"}</td>
+                  <td style={{ ...td, color: "var(--ink-2)" }}>{g.note || "—"}</td>
+                  <td style={td}>{g.dietary || "—"}</td>
+                  <td style={td}>{g.status === "PROVISIONAL" ? <span className="chip PROVISIONAL" style={{ fontSize: 11 }}>provisional</span> : g.status ? <span className="chip CONFIRMED" style={{ fontSize: 11 }}>{g.status.replace(/_/g, " ").toLowerCase()}</span> : "—"}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        )}
+
+      <h3 style={{ margin: "28px 0 12px" }}>Dietary flags</h3>
+      {flags.length === 0
+        ? <p className="m" style={{ color: "var(--ink-2)" }}>No dietary flags in this week.</p>
+        : week.map(date => {
+          const dayFlags = flags.filter(f => f.date === date);
+          if (!dayFlags.length) return null;
+          return (
+            <div key={date} style={{ marginBottom: 12 }}>
+              <div style={{ fontWeight: 600, fontSize: 13 }}>{fmt(date, { weekday: "long", day: "numeric", month: "short" })}</div>
+              <ul className="flags">
+                {dayFlags.map(f => (
+                  <li key={f.name + f.room + date} className={f.severity === "ANAPHYLAXIS" ? "sev-high" : f.severity === "ALLERGY" ? "sev-mid" : "sev-low"}>
+                    <b>{f.name}</b> · room {f.room}{f.allergens?.length ? <> · <b>{f.allergens.map(a => LABEL[a] ?? a).join(", ")}</b>{f.severity === "ANAPHYLAXIS" ? " — life-threatening" : ""}</> : null}{f.diet?.length ? ` · ${f.diet.join(", ").replace(/_/g, " ")}` : ""}{f.notes ? ` · ${f.notes}` : ""}{f.group_name ? ` · ${f.group_name}` : ""}
+                  </li>
+                ))}
+              </ul>
+            </div>
+          );
+        })}
+
+      <h3 style={{ margin: "28px 0 12px" }}>Front of house</h3>
+      {orders.length === 0
+        ? <p className="m" style={{ color: "var(--ink-2)" }}>No open requests.</p>
+        : (
+          <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 14 }}>
+            <thead>
+              <tr style={{ borderBottom: "2px solid var(--rule)", textAlign: "left" }}>
+                {["Date", "Items", "Raised by", "Notes", ""].map(h => <th key={h || "action"} style={th}>{h}</th>)}
+              </tr>
+            </thead>
+            <tbody>
+              {orders.map(o => (
+                <tr key={o.id} style={{ borderBottom: "1px solid var(--rule)" }}>
+                  <td style={{ ...td, fontWeight: 600 }}>{o.for_date || "—"}</td>
+                  <td style={td}>{o.items.map(i => `${i.qty} ${i.name}`).join(", ")}</td>
+                  <td style={{ ...td, color: "var(--ink-2)" }}>{o.raised_by_name || "—"}</td>
+                  <td style={{ ...td, color: "var(--ink-2)" }}>{o.notes || "—"}</td>
+                  <td style={td}>
+                    <button className="btn" style={{ fontSize: 11, padding: "2px 10px" }} onClick={async () => { await api(`/v1/service/orders/${o.id}`, { method: "PATCH", body: JSON.stringify({ status: "done" }) }); setOrders(orders.filter(x => x.id !== o.id)); }}>Done</button>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        )}
+
+      <div style={{ marginTop: 28 }}>
+        <h3 style={{ marginBottom: 12 }}>Open</h3>
+        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 12 }}>
+          {modules.map(([title, desc, href]) => (
+            <Link key={href} href={href} style={{ background: "var(--surface-2)", borderRadius: 8, padding: "12px 14px", textDecoration: "none", color: "inherit" }}>
+              <b style={{ fontSize: 13 }}>{title}</b>
+              <p className="m" style={{ color: "var(--ink-2)", marginTop: 4, fontSize: 13 }}>{desc}</p>
+            </Link>
+          ))}
+        </div>
+      </div>
+    </div>
   );
 }
