@@ -13,6 +13,17 @@ const sampleTypes = [
   { code: 'double', name: 'Double room', sleeps: 2, accessible: false, beds: 'Double bed', features: [], total: 8, available: 3 },
   { code: 'twin', name: 'Twin room', sleeps: 2, accessible: true, beds: 'Two single beds', features: [], total: 6, available: 2 },
 ];
+// Deliberately synthetic fixtures, never published room descriptions.
+const sampleRooms = [
+  { number: 'G01', section: 'Ground Floor', type_name: 'Twin room', sleeps: 3, beds: '2 single · 1 extra mattress', feature_labels: ['Lake view'], accessible: false },
+  { number: 'G02', section: 'Ground Floor', type_name: 'Double room', sleeps: 2, beds: '1 double', feature_labels: ['Lake view', 'Hairdryer'], accessible: false },
+  { number: 'G03', section: 'Ground Floor', type_name: 'Twin room', sleeps: 3, beds: '2 single · 1 extra mattress', feature_labels: ['Accessible'], accessible: true },
+  { number: '101', section: 'Pink Corridor', type_name: 'Twin room', sleeps: 2, beds: '2 single', feature_labels: ['Lake view', 'Shower'], accessible: false },
+  { number: '106', section: 'Pink Corridor', type_name: 'King room', sleeps: 3, beds: '1 king · 1 extra mattress', feature_labels: ['Courtyard view'], accessible: false },
+  { number: '119', section: 'First Floor', type_name: 'King room', sleeps: 4, beds: '1 single · 1 king · 1 extra mattress', feature_labels: ['Lake view', 'Desk', 'Hairdryer'], accessible: false },
+  { number: '203', section: 'Green Corridor', type_name: 'Twin room', sleeps: 2, beds: '2 single', feature_labels: ['Lake view'], accessible: false },
+  { number: '211', section: null, type_name: 'Single room', sleeps: 1, beds: '', feature_labels: [], accessible: false },
+];
 let enquiry = null;
 const send = (res, status, data) => { res.writeHead(status, { 'content-type': 'application/json', 'cache-control': 'no-store' }); res.end(JSON.stringify(data)); };
 
@@ -41,13 +52,13 @@ const server = http.createServer(async (req, res) => {
       if (url.pathname === '/guest/calendar') {
         const days = [];
         for (let d = new Date(`${url.searchParams.get('from')}T12:00:00Z`); d.toISOString().slice(0, 10) <= url.searchParams.get('to'); d.setUTCDate(d.getUTCDate() + 1)) {
-          days.push({ date: d.toISOString().slice(0, 10), free_rooms: scenario === 'sold-out' ? 0 : 5 });
+          days.push({ date: d.toISOString().slice(0, 10), free_rooms: scenario === 'sold-out' ? 0 : sampleRooms.length });
         }
         return send(res, 200, { days });
       }
       if (url.pathname === '/guest/availability') {
         const arrival = url.searchParams.get('arrival'), departure = url.searchParams.get('departure');
-        const result = { arrival, departure, nights: (new Date(departure) - new Date(arrival)) / 86400000, free_rooms: scenario === 'sold-out' ? 0 : 5, types: scenario === 'sold-out' ? [] : sampleTypes, rooms: [] };
+        const result = { arrival, departure, nights: (new Date(departure) - new Date(arrival)) / 86400000, free_rooms: scenario === 'sold-out' ? 0 : sampleRooms.length, types: scenario === 'sold-out' ? [] : sampleTypes, rooms: scenario === 'sold-out' ? [] : sampleRooms };
         // A delayed response allows stale-result protection to be checked by editing dates while loading.
         return setTimeout(() => send(res, 200, result), Number(process.env.GUEST_PREVIEW_DELAY ?? 0));
       }

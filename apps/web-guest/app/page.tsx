@@ -1,6 +1,8 @@
 "use client";
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { addDays, calendarMonths, calendarOffset, houseToday, validateStay } from "./booking-utils";
+import RoomExplorer from "./RoomExplorer";
+import { roomRequestText, roomSelection, type AvailableRoom } from "./room-options";
 const API = process.env.NEXT_PUBLIC_API_URL ?? "";
 const tok = {
   get: () => (typeof window === "undefined" ? null : sessionStorage.getItem("vedanta.guest.token")),
@@ -26,8 +28,7 @@ function needsEmailCode(e: unknown): boolean {
 type Prop = { name: string; kicker: string; tagline: string; about: string; website: string; company: string; address: string; check_in_from: string; check_out_by: string; rooms: number };
 type Prog = { id: string; name: string; kind: string; basis: string | null; arrival: string; arrival_time: string | null; departure: string; departure_time: string | null; nights: number; places: number | null; spa: boolean; meals: boolean; package: string | null; price: string | null; about: string | null };
 type Room = { number: string; section: string | null };
-type RoomType = { code: string; name: string; sleeps: number; accessible: boolean; beds: string; features: string[]; total: number; available: number };
-type Avail = { arrival: string; departure: string; nights: number; free_rooms: number; types: RoomType[]; rooms: { number: string; section: string | null; type_name: string; sleeps: number; beds: string; feature_labels: string[]; accessible: boolean }[] };
+type Avail = { arrival: string; departure: string; nights: number; free_rooms: number; rooms: AvailableRoom[] };
 type Day = { date: string; free_rooms: number };
 type Mine = { id: string; people: number; arrival: string; departure: string; status: string; programme_name: string | null; notes: string | null; dietary_notes: string | null; accessibility_notes: string | null; arrival_time_note: string | null; travel_notes: string | null; rooms: Room[] };
 type Me = { name: string; email: string };
@@ -149,8 +150,7 @@ export default function Book() {
   const [busy, setBusy] = useState(false);
   const [asks, setAsks] = useState<GuestAsk[]>([]);
   const [ask, setAsk] = useState({ request_text: "", room_label: "" });
-  const [bedPreference, setBedPreference] = useState("any");
-  const [accessibleOnly, setAccessibleOnly] = useState(false);
+  const [requestedRooms, setRequestedRooms] = useState<string[]>([]);
   const [codeSentTo, setCodeSentTo] = useState<string | null>(null);
   const [publicState, setPublicState] = useState<"loading" | "ready" | "error">("loading");
   const [calendarState, setCalendarState] = useState<"loading" | "ready" | "error">("loading");
@@ -214,6 +214,7 @@ export default function Book() {
   const searchDates = async (arrival = form.arrival, departure = form.departure) => {
     const version = ++searchVersion.current;
     setAvail(null);
+    setRequestedRooms([]);
     setForm(f => ({ ...f, room_preference: "" }));
     setStep("room");
     const problem = validateStay(arrival, departure, form.people, houseToday());
@@ -242,6 +243,7 @@ export default function Book() {
 
   const updateDates = (key: "arrival" | "departure" | "people", value: string) => {
     searchVersion.current++;
+    setRequestedRooms([]);
     setSearching(false); setAvail(null); setSel(null); setDatesError(null); setErr(null); setOk(null); setStep("browse");
     setForm(f => ({ ...f, [key]: value, room_preference: "",
       ...(key === "arrival" && value && f.departure && f.departure <= value ? { departure: addDays(value, 1) } : {}),
@@ -257,10 +259,11 @@ export default function Book() {
     scrollAuthCardIntoView(bookingRef.current);
   };
 
-  const matchingTypes = (avail?.types ?? []).filter(t =>
-    t.available > 0 && t.sleeps >= Number(form.people) &&
-    (!accessibleOnly || t.accessible) && (bedPreference === "any" || t.beds.toLowerCase().includes(bedPreference))
-  );
+  const selection = roomSelection(avail?.rooms ?? [], requestedRooms, Number(form.people));
+  const changeRequestedRooms = (numbers: string[]) => {
+    setRequestedRooms(numbers);
+    setForm(f => ({ ...f, room_preference: roomRequestText(roomSelection(avail?.rooms ?? [], numbers, Number(f.people)).chosen) }));
+  };
 
   const emailAddress = form.email.trim().toLowerCase();
   const codeReady = codeSentTo === emailAddress && emailAddress.includes("@");
@@ -314,13 +317,18 @@ export default function Book() {
   };
 
   const doEnquiry = async () => {
+    const stayProblem = validateStay(form.arrival, form.departure, form.people, houseToday());
+    if (stayProblem || !avail || !selection.canContinue) {
+      setErr(stayProblem || "Please check your dates and request enough room capacity for your whole party.");
+      return null;
+    }
     setBusy(true); setErr(null); setOk(null);
     try {
       const r = await api<{ token: string; user: Me; access_code?: string | null; id: string; status: string }>("/guest/enquiries", {
         method: "POST", body: JSON.stringify({
           name: form.name, email: form.email, people: Number(form.people), notes: form.notes,
           dietary_notes: form.dietary_notes, accessibility_notes: form.accessibility_notes,
-          room_preference: form.room_preference, arrival_time_note: form.arrival_time_note, travel_notes: form.travel_notes,
+          room_preference: roomRequestText(selection.chosen), arrival_time_note: form.arrival_time_note, travel_notes: form.travel_notes,
           ...(form.email_code.trim() ? { email_code: form.email_code.trim() } : {}),
           ...(sel ? { programme_id: sel.id } : { arrival: form.arrival, departure: form.departure }),
         }),
@@ -423,7 +431,7 @@ export default function Book() {
             <div><p className="section-kicker">Your time, your pace</p><h2 id="stay-heading">A stay to look forward to.</h2></div>
             <p className="lead">Explore a retreat or choose your own dates.<br />No account needed to check availability.</p>
           </div>
-          <div className="split">
+          <div className={"split" + (avail ? " has-room-results" : "")}>
             <div className="retreat-options">
               <div className="subheading"><h3>Open retreats</h3><span>Programmes at the house</span></div>
               <div className="grid">
@@ -498,18 +506,7 @@ export default function Book() {
                   <div className="rooms" style={{ display: "block", marginTop: 16 }}>
                     <p className="availability-result" role="status"><b>{avail.free_rooms} rooms available</b><span>{avail.nights} {avail.nights === 1 ? "night" : "nights"} · {form.people} {Number(form.people) === 1 ? "guest" : "guests"}</span></p>
                     {form.room_preference && step !== "room" ? <div className="selected-room"><span>Your preference<b>{form.room_preference}</b></span><button className="text-button" disabled={busy} onClick={() => setStep("room")}>Change</button></div> : <>
-                    <label htmlFor="bed-preference">Preferred bed</label>
-                    <select id="bed-preference" value={bedPreference} onChange={e => setBedPreference(e.target.value)}>
-                      <option value="any">Any bed setup</option><option value="single">Single beds</option><option value="double">Double bed</option><option value="king">King bed</option>
-                    </select>
-                    <label className="check"><input type="checkbox" checked={accessibleOnly} onChange={e => setAccessibleOnly(e.target.checked)} /> Accessible rooms only</label>
-                    {matchingTypes.length === 0 && <div className="note">{Number(form.people) > 1 ? "No single room matches this group size and these preferences. Try other dates or bed preferences. For multiple rooms, ask the house before reducing your guest count." : "No rooms match these preferences. Try a different bed setup or dates."}</div>}
-                    {matchingTypes.map(t => (
-                      <button key={t.code + t.sleeps + String(t.accessible)} aria-pressed={form.room_preference === t.name} className={"room-type" + (form.room_preference === t.name ? " on" : "")} onClick={() => { setForm(f => ({ ...f, room_preference: t.name })); setStep("details"); }}>
-                        <b>{t.name}</b>
-                        <span>{t.available} of {t.total} free · sleeps {t.sleeps}{t.accessible ? " · accessible" : ""}{t.beds ? ` · ${t.beds}` : ""}</span>
-                      </button>
-                    ))}
+                    <RoomExplorer key={searchVersion.current} rooms={avail.rooms} guests={Number(form.people)} requested={requestedRooms} onChange={changeRequestedRooms} onContinue={() => { if (selection.canContinue) setStep("details"); }} />
                     </>}
                     <p className="m">Room preference is a request until the house confirms your allocation. The total price and deposit will be confirmed by the house before payment.</p>
                   </div>
@@ -570,7 +567,7 @@ export default function Book() {
                     <label htmlFor="enquiry-email-code">Email code</label>
                     <input id="enquiry-email-code" inputMode="numeric" autoComplete="one-time-code" placeholder="8-digit code from your email" value={form.email_code} onChange={e => setForm({ ...form, email_code: e.target.value })} />
                   </>}
-                  <button className="btn" style={{ marginTop: 10 }} disabled={busy || searching || !avail || !form.name.trim() || !form.email.includes("@")} onClick={doEnquiry}>
+                  <button className="btn" style={{ marginTop: 10 }} disabled={busy || searching || !avail || !selection.canContinue || !form.name.trim() || !form.email.includes("@")} onClick={doEnquiry}>
                     {busy ? "Sending…" : "Send booking enquiry"}
                   </button>
                   <button className="text-button" disabled={busy} onClick={() => setStep("needs")}>Back to your needs</button>
