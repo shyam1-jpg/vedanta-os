@@ -190,7 +190,12 @@ select:focus-visible, summary:focus-visible { outline: 2px solid var(--forest); 
 .top { min-height: 86px; padding: 14px max(28px, calc((100vw - 1240px) / 2)); background: var(--ivory); color: var(--forest); box-shadow: 0 1px 0 #203d341a; }
 .top .mark { display: flex; align-items: center; gap: 12px; color: var(--forest); font-family: var(--serif); font-size: 24px; line-height: 1; letter-spacing: -.02em; text-transform: none; text-decoration: none; white-space: nowrap; }
 .mark small { display: block; margin-top: 7px; font: 9px var(--sans); letter-spacing: .28em; }
-.brand-symbol { display: grid; place-items: center; width: 41px; height: 47px; border: 1px solid #a18a60; border-radius: 24px 24px 3px 3px; font-size: 35px; }
+.top .mark { flex-direction: column; align-items: flex-start; gap: 4px; }
+.official-logo { display: block; width: 224px; height: auto; object-fit: contain; }
+.brand-company { font-family: var(--sans); font-size: 9px; letter-spacing: .12em; text-transform: uppercase; }
+.email-help p { margin: 0 0 10px; }
+.email-help a { overflow-wrap: anywhere; text-decoration: underline; }
+.email-help .text-button { display: block; margin-top: 12px; }
 .main-nav { display: flex; gap: 32px; font-size: 14px; }
 .main-nav a { text-decoration: none; padding: 14px 0; }
 .main-nav a:hover { text-decoration: underline; text-underline-offset: 6px; }
@@ -330,7 +335,8 @@ textarea { resize: vertical; }
 @media (max-width: 760px) {
   .top { padding: 12px 20px; min-height: 76px; }
   .top .mark { font-size: 21px; gap: 9px; }
-  .brand-symbol { width: 32px; height: 39px; font-size: 29px; }
+  .official-logo { width: 160px; max-width: 100%; }
+  .brand-company { font-size: 8px; }
   .top .who { font-size: 12px; gap: 0; }
   .top button { padding: 8px; font-size: 12px; }
   .top .who button:last-child { border-color: transparent; }

@@ -1,0 +1,31 @@
+VEDANTA — OFFICIAL BRAND AND GUEST EMAIL SETUP
+4 October 2026
+
+OFFICIAL LOGO
+Source: https://www.thevedanta.org/ (current header logo retrieved 4 October 2026).
+Exact asset: https://static.wixstatic.com/media/3aefe1_eabb316f32934535b62b09568b36a66d~mv2.png/v1/crop/x_0,y_362,w_2425,h_641/fill/w_386,h_102,al_c,q_85,usm_0.66_1.00_0.01,enc_avif,quality_auto/Vedanta-Brand-02_edited.png
+Copied unchanged to each portal's public/vedanta-official-logo.png. No AI redraw, stretching, colour changes or logo redesign. Rendered against cream when the surrounding area is dark.
+Used in guest header, staff signed-out/signed-in header, admin sign-in/sidebar and organiser guest form. The legal company name remains The Vedanta Way Ltd.
+Official contact source: https://www.thevedanta.org/contact — connect@thevedanta.org.
+
+EMAIL FAILURE FOUND
+The live /auth/providers response has email_code:false, and the code uses SMTP_URL to enable both staff and guest delivery. The recent /guest/email-code/request calls return 503 immediately. There is no outgoing SMTP configuration on the current service.
+The application is running, but a healthy /health endpoint does not prove that outbound email is configured or working.
+
+SAFE REMEDIATION INCLUDED
+- Public, no-store guest auth-options endpoint returns only whether email-code delivery is configured.
+- Registration checks availability before sending; a missing connection shows contact options instead of asking the guest to retry indefinitely.
+- New guests request verification before account creation. Existing access-code sign-in and signed-in enquiries stay available.
+- Already-issued codes can still be submitted if delivery later becomes unavailable.
+- No guest account is opened without verification; ALLOW_UNVERIFIED_GUEST_BOOTSTRAP remains false.
+- Delivery failures log only an allowlisted error category, not SMTP secrets, recipient details or verification codes.
+
+UNRESOLVED OWNER/EMAIL-ADMIN STEP
+Identify the authorised Vedanta sender mailbox and its provider. Add SMTP_URL and MAIL_FROM securely in the existing vedanta-api Render service's Environment settings. An ordinary Microsoft sign-in configuration alone does not authorise sending mail.
+Do not paste mailbox passwords, app passwords or API keys into chat or commit them to GitHub. The provider/administrator must confirm an authenticated sending method is enabled for the chosen sender. Microsoft 365 tenants may require an approved OAuth-capable mail setup rather than password SMTP; do not weaken tenant security to work around this.
+No mail provider was purchased, no mailbox was created and no Microsoft permissions were changed by this patch.
+After configuration, redeploy once, confirm /guest/auth-options returns email_code:true, and perform one end-to-end code delivery/verification test to an owner-approved mailbox. Configuration presence is not evidence of successful delivery.
+
+VERIFICATION BEFORE RELEASE
+190 domain tests, 52 API tests and 27 guest tests passed (269 total). All three portals passed the combined production build.
+Browser checks passed at desktop and 390px mobile: official logo loads without horizontal overflow; unavailable registration shows the contact links and disables code requests; existing access-code sign-in still works. A separate local synthetic fixture passed code request and verification into My Stay with zero browser console errors. No real email was sent and this fixture does not establish production email delivery.

@@ -3,8 +3,9 @@ import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { describe, it } from "node:test";
 import assert from "node:assert/strict";
+import Fastify from "fastify";
 import { EMAIL_CODE_SENT } from "../../../domains/guest/signup.ts";
-import { guestEmailCodeHash, guestEmailCodeMatches, guestEmailDeliveryEnabled, normalizeGuestEmailCode } from "./guestEmailCode.ts";
+import guestEmailCode, { guestEmailCodeHash, guestEmailCodeMatches, guestEmailDeliveryEnabled, normalizeGuestEmailCode, guestEmailFailureCategory } from "./guestEmailCode.ts";
 
 const root = join(dirname(fileURLToPath(import.meta.url)), "../../..");
 
@@ -39,5 +40,46 @@ describe("guest email code", () => {
       const src = readFileSync(join(root, file), "utf8");
       assert.match(src, /key:\s*ALLOW_UNVERIFIED_GUEST_BOOTSTRAP\s+value:\s*"false"/);
     }
+  });
+
+  it("reports missing delivery without disclosing configuration or claiming a send", async () => {
+    const original = process.env.SMTP_URL;
+    delete process.env.SMTP_URL;
+    const app = Fastify();
+    try {
+      await app.register(guestEmailCode);
+      const options = await app.inject({method: "GET", url: "/guest/auth-options"});
+      assert.deepEqual(options.json(), {email_code: false});
+      assert.equal(options.headers["cache-control"], "no-store");
+      const request = await app.inject({method: "POST", url: "/guest/email-code/request", payload: {email: "guest@example.invalid"}});
+      assert.equal(request.statusCode, 503);
+      assert.equal(request.json().code, "email_unavailable");
+      assert.equal("token" in request.json(), false);
+    } finally {
+      await app.close();
+      if (original === undefined) delete process.env.SMTP_URL; else process.env.SMTP_URL = original;
+    }
+  });
+
+  it("advertises configured delivery without exposing the secret or sending an email", async () => {
+    const original = process.env.SMTP_URL;
+    process.env.SMTP_URL = "smtp://test-user:test-secret@smtp.example.invalid:587";
+    const app = Fastify();
+    try {
+      await app.register(guestEmailCode);
+      const options = await app.inject({method: "GET", url: "/guest/auth-options"});
+      assert.deepEqual(options.json(), {email_code: true});
+      assert.equal(options.body.includes("test-secret"), false);
+    } finally {
+      await app.close();
+      if (original === undefined) delete process.env.SMTP_URL; else process.env.SMTP_URL = original;
+    }
+  });
+
+  it("redacts sensitive delivery errors to a safe category", () => {
+    assert.equal(guestEmailFailureCategory({code:"EAUTH",message:"secret password and code 12345678"}), "EAUTH");
+    assert.equal(guestEmailFailureCategory({code:"smtp://password@example.invalid",message:"private"}), "DELIVERY_FAILED");
+    assert.equal(guestEmailFailureCategory(null), "DELIVERY_FAILED");
+    assert.equal(guestEmailFailureCategory(new Error("private")), "DELIVERY_FAILED");
   });
 });
