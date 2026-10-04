@@ -1,0 +1,74 @@
+VEDANTA GUEST BOOKING REFRESH — 4 OCTOBER 2026
+
+Status: local implementation and design preview. NOT deployed or merged.
+Repository: shyam1-jpg/vedanta-os
+Branch: codex/guest-booking-refresh
+Scope: existing apps/web-guest /book/ portal only. No Parslia files, production
+bookings, guest records, database schema, permissions or backend routes changed.
+
+DESIGN AND FLOW
+- Existing house photographs, forest/ivory palette and serif typography retained.
+- Stronger hero and clear Find your stay action; booking appears before gallery.
+- Mobile places date search before programmes. Calendar is optional, Monday-first,
+  correctly split by month, with disabled sold-out days and clear arrival labels.
+- No invented programme dates or prices. Missing retreats and failed loading are
+  distinct states. Existing property description is retained when configured.
+- Dates -> room -> details -> needs -> review; editing dates or guest count clears
+  the stale room choice without discarding name, email or personal requirements.
+- Full price, deposit and cancellation terms are confirmed by the house; this is
+  an enquiry, not instant confirmation or online payment. Wording reflects that.
+- Existing email verification, sign-in, My Stay, needs editing and house requests
+  remain connected to the same API. No authentication policy change.
+
+FILES
+apps/web-guest/app/page.tsx: layout, state transitions, validation/error UI.
+apps/web-guest/app/globals.css: responsive editorial styling and focus states.
+apps/web-guest/app/booking-utils.ts: London date helpers and stay validation.
+apps/web-guest/tests/booking-utils.test.mjs: 8 unit tests.
+apps/web-guest/package.json: test command.
+tools/preview-guest.mjs: local sample-data preview, never sends real email/bookings.
+PROGRESS.md: work journal.
+
+CHECKS
+Production guest build: compiled, type-checked and statically exported successfully.
+node --test --experimental-strip-types domains/guest/*.test.ts apps/web-guest/tests/*.test.mjs
+Result: 36 tests passed, 0 failed.
+Browser checks against local sample API:
+  Desktop hero and enquiry layout; 390px mobile layout without horizontal overflow.
+  Blank-date error; direct date entry; calendar selection; accessible-room filter.
+  Select room -> enter guest details -> needs -> complete review.
+  Simulated email-code gate -> simulated enquiry completion -> My Stay.
+  Later arrival adjusts invalid departure and removes stale room/details cards.
+  API failure displays a clear local error rather than an empty retreat list.
+  Delayed availability result is ignored after changing guest count.
+No real guest or payment was created. Actual email delivery and real booking
+creation were not exercised. Real-device Safari still needs a release smoke test.
+
+LOCAL PREVIEW (Node >=22)
+1. npm ci --workspace apps/web-guest --include-workspace-root --ignore-scripts
+2. Build with NEXT_PUBLIC_API_URL unset/empty:
+   npm run build --workspace apps/web-guest
+3. node tools/preview-guest.mjs
+4. Open http://127.0.0.1:4318/book/
+Sample availability is labelled on screen. For the simulated email gate use
+12345678; no real email is sent. Local preview state is memory-only.
+Optional environment variables:
+  GUEST_PREVIEW_PORT (default 4318)
+  GUEST_PREVIEW_SCENARIO=error or sold-out (default available)
+  GUEST_PREVIEW_DELAY=10000 (milliseconds; tests late response handling)
+Preview is loopback-only and has connect-src 'self' to block live API connections.
+
+BEFORE RELEASE
+- Review the design, then integrate this branch without overwriting concurrent work.
+- Keep Render NEXT_PUBLIC_API_URL pointing at the existing API; never deploy the
+  preview server. Use the existing npm run build:web-bundle deployment workflow.
+- Build the full web bundle in release CI. Only web-guest was built locally;
+  admin/staff code is unchanged and not revalidated in this design-only task.
+- npm reported an existing Next 15.5.2 security/deprecation warning. Review the
+  framework update across the monorepo before release; no blind dependency upgrade
+  is included in this visual redesign.
+- Smoke-test live public dates, mobile Safari and approved test email verification
+  in staging. Confirm My Stay access isolation using existing tests.
+- Group/multi-room enquiries and day-retreat handling keep the existing API limits;
+  this update does not add payment processing or invent room allocations.
+- Publish only after the local preview is accepted. Production is unchanged.
