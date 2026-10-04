@@ -27,6 +27,13 @@ function limit(key: string, max: number) {
 
 export const guestEmailDeliveryEnabled = () => !!process.env.SMTP_URL;
 
+/** Log only an allowlisted category, never SMTP credentials, message bodies or codes. */
+export function guestEmailFailureCategory(error: unknown): string {
+  const code = (error as { code?: unknown } | null)?.code;
+  return typeof code === "string" && ["EAUTH", "ECONNECTION", "ETIMEDOUT", "ESOCKET", "EENVELOPE", "EMESSAGE", "EDNS"].includes(code)
+    ? code : "DELIVERY_FAILED";
+}
+
 export function guestEmailCodeHash(code: string, salt: string) {
   return scryptSync(code, salt, 32).toString("hex");
 }
@@ -85,8 +92,13 @@ export async function takeGuestEmailCode(email: string, code: unknown): Promise<
 }
 
 export default async function guestEmailCode(f: FastifyInstance) {
+  f.get("/guest/auth-options", async (_req, reply) => {
+    reply.header("cache-control", "no-store");
+    return { email_code: guestEmailDeliveryEnabled() };
+  });
   f.post<{ Body: { email?: string; name?: string } }>("/guest/email-code/request", async (req, reply) => {
     if (!guestEmailDeliveryEnabled()) {
+      req.log.warn({ event: "guest_email_delivery", reason: "not_configured" }, "Guest verification email unavailable");
       return reply.code(503).send(problem(503, "email_unavailable", EMAIL_CODE_UNAVAILABLE));
     }
     if (!limit(`guest-code:${req.ip}`, 8)) {
@@ -125,7 +137,8 @@ export default async function guestEmailCode(f: FastifyInstance) {
         subject: `Your code to open ${houseName} My Stay`,
         text: `Dear ${name},\n\nYour code to open My Stay is ${code}.\n\nIt expires in 10 minutes and works once. Enter it on the booking page. If you did not ask for this, ignore this email.\n\n${houseName}`,
       });
-    } catch {
+    } catch (error) {
+      req.log.warn({ event: "guest_email_delivery", reason: guestEmailFailureCategory(error) }, "Guest verification email failed");
       await pool.query(`delete from guest_email_code where email=$1 and code_hash=$2`, [email, hash]);
       return reply.code(503).send(problem(503, "email_unavailable", EMAIL_CODE_UNAVAILABLE));
     }

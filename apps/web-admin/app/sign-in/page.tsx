@@ -42,6 +42,7 @@ export default function SignIn() {
     <div className="arrive">
       <section className="arrive-hero">
         <div>
+          <img className="official-house-logo" src="/vedanta-official-logo.png" alt="The Vedanta — The Vedanta Way Ltd" width="386" height="102" />
           <div className="arrive-kicker">{prop.kicker}</div>
           <h1>{prop.name}</h1>
           <p className="lede">{prop.tagline}</p>

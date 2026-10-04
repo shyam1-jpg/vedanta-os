@@ -3,6 +3,7 @@ import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { addDays, calendarMonths, calendarOffset, houseToday, validateStay } from "./booking-utils";
 import RoomExplorer from "./RoomExplorer";
 import ArrivalCheckIn from "./ArrivalCheckIn";
+import {guestSignupCanProceed, guestEmailStatusMessage, type GuestEmailStatus} from "./guest-email-status";
 import { roomRequestText, roomSelection, type AvailableRoom } from "./room-options";
 const API = process.env.NEXT_PUBLIC_API_URL ?? "";
 const tok = {
@@ -24,6 +25,18 @@ async function api<T>(path: string, init: RequestInit = {}): Promise<T> {
 
 function needsEmailCode(e: unknown): boolean {
   return (e as { code?: string })?.code === "guest_email_verification_required";
+}
+
+function GuestEmailHelp({status, onRetry}: {status: GuestEmailStatus; onRetry: () => void}) {
+  if (status === "available") return null;
+  return <div className="note email-help" role="status">
+    <p>{guestEmailStatusMessage(status)}</p>
+    {status !== "checking" && <>
+      <a href="https://www.thevedanta.org/contact" target="_blank" rel="noopener noreferrer">Contact the house</a>
+      <span> · </span><a href="mailto:connect@thevedanta.org">connect@thevedanta.org</a>
+      <button className="text-button" type="button" onClick={onRetry}>Check email availability again</button>
+    </>}
+  </div>;
 }
 
 type Prop = { name: string; kicker: string; tagline: string; about: string; website: string; company: string; address: string; check_in_from: string; check_out_by: string; rooms: number };
@@ -153,6 +166,7 @@ export default function Book() {
   const [ask, setAsk] = useState({ request_text: "", room_label: "" });
   const [requestedRooms, setRequestedRooms] = useState<string[]>([]);
   const [codeSentTo, setCodeSentTo] = useState<string | null>(null);
+  const [emailStatus, setEmailStatus] = useState<GuestEmailStatus>("checking");
   const [publicState, setPublicState] = useState<"loading" | "ready" | "error">("loading");
   const [calendarState, setCalendarState] = useState<"loading" | "ready" | "error">("loading");
   const [datesError, setDatesError] = useState<string | null>(null);
@@ -182,6 +196,14 @@ export default function Book() {
     scrollAuthOnPaint.current = false;
   }, [auth, me]);
 
+  const checkEmailStatus = async () => {
+    setEmailStatus("checking");
+    try {
+      const options = await api<{email_code: boolean}>("/guest/auth-options");
+      setEmailStatus(options.email_code ? "available" : "unavailable");
+    } catch { setEmailStatus("unknown"); }
+  };
+
   const loadPublic = async () => {
     setPublicState("loading");
     try {
@@ -209,6 +231,7 @@ export default function Book() {
 
   useEffect(() => {
     loadPublic();
+    checkEmailStatus();
     if (tok.get()) loadSigned().catch(() => tok.set(null));
   }, []);
 
@@ -270,6 +293,7 @@ export default function Book() {
   const codeReady = codeSentTo === emailAddress && emailAddress.includes("@");
 
   const sendGuestCode = async () => {
+    if (!guestSignupCanProceed(emailStatus, false)) throw new Error(guestEmailStatusMessage(emailStatus));
     const sent = await api<{ message: string }>("/guest/email-code/request", {
       method: "POST", body: JSON.stringify({ name: form.name, email: form.email }),
     });
@@ -279,8 +303,10 @@ export default function Book() {
   };
 
   const doRegister = async () => {
+    if (!guestSignupCanProceed(emailStatus, codeReady)) { setErr(guestEmailStatusMessage(emailStatus)); return; }
     setBusy(true); setErr(null); setOk(null);
     try {
+      if (!codeReady) { await sendGuestCode(); return; }
       const r = await api<{ token: string; user: Me; access_code?: string | null }>("/guest/register", {
         method: "POST", body: JSON.stringify({ name: form.name, email: form.email, email_code: form.email_code.trim() || undefined }),
       });
@@ -318,6 +344,7 @@ export default function Book() {
   };
 
   const doEnquiry = async () => {
+    if (!guestSignupCanProceed(emailStatus, codeReady, !!me)) { setErr(guestEmailStatusMessage(emailStatus)); return null; }
     const stayProblem = validateStay(form.arrival, form.departure, form.people, houseToday());
     if (stayProblem || !avail || !selection.canContinue) {
       setErr(stayProblem || "Please check your dates and request enough room capacity for your whole party.");
@@ -325,6 +352,7 @@ export default function Book() {
     }
     setBusy(true); setErr(null); setOk(null);
     try {
+      if (!me && !codeReady) { await sendGuestCode(); return null; }
       const r = await api<{ token: string; user: Me; access_code?: string | null; id: string; status: string }>("/guest/enquiries", {
         method: "POST", body: JSON.stringify({
           name: form.name, email: form.email, people: Number(form.people), notes: form.notes,
@@ -357,7 +385,7 @@ export default function Book() {
     <>
       <a className="skip-link" href="#booking-form">Skip to booking</a>
       <header className="top">
-        <a className="mark" href="#top"><span className="brand-symbol" aria-hidden="true">V</span><span>The Vedanta Way<small>RETREAT CENTRE</small></span></a>
+        <a className="mark" href="#top" aria-label="The Vedanta Way Ltd — home"><img className="official-logo" src="/book/vedanta-official-logo.png" alt="The Vedanta" width="386" height="102" /><span className="brand-company">The Vedanta Way Ltd</span></a>
         <nav className="main-nav" aria-label="Main navigation"><a href="#the-house">The house</a><a href="#open-retreats">Plan your stay</a></nav>
         <div className="who">
           {me
@@ -391,12 +419,13 @@ export default function Book() {
           {auth !== "hidden" && !me && (
             <div ref={authCardRef} id="guest-auth" className="card" style={{ maxWidth: 480, marginBottom: 28 }}>
               <h2 style={{ fontSize: 26 }}>{auth === "recover" ? "Access code help" : auth === "register" ? "Open My Stay" : "Sign in to My Stay"}</h2>
+              {auth === "register" && !codeReady && <GuestEmailHelp status={emailStatus} onRetry={checkEmailStatus} />}
               <p className="m">{auth === "recover"
                 ? "We will not tell you whether an email is on the book. If it is, the house will help."
                 : auth === "register"
                   ? (codeReady
                     ? "Enter the 8-digit code from your email. My Stay opens after it matches. You will then get a separate access code for signing in later."
-                    : "We email a code to confirm this address is yours, then open My Stay. You can browse first if you prefer.")
+                    : emailStatus === "available" ? "We email a code to confirm this address is yours, then open My Stay. You can browse first if you prefer." : "Already have My Stay? Sign in below with your existing access code.")
                   : "Email and the 6-digit access code from when you first opened My Stay."}</p>
               {auth === "register" && <>
                 <label htmlFor="g-name">Your name</label>
@@ -412,11 +441,11 @@ export default function Book() {
                 <label htmlFor="g-code">Access code</label>
                 <input id="g-code" inputMode="numeric" placeholder="6-digit code" value={form.access_code} onChange={e => setForm({ ...form, access_code: e.target.value })} />
               </>}
-              <button className="btn" disabled={busy} onClick={auth === "recover" ? doRecover : auth === "register" ? doRegister : doLogin}>
-                {busy ? "…" : auth === "recover" ? "Ask the house" : auth === "register" ? "Create My Stay" : "Open My Stay"}
+              <button className="btn" disabled={busy || (auth === "register" && (!guestSignupCanProceed(emailStatus, codeReady) || !form.name.trim() || !form.email.includes("@")))} onClick={auth === "recover" ? doRecover : auth === "register" ? doRegister : doLogin}>
+                {busy ? "…" : auth === "recover" ? "Ask the house" : auth === "register" ? (codeReady ? "Verify code & open My Stay" : "Email my verification code") : "Open My Stay"}
               </button>
               {auth === "login" && <button className="btn sec" onClick={() => { setAuth("recover"); setErr(null); setOk(null); }}>I cannot use my code</button>}
-              {auth === "register" && codeReady && <button className="btn sec" type="button" disabled={busy} onClick={async () => { setBusy(true); setErr(null); setOk(null); try { await sendGuestCode(); } catch (e) { setErr((e as Error).message); } finally { setBusy(false); } }}>Email a new code</button>}
+              {auth === "register" && codeReady && <button className="btn sec" type="button" disabled={busy || emailStatus !== "available"} onClick={async () => { setBusy(true); setErr(null); setOk(null); try { await sendGuestCode(); } catch (e) { setErr((e as Error).message); } finally { setBusy(false); } }}>Email a new code</button>}
               <button className="btn sec" onClick={() => { setAuth(auth === "login" ? "register" : "login"); setErr(null); setOk(null); }}>
                 {auth === "login" || auth === "recover" ? "I need to register" : "I already have My Stay"}
               </button>
@@ -563,13 +592,14 @@ export default function Book() {
                   {form.travel_notes && <p className="m"><b>Travel:</b> {form.travel_notes}</p>}
                   {form.notes && <p className="m"><b>Notes:</b> {form.notes}</p>}
                   {sel?.price && <p className="m"><b>Published price note:</b> {sel.price}</p>}
-                  {!me && <p className="hint">A new My Stay opens only after you enter the code we email to this address. After that, sign in with your access code.</p>}
+                  {!me && !codeReady && <GuestEmailHelp status={emailStatus} onRetry={checkEmailStatus} />}
+                  {!me && (emailStatus === "available" || codeReady) && <p className="hint">A new My Stay opens only after you enter the code we email to this address. After that, sign in with your access code.</p>}
                   {codeReady && <>
                     <label htmlFor="enquiry-email-code">Email code</label>
                     <input id="enquiry-email-code" inputMode="numeric" autoComplete="one-time-code" placeholder="8-digit code from your email" value={form.email_code} onChange={e => setForm({ ...form, email_code: e.target.value })} />
                   </>}
-                  <button className="btn" style={{ marginTop: 10 }} disabled={busy || searching || !avail || !selection.canContinue || !form.name.trim() || !form.email.includes("@")} onClick={doEnquiry}>
-                    {busy ? "Sending…" : "Send booking enquiry"}
+                  <button className="btn" style={{ marginTop: 10 }} disabled={busy || searching || !avail || !selection.canContinue || !form.name.trim() || !form.email.includes("@") || !guestSignupCanProceed(emailStatus, codeReady, !!me)} onClick={doEnquiry}>
+                    {busy ? "Sending…" : !me && !codeReady ? "Email code to continue" : "Send booking enquiry"}
                   </button>
                   <button className="text-button" disabled={busy} onClick={() => setStep("needs")}>Back to your needs</button>
                   {ok && <div className="note" role="status">{ok}</div>}

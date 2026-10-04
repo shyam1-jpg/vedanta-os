@@ -19,6 +19,9 @@ http.createServer(async(req,res)=>{
     const url=new URL(req.url,`http://127.0.0.1:${port}`),p=url.pathname;let body={};
     if(['POST','PATCH'].includes(req.method)){let raw='';for await(const c of req){raw+=c;if(raw.length>16000)return send(res,413,{});}body=JSON.parse(raw||'{}');}
     if(p.startsWith('/guest/')||p.startsWith('/auth/')||p.startsWith('/v1/')||p.startsWith('/staff/')||p==='/me'){
+      if(p==='/guest/auth-options')return send(res,200,{email_code:process.env.PREVIEW_EMAIL_AVAILABLE==='true'});
+      if(p==='/guest/email-code/request')return process.env.PREVIEW_EMAIL_AVAILABLE==='true'?send(res,200,{message:'LOCAL TEST ONLY: enter 12345678. No email was sent.'}):send(res,503,{code:'email_unavailable',detail:'Local fixture: no email service.'});
+      if(p==='/guest/register')return body.email_code==='12345678'?send(res,200,{token:'preview-guest',user:{name:'Preview Guest',email:'guest@example.invalid'}}):send(res,401,{detail:'Local fixture code did not match.'});
       if(p==='/guest/property')return send(res,200,{name:'The Vedanta Way',kicker:'Retreat centre',tagline:'A local test of guest arrival',about:'',website:'',company:'',address:'',check_in_from:'15:00',check_out_by:'11:00',rooms:40});
       if(p==='/guest/programmes')return send(res,200,{items:[]});
       if(p==='/guest/calendar')return send(res,200,{days:[]});

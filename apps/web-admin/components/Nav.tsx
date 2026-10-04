@@ -30,7 +30,7 @@ export default function Nav() {
   const propertyKicker = (user as any)?.property_kicker ?? "Retreat Center";
   return (
     <nav className="nav">
-      <div className="brand">{propertyName}<small>{propertyKicker}</small></div>
+      <div className="brand official-house-brand"><img src="/vedanta-official-logo.png" alt="The Vedanta" width="386" height="102" /><small>{propertyName} · {propertyKicker}</small></div>
       {user && sections.map(sec => (
         <div key={sec.label} className="nav-group">
           <div className="nav-sec">{sec.label}</div>

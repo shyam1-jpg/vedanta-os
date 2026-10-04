@@ -114,7 +114,7 @@ export default function Pocket() {
 
   if (!me) return (
     <>
-      <div className="hero"><div className="kicker">{prop.kicker}</div><h1>{prop.name}</h1><p>Luxury retreat centre</p></div>
+      <div className="hero"><img className="official-house-logo" src="/pocket/vedanta-official-logo.png" alt="The Vedanta — The Vedanta Way Ltd" width="386" height="102" /><div className="kicker">{prop.kicker}</div><h1>{prop.name}</h1><p>Luxury retreat centre</p></div>
       <div className="wrap">
         <div className="card">
           <h2>Staff pocket</h2>
@@ -142,7 +142,7 @@ export default function Pocket() {
 
   return (
     <>
-      <div className="hero"><div className="kicker">{me.role_name ?? me.role.replace(/_/g, " ")}</div><h1>{me.name}</h1><div className="hero-status"><span>{clock?.last === "IN" ? "On shift" : "Off shift"}</span><span>{tasks?.counts.open ?? 0} open tasks</span><span>{duty.length} shifts on your board</span></div></div>
+      <div className="hero"><img className="official-house-logo" src="/pocket/vedanta-official-logo.png" alt="The Vedanta — The Vedanta Way Ltd" width="386" height="102" /><div className="kicker">{me.role_name ?? me.role.replace(/_/g, " ")}</div><h1>{me.name}</h1><div className="hero-status"><span>{clock?.last === "IN" ? "On shift" : "Off shift"}</span><span>{tasks?.counts.open ?? 0} open tasks</span><span>{duty.length} shifts on your board</span></div></div>
       <div className={tab === "morning" ? "wrap morning-wrap" : "wrap"}>
         <div className="tabs">
           <button className={tab === "morning" ? "on" : ""} onClick={() => setTab("morning")}>Morning board</button>
