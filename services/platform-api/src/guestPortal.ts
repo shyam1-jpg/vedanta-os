@@ -76,7 +76,7 @@ function shapeProgramme(r: any) {
   };
 }
 
-async function requireGuest(req: any, reply: any): Promise<Guest | null> {
+export async function requireGuest(req: any, reply: any): Promise<Guest | null> {
   const auth = req.headers.authorization;
   if (!auth?.startsWith("Bearer ")) { reply.code(401).send(problem(401, "unauthenticated", "Sign in to continue")); return null; }
   const s = (await pool.query(`select g.id, g.tenant_id, g.property_id, g.email, g.display_name
