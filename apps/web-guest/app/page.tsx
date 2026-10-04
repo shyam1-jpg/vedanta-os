@@ -1,5 +1,6 @@
 "use client";
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
+import { addDays, calendarMonths, calendarOffset, houseToday, validateStay } from "./booking-utils";
 const API = process.env.NEXT_PUBLIC_API_URL ?? "";
 const tok = {
   get: () => (typeof window === "undefined" ? null : sessionStorage.getItem("vedanta.guest.token")),
@@ -39,10 +40,10 @@ const fmt = (d: string) => {
 };
 const nights = (p: Prog) => p.nights === 1 ? "1 night" : p.nights > 1 ? `${p.nights} nights` : "Day retreat";
 const STEPS: { id: Step; label: string }[] = [
-  { id: "browse", label: "Programme" },
+  { id: "browse", label: "Dates" },
   { id: "room", label: "Room" },
-  { id: "details", label: "Your details" },
-  { id: "needs", label: "Diet & access" },
+  { id: "details", label: "Details" },
+  { id: "needs", label: "Your needs" },
   { id: "pay", label: "Review" },
   { id: "done", label: "Enquiry sent" },
 ];
@@ -64,6 +65,34 @@ const GALLERY: { file: string; title: string; caption?: string; alt: string; wid
   { file: "lounge.jpg", title: "Guest lounge", caption: "The guest lounge.", alt: "The guest lounge", },
   { file: "lake.jpg", title: "The grounds", caption: "A lake in the grounds.", alt: "A lake in the grounds", },
 ];
+
+function HouseStory() {
+  return <>
+    <section className="gallery" id="the-house" aria-label="The house and grounds">
+      <div className="section-heading">
+        <div><p className="section-kicker">A sense of place</p><h2>House, table & grounds.</h2></div>
+        <p className="lead">A glimpse of the spaces that will be part of your stay.</p>
+      </div>
+      <div className="gallery-grid">
+        {GALLERY.map(g => <figure key={g.file} className={g.wide ? "shot wide" : "shot"}>
+          <img src={photo(g.file)} alt={g.alt} loading="lazy" />
+          <figcaption><strong>{g.title}</strong>{g.caption && <span>{g.caption}</span>}</figcaption>
+        </figure>)}
+      </div>
+      <p className="goshala">A goshala on the grounds is home to two cows, Hari and Lakshmi, for care and seva.</p>
+    </section>
+    <section className="experience" aria-label="Dining experience">
+      <img src={photo("dining-room.jpg")} alt="The retreat dining hall set for a shared meal" loading="lazy" />
+      <div className="experience-copy">
+        <p className="section-kicker">Time around the table</p>
+        <h2>Good food.<br />Thoughtfully shared.</h2>
+        <p>The restaurant is buffet-only and pure vegetarian — no eggs, and no onion, garlic or other onion-family ingredients.</p>
+        <p>Tell the house about vegan, Jain, gluten-free and allergy needs when you enquire. The kitchen will review your requirements.</p>
+        <a className="text-link" href="#booking-form">Plan your stay <span aria-hidden="true">↗</span></a>
+      </div>
+    </section>
+  </>;
+}
 
 function ArrivalPlan({stay,property}:{stay:Mine;property:Prop|null}){
  const [items,setItems]=useState<{id:string;date:string;start_time:string;end_time:string|null;title:string;location:string|null}[]|null>(null),[error,setError]=useState('');
@@ -123,6 +152,15 @@ export default function Book() {
   const [bedPreference, setBedPreference] = useState("any");
   const [accessibleOnly, setAccessibleOnly] = useState(false);
   const [codeSentTo, setCodeSentTo] = useState<string | null>(null);
+  const [publicState, setPublicState] = useState<"loading" | "ready" | "error">("loading");
+  const [calendarState, setCalendarState] = useState<"loading" | "ready" | "error">("loading");
+  const [datesError, setDatesError] = useState<string | null>(null);
+  const [searching, setSearching] = useState(false);
+  const [today, setToday] = useState("");
+  const searchVersion = useRef(0);
+  const bookingRef = useRef<HTMLDivElement>(null);
+  const stepCardRef = useRef<HTMLDivElement>(null);
+  const confirmationRef = useRef<HTMLDivElement>(null);
   const authCardRef = useRef<HTMLDivElement>(null);
   const scrollAuthOnPaint = useRef(false);
 
@@ -144,12 +182,16 @@ export default function Book() {
   }, [auth, me]);
 
   const loadPublic = async () => {
-    const [p, progs] = await Promise.all([
-      api<Prop>("/guest/property"),
-      api<{ items: Prog[] }>("/guest/programmes"),
-    ]);
-    setProp(p);
-    setProgrammes(progs.items);
+    setPublicState("loading");
+    try {
+      const [p, progs] = await Promise.all([
+        api<Prop>("/guest/property"),
+        api<{ items: Prog[] }>("/guest/programmes"),
+      ]);
+      setProp(p);
+      setProgrammes(progs.items);
+      setPublicState("ready");
+    } catch { setPublicState("error"); }
   };
 
   const loadSigned = async () => {
@@ -165,33 +207,54 @@ export default function Book() {
   };
 
   useEffect(() => {
-    loadPublic().catch(() => {});
+    loadPublic();
     if (tok.get()) loadSigned().catch(() => tok.set(null));
   }, []);
 
   const searchDates = async (arrival = form.arrival, departure = form.departure) => {
+    const version = ++searchVersion.current;
     setAvail(null);
-    if (!arrival || !departure || departure <= arrival) { setErr("Choose a departure after your arrival date."); return; }
-    setBusy(true); setErr(null);
+    setForm(f => ({ ...f, room_preference: "" }));
+    setStep("room");
+    const problem = validateStay(arrival, departure, form.people, houseToday());
+    if (problem) { setDatesError(problem); setSearching(false); return; }
+    setSearching(true); setDatesError(null);
     try {
       const a = await api<Avail>(`/guest/availability?arrival=${arrival}&departure=${departure}&people=${form.people}`);
-      setAvail(a);
-    } catch (e) { setErr((e as Error).message); }
-    finally { setBusy(false); }
+      if (version === searchVersion.current) setAvail(a);
+    } catch { if (version === searchVersion.current) setDatesError("We couldn't check these dates. Please try again in a moment."); }
+    finally { if (version === searchVersion.current) setSearching(false); }
   };
 
+  const loadCalendar = async () => {
+    const from = houseToday();
+    setToday(from); setCalendarState("loading"); setCal([]);
+    try {
+      const r = await api<{ days: Day[] }>(`/guest/calendar?from=${from}&to=${addDays(from, 28)}`);
+      setCal(r.days); setCalendarState("ready");
+    } catch { setCalendarState("error"); }
+  };
+  useEffect(() => { loadCalendar(); return () => { searchVersion.current++; }; }, []);
   useEffect(() => {
-    const from = new Date(); const to = new Date(); to.setDate(to.getDate() + 28);
-    const f = from.toISOString().slice(0, 10); const t = to.toISOString().slice(0, 10);
-    api<{ days: Day[] }>(`/guest/calendar?from=${f}&to=${t}`).then(r => setCal(r.days)).catch(() => {});
-  }, []);
+    if (["details", "needs", "pay"].includes(step)) scrollAuthCardIntoView(stepCardRef.current);
+    if (step === "done") scrollAuthCardIntoView(confirmationRef.current);
+  }, [step]);
+
+  const updateDates = (key: "arrival" | "departure" | "people", value: string) => {
+    searchVersion.current++;
+    setSearching(false); setAvail(null); setSel(null); setDatesError(null); setErr(null); setOk(null); setStep("browse");
+    setForm(f => ({ ...f, [key]: value, room_preference: "",
+      ...(key === "arrival" && value && f.departure && f.departure <= value ? { departure: addDays(value, 1) } : {}),
+    }));
+  };
 
   const pickProgramme = (p: Prog) => {
     setSel(p);
-    setForm(f => ({ ...f, arrival: p.arrival, departure: p.departure }));
+    setForm(f => ({ ...f, arrival: p.arrival, departure: p.departure, room_preference: "" }));
     setStep("room");
     setOk(null); setErr(null);
     searchDates(p.arrival, p.departure);
+    scrollAuthCardIntoView(bookingRef.current);
   };
 
   const matchingTypes = (avail?.types ?? []).filter(t =>
@@ -283,8 +346,10 @@ export default function Book() {
 
   return (
     <>
+      <a className="skip-link" href="#booking-form">Skip to booking</a>
       <header className="top">
-        <div className="mark">Retreat Center · The Vedanta Way</div>
+        <a className="mark" href="#top"><span className="brand-symbol" aria-hidden="true">V</span><span>The Vedanta Way<small>RETREAT CENTRE</small></span></a>
+        <nav className="main-nav" aria-label="Main navigation"><a href="#the-house">The house</a><a href="#open-retreats">Plan your stay</a></nav>
         <div className="who">
           {me
             ? <>{me.name} · My Stay · <button onClick={signOut}>Sign out</button></>
@@ -295,50 +360,24 @@ export default function Book() {
         </div>
       </header>
 
+      <main id="top">
       <section className="hero" aria-label={prop?.name ?? "The Vedanta Way"}>
         <div className="hero-inner">
-          <div className="kicker">{prop?.kicker ?? "Retreat Center"}</div>
-          <h1>{prop?.name ?? "The Vedanta Way"}</h1>
-          <p className="tag">{prop?.tagline ?? "Luxury retreat centre"}</p>
-          {prop?.about && <p className="about">{prop.about}</p>}
-          <a className="hero-cta" href="#open-retreats">Browse open retreats</a>
+          <div className="kicker">{prop?.name ?? "The Vedanta Way"} · Retreat stays</div>
+          <h1>A quieter pace.<br /><em>A place to reconnect.</em></h1>
+          <p className="about">{prop?.about || "Make time for yourself, for good company, and for a different rhythm. Your stay begins here."}</p>
+          <div className="hero-actions"><a className="hero-cta" href="#booking-form">Find your stay <span aria-hidden="true">↗</span></a><a className="hero-link" href="#the-house">Explore the house</a></div>
         </div>
+        <div className="hero-caption"><span>THE HOUSE · THE TABLE · THE GROUNDS</span><span>A welcome change of pace.</span></div>
       </section>
 
       <div className="band">
         <div className="wrap">
-          <div className="facts">
+          <div className="facts arrival-facts">
             <div><b>{prop?.check_in_from ?? "15:00"}</b><span>Check-in from</span></div>
             <div><b>{prop?.check_out_by ?? "11:00"}</b><span>Check-out by</span></div>
             <div><b>{prop?.rooms ?? 41}</b><span>Guest rooms</span></div>
           </div>
-
-          <section className="gallery" aria-label="The house and grounds">
-            <p className="section-kicker">The house</p>
-            <h2>House, table and grounds</h2>
-            <p className="lead">The restaurant is buffet-only and pure vegetarian — no eggs, and no onion, garlic or other onion-family ingredients.</p>
-            <div className="gallery-grid">
-              {GALLERY.map(g => (
-                <figure key={g.file} className={g.wide ? "shot wide" : "shot"}>
-                  <img src={photo(g.file)} alt={g.alt} />
-                  <figcaption>
-                    <strong>{g.title}</strong>
-                    {g.caption && <span>{g.caption}</span>}
-                  </figcaption>
-                </figure>
-              ))}
-            </div>
-            <p className="goshala">A goshala on the grounds is home to two cows, Hari and Lakshmi, for care and seva.</p>
-          </section>
-
-          <section className="experience" aria-label="Dining experience">
-            <img src={photo("guest-dining-concept.webp")} alt="Illustration of guests enjoying a vegetarian buffet at a retreat" loading="lazy" />
-            <div className="experience-copy">
-              <p className="section-kicker">At the table</p>
-              <h2>Food made for your retreat</h2>
-              <p>Enjoy vegetarian buffet meals together. Tell the house about vegan, Jain, gluten-free and allergy needs when you enquire, then update your details in My Stay.</p>
-            </div>
-          </section>
 
           {auth !== "hidden" && !me && (
             <div ref={authCardRef} id="guest-auth" className="card" style={{ maxWidth: 480, marginBottom: 28 }}>
@@ -377,16 +416,25 @@ export default function Book() {
             </div>
           )}
 
-          {(me || step === "done") && ok && <div className="note" role="status" style={{ marginBottom: 18 }}>{ok}</div>}
+          {(me || step === "done") && ok && <div ref={confirmationRef} className="note" role="status" style={{ marginBottom: 18 }}>{ok}</div>}
 
+          <section className="booking-section" id="open-retreats" aria-labelledby="stay-heading">
+          <div className="section-heading">
+            <div><p className="section-kicker">Your time, your pace</p><h2 id="stay-heading">A stay to look forward to.</h2></div>
+            <p className="lead">Explore a retreat or choose your own dates.<br />No account needed to check availability.</p>
+          </div>
           <div className="split">
-            <div>
-              <h2 id="open-retreats">Open retreats</h2>
-              <p className="lead">Browse programmes, dates and rooms before you create an account. Send an enquiry when you are ready.</p>
+            <div className="retreat-options">
+              <div className="subheading"><h3>Open retreats</h3><span>Programmes at the house</span></div>
               <div className="grid">
-                {programmes.length === 0 && <p className="m">No published retreats right now. Search your own dates — the house still has rooms to offer.</p>}
+                {publicState === "loading" && <p className="note" role="status">Checking published retreats…</p>}
+                {publicState === "error" && <div className="note" role="alert">We couldn't load the retreat list. You can still try searching your dates.<button className="text-button" onClick={loadPublic}>Try again</button></div>}
+                {publicState === "ready" && programmes.length === 0 && <div className="own-stay">
+                  <img src={photo("lake.jpg")} alt="A peaceful lake in the retreat grounds" loading="lazy" />
+                  <div><p className="section-kicker">Make space for yourself</p><h3>Start with your own dates.</h3><p>No group retreats are published right now. Check room availability for the stay you have in mind.</p><a className="text-link" href="#booking-form">Choose your dates <span aria-hidden="true">↗</span></a></div>
+                </div>}
                 {programmes.map(p => (
-                  <button key={p.id} className={"prog" + (sel?.id === p.id ? " on" : "")} onClick={() => pickProgramme(p)}>
+                  <button key={p.id} disabled={busy} className={"prog" + (sel?.id === p.id ? " on" : "")} onClick={() => pickProgramme(p)}>
                     <div className="k">{p.kind}</div>
                     <h3>{p.name}</h3>
                     <div className="d">{fmt(p.arrival)} → {fmt(p.departure)} · {nights(p)}{p.price ? ` · ${p.price}` : ""}</div>
@@ -394,109 +442,140 @@ export default function Book() {
                 ))}
               </div>
 
-              <h2 style={{ marginTop: 36 }}>Availability</h2>
-              <p className="lead">Rooms free each night for the next four weeks. Select an arrival day, then check the full stay.</p>
-              <div className="cal">
-                {cal.map(d => (
-                  <button key={d.date} type="button" aria-label={`${fmt(d.date)}: ${d.free_rooms} rooms free`} aria-pressed={form.arrival === d.date}
+              <details className="calendar-panel">
+              <summary>Flexible with your dates?<span>See the next four weeks <span aria-hidden="true">+</span></span></summary>
+              <p className="m">Choose an available arrival day. We'll start with two nights; you can change this before sending your enquiry.</p>
+              {calendarState === "loading" && <p role="status" className="m">Checking the calendar…</p>}
+              {calendarState === "error" && <p role="alert" className="m">The calendar is unavailable.<button className="text-button" onClick={loadCalendar}>Try again</button></p>}
+              {calendarState === "ready" && cal.length === 0 && <p className="m">No calendar dates have been published. Use the date search to check a stay.</p>}
+              {calendarMonths(cal).map(month => <div className="calendar-month" key={month.key}>
+                <h4>{month.title}</h4><div className="cal">
+                {["Mo", "Tu", "We", "Th", "Fr", "Sa", "Su"].map(day => <span className="weekday" aria-hidden="true" key={day}>{day}</span>)}
+                {Array.from({ length: calendarOffset(month.days[0].date) }, (_, i) => <span key={`gap-${i}`} aria-hidden="true" />)}
+                {month.days.map(d => (
+                  <button key={d.date} type="button" disabled={busy || d.free_rooms === 0} aria-label={`${fmt(d.date)}: ${d.free_rooms} rooms free. Select arrival.`} aria-pressed={form.arrival === d.date}
                     className={"cal-d" + (d.free_rooms === 0 ? " none" : "") + (form.arrival === d.date ? " selected" : "")} onClick={() => {
-                    const next = new Date(d.date + "T12:00:00"); next.setDate(next.getDate() + 2);
-                    const dep = next.toISOString().slice(0, 10);
+                    const dep = addDays(d.date, 2);
                     setSel(null);
-                    setForm(f => ({ ...f, arrival: d.date, departure: dep }));
+                    setForm(f => ({ ...f, arrival: d.date, departure: dep, room_preference: "" }));
                     setStep("room");
                     searchDates(d.date, dep);
+                    scrollAuthCardIntoView(bookingRef.current);
                   }}>
-                    <b>{new Date(d.date + "T12:00:00").toLocaleDateString("en-GB", { day: "numeric", month: "short" })}</b>
-                    <span>{d.free_rooms} rooms</span>
+                    <b>{Number(d.date.slice(8))}</b><span className="availability-dot" aria-hidden="true" />
                   </button>
                 ))}
-              </div>
+                </div></div>)}
+              <p className="calendar-key"><span className="availability-dot" /> Rooms available · Final availability depends on your full stay.</p>
+              </details>
+              <div className="enquiry-explainer"><span aria-hidden="true">01 — 03</span><h3>A thoughtful welcome,<br />without the rush.</h3><p>Choose your dates and room preference. Tell us a little about your stay. The house will confirm availability, price and next steps.</p><b>No payment is taken with your enquiry.</b></div>
             </div>
 
-            <aside>
-              <div className="steps" aria-label="Booking steps">
-                {STEPS.map(s => <span key={s.id} className={STEPS.findIndex(x => x.id === step) >= STEPS.findIndex(x => x.id === s.id) ? "done" : ""}>{s.label}</span>)}
-              </div>
+            <aside aria-label="Plan your stay">
+              <div ref={bookingRef} id="booking-form" className="booking-panel">
+              <ol className="steps" aria-label="Enquiry progress">
+                {STEPS.filter(s => s.id !== "done").map((s, i) => <li key={s.id} aria-current={step === s.id ? "step" : undefined} className={STEPS.findIndex(x => x.id === step) >= i ? "done" : ""}><span>{i + 1}</span>{s.label}</li>)}
+              </ol>
 
-              <div className="card">
-                <h2 style={{ fontSize: 24 }}>{sel ? sel.name : "Your dates"}</h2>
+              <div className="card search-card">
+                <p className="section-kicker">Begin your enquiry</p>
+                <h2>{sel ? sel.name : "Find your stay"}</h2>
+                <p className="m">Choose your dates. We'll show you the available rooms.</p>
                 {sel && <p className="m">{fmt(sel.arrival)} → {fmt(sel.departure)} · {nights(sel)}{sel.basis ? ` · ${sel.basis}` : ""}</p>}
                 {sel?.about && <p className="copy">{sel.about}</p>}
-                <label>Arrive</label>
-                <input type="date" value={form.arrival} onChange={e => { setForm({ ...form, arrival: e.target.value, room_preference: "" }); setSel(null); setAvail(null); }} />
-                <label>Depart</label>
-                <input type="date" min={form.arrival || undefined} value={form.departure} onChange={e => { setForm({ ...form, departure: e.target.value, room_preference: "" }); setAvail(null); }} />
-                <label>How many people</label>
-                <input type="number" min={1} max={41} value={form.people} onChange={e => { setForm({ ...form, people: e.target.value, room_preference: "" }); setAvail(null); }} />
-                <button className="btn sec" disabled={busy} onClick={() => { setStep("room"); searchDates(); }}>Show rooms</button>
+                <form onSubmit={e => { e.preventDefault(); searchDates(); }} aria-busy={searching} noValidate>
+                  <div className="date-fields">
+                    <div><label htmlFor="arrival">Arrival</label><input id="arrival" type="date" required disabled={busy} min={today || undefined} value={form.arrival} onChange={e => updateDates("arrival", e.target.value)} /></div>
+                    <div><label htmlFor="departure">Departure</label><input id="departure" type="date" required disabled={busy} min={form.arrival ? addDays(form.arrival, 1) : today || undefined} value={form.departure} onChange={e => updateDates("departure", e.target.value)} /></div>
+                  </div>
+                  <label htmlFor="guests">Number of guests</label>
+                  <input id="guests" type="number" inputMode="numeric" min={1} max={41} step={1} required disabled={busy} value={form.people} onChange={e => updateDates("people", e.target.value)} />
+                  <button className="btn search-button" type="submit" disabled={searching || busy}>{searching ? "Checking availability…" : "Check availability"}<span aria-hidden="true">↗</span></button>
+                  {datesError && <p className="note error" role="alert">{datesError}</p>}
+                </form>
+                <p className="booking-reassurance">No payment now · The house confirms your stay</p>
                 {avail && (
                   <div className="rooms" style={{ display: "block", marginTop: 16 }}>
-                    <p className="m"><b>{avail.free_rooms}</b> rooms free · {avail.nights} {avail.nights === 1 ? "night" : "nights"}</p>
+                    <p className="availability-result" role="status"><b>{avail.free_rooms} rooms available</b><span>{avail.nights} {avail.nights === 1 ? "night" : "nights"} · {form.people} {Number(form.people) === 1 ? "guest" : "guests"}</span></p>
+                    {form.room_preference && step !== "room" ? <div className="selected-room"><span>Your preference<b>{form.room_preference}</b></span><button className="text-button" disabled={busy} onClick={() => setStep("room")}>Change</button></div> : <>
                     <label htmlFor="bed-preference">Preferred bed</label>
                     <select id="bed-preference" value={bedPreference} onChange={e => setBedPreference(e.target.value)}>
                       <option value="any">Any bed setup</option><option value="single">Single beds</option><option value="double">Double bed</option><option value="king">King bed</option>
                     </select>
                     <label className="check"><input type="checkbox" checked={accessibleOnly} onChange={e => setAccessibleOnly(e.target.checked)} /> Accessible rooms only</label>
-                    {matchingTypes.length === 0 && <p className="m">No rooms match these preferences. Try a different bed setup, number of people or dates.</p>}
+                    {matchingTypes.length === 0 && <div className="note">{Number(form.people) > 1 ? "No single room matches this group size and these preferences. Try other dates or bed preferences. For multiple rooms, ask the house before reducing your guest count." : "No rooms match these preferences. Try a different bed setup or dates."}</div>}
                     {matchingTypes.map(t => (
-                      <button key={t.code + t.sleeps + String(t.accessible)} className={"room-type" + (form.room_preference === t.name ? " on" : "")} onClick={() => { setForm(f => ({ ...f, room_preference: t.name })); setStep("details"); }}>
+                      <button key={t.code + t.sleeps + String(t.accessible)} aria-pressed={form.room_preference === t.name} className={"room-type" + (form.room_preference === t.name ? " on" : "")} onClick={() => { setForm(f => ({ ...f, room_preference: t.name })); setStep("details"); }}>
                         <b>{t.name}</b>
                         <span>{t.available} of {t.total} free · sleeps {t.sleeps}{t.accessible ? " · accessible" : ""}{t.beds ? ` · ${t.beds}` : ""}</span>
                       </button>
                     ))}
+                    </>}
                     <p className="m">Room preference is a request until the house confirms your allocation. The total price and deposit will be confirmed by the house before payment.</p>
                   </div>
                 )}
               </div>
+              </div>
 
-              {(step === "details" || step === "needs" || step === "pay" || step === "done") && (
-                <div className="card" style={{ marginTop: 18 }}>
+              {step === "details" && (
+                <div ref={stepCardRef} className="card step-card" style={{ marginTop: 18 }}>
                   <h2 style={{ fontSize: 22 }}>Guest details</h2>
-                  <p className="m">This is when we open My Stay / Guest Portal for you.</p>
-                  <label>Your name</label>
-                  <input autoComplete="name" value={form.name} onChange={e => setForm({ ...form, name: e.target.value })} />
-                  <label>Email</label>
-                  <input type="email" autoComplete="email" value={form.email} onChange={e => setForm({ ...form, email: e.target.value })} />
-                  <button className="btn sec" onClick={() => setStep("needs")}>Continue to diet & access</button>
+                  <p className="m">Where should the house send your stay details? You'll confirm your email before sending the enquiry.</p>
+                  <form onSubmit={e => { e.preventDefault(); setStep("needs"); }}>
+                    <label htmlFor="enquiry-name">Your name</label>
+                    <input id="enquiry-name" required pattern=".*\S.*" autoComplete="name" value={form.name} onChange={e => setForm({ ...form, name: e.target.value })} />
+                    <label htmlFor="enquiry-email">Email</label>
+                    <input id="enquiry-email" required type="email" autoComplete="email" value={form.email} onChange={e => setForm({ ...form, email: e.target.value })} />
+                    <button className="btn" type="submit">Continue to your needs <span aria-hidden="true">→</span></button>
+                  </form>
+                  <button className="text-button" onClick={() => { setStep("room"); scrollAuthCardIntoView(bookingRef.current); }}>Back to rooms</button>
                 </div>
               )}
 
-              {(step === "needs" || step === "pay" || step === "done") && (
-                <div className="card" style={{ marginTop: 18 }}>
+              {step === "needs" && (
+                <div ref={stepCardRef} className="card step-card" style={{ marginTop: 18 }}>
                   <h2 style={{ fontSize: 22 }}>Diet, access and arrival</h2>
-                  <label>Dietary requirements</label>
-                  <p className="hint">Buffet-only and pure vegetarian: no eggs, and no onion, garlic or other onion-family ingredients.</p>
-                  <textarea rows={2} value={form.dietary_notes} onChange={e => setForm({ ...form, dietary_notes: e.target.value })} placeholder="Vegan, Jain, gluten-free, allergies…" />
-                  <label>Accessibility</label>
-                  <textarea rows={2} value={form.accessibility_notes} onChange={e => setForm({ ...form, accessibility_notes: e.target.value })} />
-                  <label>Expected arrival time</label>
-                  <input value={form.arrival_time_note} onChange={e => setForm({ ...form, arrival_time_note: e.target.value })} placeholder="e.g. 16:30 from Lincoln station" />
-                  <label>Travel / pickup</label>
-                  <textarea rows={2} value={form.travel_notes} onChange={e => setForm({ ...form, travel_notes: e.target.value })} placeholder="Train, taxi, self-drive…" />
-                  <label>Anything else</label>
-                  <textarea rows={2} value={form.notes} onChange={e => setForm({ ...form, notes: e.target.value })} />
-                  <button className="btn sec" onClick={() => setStep("pay")}>Continue to deposit</button>
+                  <p className="m">Optional details to help the house prepare. Dietary and accessibility requests need confirmation from the team.</p>
+                  <label htmlFor="dietary">Dietary requirements</label>
+                  <p className="hint" id="diet-hint">Buffet-only and pure vegetarian: no eggs, and no onion, garlic or other onion-family ingredients. Please describe allergies clearly.</p>
+                  <textarea id="dietary" aria-describedby="diet-hint" maxLength={2000} rows={2} value={form.dietary_notes} onChange={e => setForm({ ...form, dietary_notes: e.target.value })} placeholder="Vegan, Jain, gluten-free, allergies…" />
+                  <label htmlFor="accessibility">Accessibility</label>
+                  <textarea id="accessibility" maxLength={2000} rows={2} value={form.accessibility_notes} onChange={e => setForm({ ...form, accessibility_notes: e.target.value })} />
+                  <label htmlFor="arrival-time">Expected arrival time</label>
+                  <input id="arrival-time" maxLength={2000} value={form.arrival_time_note} onChange={e => setForm({ ...form, arrival_time_note: e.target.value })} placeholder="e.g. 16:30 from Lincoln station" />
+                  <label htmlFor="travel">Travel / pickup</label>
+                  <textarea id="travel" maxLength={2000} rows={2} value={form.travel_notes} onChange={e => setForm({ ...form, travel_notes: e.target.value })} placeholder="Train, taxi, self-drive…" />
+                  <label htmlFor="extra-notes">Anything else</label>
+                  <textarea id="extra-notes" maxLength={2000} rows={2} value={form.notes} onChange={e => setForm({ ...form, notes: e.target.value })} />
+                  <button className="btn" onClick={() => setStep("pay")}>Review your enquiry <span aria-hidden="true">→</span></button>
+                  <button className="text-button" onClick={() => setStep("details")}>Back to your details</button>
                 </div>
               )}
 
               {step === "pay" && (
-                <div className="card" style={{ marginTop: 18 }}>
+                <div ref={stepCardRef} className="card step-card" style={{ marginTop: 18 }}>
                   <h2 style={{ fontSize: 22 }}>Review your enquiry</h2>
                   <p className="m">The house will confirm the full price, deposit amount, payment instructions and cancellation terms before asking you to pay. Sending this enquiry does not charge you or guarantee a room.</p>
                   <p className="m"><b>Stay:</b> {form.arrival ? fmt(form.arrival) : "—"} → {form.departure ? fmt(form.departure) : "—"} · {form.people} {Number(form.people) === 1 ? "guest" : "guests"}</p>
                   <p className="m"><b>Room requested:</b> {form.room_preference || "House to advise"}</p>
+                  <p className="m"><b>Guest:</b> {form.name} · {form.email}</p>
+                  <p className="m"><b>Dietary requirements:</b> {form.dietary_notes || "None provided"}</p>
+                  <p className="m"><b>Accessibility:</b> {form.accessibility_notes || "None provided"}</p>
+                  {form.arrival_time_note && <p className="m"><b>Arrival time:</b> {form.arrival_time_note}</p>}
+                  {form.travel_notes && <p className="m"><b>Travel:</b> {form.travel_notes}</p>}
+                  {form.notes && <p className="m"><b>Notes:</b> {form.notes}</p>}
                   {sel?.price && <p className="m"><b>Published price note:</b> {sel.price}</p>}
                   {!me && <p className="hint">A new My Stay opens only after you enter the code we email to this address. After that, sign in with your access code.</p>}
                   {codeReady && <>
                     <label htmlFor="enquiry-email-code">Email code</label>
                     <input id="enquiry-email-code" inputMode="numeric" autoComplete="one-time-code" placeholder="8-digit code from your email" value={form.email_code} onChange={e => setForm({ ...form, email_code: e.target.value })} />
                   </>}
-                  <button className="btn sec" style={{ marginTop: 10 }} disabled={busy || !form.name || !form.email.includes("@")} onClick={doEnquiry}>
-                    {busy ? "…" : "Send booking enquiry"}
+                  <button className="btn" style={{ marginTop: 10 }} disabled={busy || searching || !avail || !form.name.trim() || !form.email.includes("@")} onClick={doEnquiry}>
+                    {busy ? "Sending…" : "Send booking enquiry"}
                   </button>
-                  {ok && <div className="note">{ok}</div>}
-                  {err && <div className="note">{err}</div>}
+                  <button className="text-button" disabled={busy} onClick={() => setStep("needs")}>Back to your needs</button>
+                  {ok && <div className="note" role="status">{ok}</div>}
+                  {err && <div className="note error" role="alert">{err}</div>}
                 </div>
               )}
 
@@ -548,6 +627,9 @@ export default function Book() {
               )}
             </aside>
           </div>
+          </section>
+
+          <HouseStory />
 
           <section className="trust">
             <h2>Before you book</h2>
@@ -562,6 +644,7 @@ export default function Book() {
           </section>
         </div>
       </div>
+      </main>
       <footer className="foot">
         {prop?.name ?? "The Vedanta Way"} · {prop?.company ?? "The Vedanta Way Ltd"} · {prop?.address}<br />
         <a href={prop?.website ?? "https://www.thevedanta.org/"}>{(prop?.website ?? "https://www.thevedanta.org/").replace(/^https?:\/\//, "")}</a>

@@ -251,3 +251,24 @@ Property facts: config states 45 rooms; live imported inventory is 42 (see Data 
   - Automated PostgreSQL-engine transaction, privacy and role-scope tests added.
   - External supplier/POS/messaging/stock integrations still require configuration; no live
     data or production authentication changes have been made by this branch.
+
+- 2026-10-04 · Guest booking design preview
+  - Refreshed the existing /book/ portal with an editorial house-photo hero, clearer
+    stay search, mobile-first enquiry steps and a compact optional availability calendar.
+  - Visible search failures, London-local date validation, stale-response protection,
+    reset of outdated room selections and an accurate enquiry (not payment) review.
+  - Kept the existing guest API, email-verification gate, My Stay and house policies.
+  - Eight new date/calendar tests plus 28 existing guest-domain tests pass (36 total).
+  - Local browser checks cover desktop/mobile, room filters, date changes, API failure,
+    delayed responses and simulated email-code/enquiry completion. No real enquiry sent.
+  - Proposed on codex/guest-booking-refresh; not deployed. See
+    docs/guest-booking-refresh.txt for preview commands and release checks.
+
+- 2026-10-04 · Guest booking release preparation
+  - Owner approved GitHub/Render publication and confirmed the existing workspace.
+  - GitHub PR #34 targets main; Render already auto-deploys this repository.
+  - Full house/admin + guest + staff bundle built and exported successfully.
+  - 184 existing domain tests plus 8 new booking tests passed (192 unique tests).
+  - No database, permissions, authentication or Render configuration changes.
+  - Verify publication in PR #34 and Render's vedanta-admin deployment history;
+    a successful local build alone is not confirmation of a live deployment.
