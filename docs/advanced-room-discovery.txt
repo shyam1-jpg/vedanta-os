@@ -38,7 +38,13 @@ Verification
 - 1280px desktop and 390px phone layouts checked without horizontal page overflow.
 - Local preview uses sample fixtures, loopback only, and connect-src 'self'. No real
   booking, payment, email or guest account was created by preview verification.
-- Full web bundle / deployment verification to be recorded with the release.
+- Full production web bundle passed: administration (42 pages), guest and staff
+  portals exported successfully. No new compile/type errors.
+- Live read-only availability contract check for 12–14 October, five guests:
+  40 room records returned, all with the fields required by this UI.
+- Existing framework version and build-script deprecation notices remain a separate
+  maintenance task; this release does not claim a security or compliance audit.
+- Production deployment verification is recorded on the GitHub pull request.
 
 Remaining separate projects
 Instant confirmed bookings and deposits need agreed rates, availability-hold and
