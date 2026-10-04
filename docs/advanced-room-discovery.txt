@@ -1,0 +1,52 @@
+Vedanta guest room discovery — 4 October 2026
+
+Scope
+Upgrade the existing guest enquiry screen, not a new PMS or a new deployment.
+The user explicitly approved publication to the existing GitHub/Render site.
+
+Delivered
+- Full-width, responsive individual-room cards using /guest/availability rooms.
+- Actual bed configuration, maximum capacity, floor/corridor and listed amenities.
+- Filters for room type, section, bed arrangement, amenity and accessibility flag.
+- Optional whole-party-in-one-room filter; larger parties can otherwise combine rooms.
+- Numeric room ordering and ascending/descending capacity sorting.
+- Side-by-side comparison of up to three rooms, including unknown/missing details.
+- Six-card progressive display, with a show-more control.
+- Multiple room requests; capacity must cover the whole party before continuing.
+- Chosen rooms survive filtering and feed the existing room_preference field.
+- New searches/date/guest changes discard stale room choices. Contact details remain.
+- Request wording throughout: nothing is reserved, paid, allocated or guaranteed.
+
+Data boundaries
+Only existing public availability fields are used. No staff notes, guest names,
+occupancy history or private room-board data are added to the public website.
+No API routes, database schema, authentication, payment handling, prices or stock
+allocation rules changed. The existing server still handles enquiries and allocation.
+No fabricated photographs, dimensions, floor plans, facilities or accessibility claims.
+Bed layouts are text descriptions, not architectural drawings. Photos, verified room
+plans, specific bathroom details and prices must be supplied/confirmed by the house
+before these can be displayed. Accessibility flags do not guarantee suitability.
+
+Verification
+- Guest unit tests: 24 passed (8 existing date/calendar tests, 16 room-option tests).
+- Domain regression tests: 184 passed. Total unique unit tests: 208.
+- Guest production build and type checking passed.
+- Local browser tests: five guests; one room insufficient; two rooms total five places;
+  comparison; no matches; clear filters; accessibility and section filters; selection
+  retained under filters; full review and simulated email-code/enquiry flow.
+- Browser keyboard date change cleared previous room search/selection.
+- 1280px desktop and 390px phone layouts checked without horizontal page overflow.
+- Local preview uses sample fixtures, loopback only, and connect-src 'self'. No real
+  booking, payment, email or guest account was created by preview verification.
+- Full web bundle / deployment verification to be recorded with the release.
+
+Remaining separate projects
+Instant confirmed bookings and deposits need agreed rates, availability-hold and
+payment/cancellation rules. Self check-in and staff handover/task workflows are not
+implemented by this room-selection release. Unattended access also needs a verified
+key-collection or lock integration. Physical iPhone/Safari testing remains recommended.
+
+Rollout
+Use the existing main-branch auto-deploy on vedanta-admin. Do not create extra services
+or manually trigger duplicate deployments. Verify live pages, public availability,
+service health and recent error logs. No database migration is needed.
