@@ -2,6 +2,7 @@
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { addDays, calendarMonths, calendarOffset, houseToday, validateStay } from "./booking-utils";
 import RoomExplorer from "./RoomExplorer";
+import ArrivalCheckIn from "./ArrivalCheckIn";
 import { roomRequestText, roomSelection, type AvailableRoom } from "./room-options";
 const API = process.env.NEXT_PUBLIC_API_URL ?? "";
 const tok = {
@@ -590,6 +591,7 @@ export default function Book() {
                         ? <div className="rooms">{x.rooms.map(r => <span key={r.number} className="room">{r.number}{r.section ? ` · ${r.section}` : ""}</span>)}</div>
                         : <p className="m" style={{ margin: "8px 0 0" }}>Rooms appear when the house assigns them.</p>}
                       <ArrivalPlan stay={x} property={prop}/>
+                      <ArrivalCheckIn id={x.id} request={api} detailsVersion={JSON.stringify([x.arrival,x.departure,x.people,x.dietary_notes,x.accessibility_notes,x.arrival_time_note,x.travel_notes])}/>
                       <StayNeedsEditor stay={x} onSaved={async () => setMine((await api<{ items: Mine[] }>("/guest/enquiries")).items)} />
                     </div>
                   ))}

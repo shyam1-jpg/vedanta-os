@@ -78,6 +78,7 @@ export default function OpsBoard({ compact = false }: { compact?: boolean }) {
         </div>
       </div>
       <div className="seg" style={{ marginBottom: 16 }}>
+        <a className="btn" href="/morning/">Open morning dashboard</a>
         <button className={dept === "all" ? "on" : ""} onClick={() => setDept("all")}>All</button>
         {board.departments.map(d => <button key={d.code} className={dept === d.code ? "on" : ""} onClick={() => setDept(d.code)}>{d.label}</button>)}
       </div>

@@ -4,9 +4,10 @@ import { useEffect, useState } from "react";
 import { API,api,tok } from "../lib/api";
 import StaffTaskDetail from "../components/StaffTaskDetail";
 import StaffAssetViewer from "../components/StaffAssetViewer";
+import MorningDashboard from "../components/MorningDashboard";
 import { staffTrainingSections } from "../../../domains/staff/training.ts";
 
-type Me = { name: string; email: string; role: string; role_name?: string; property_name?: string | null; property_kicker?: string | null };
+type Me = { name: string; email: string; role: string; role_name?: string; permissions?: string[]; property_name?: string | null; property_kicker?: string | null };
 type Prop = { name: string; kicker: string };
 
 export default function Pocket() {
@@ -16,7 +17,7 @@ export default function Pocket() {
   const [providers, setProviders] = useState<{ microsoft: boolean; email: boolean; dev: boolean; email_code: boolean } | null>(null);
   const [code, setCode] = useState(""); const [codeSent, setCodeSent] = useState(false); const [busy, setBusy] = useState(false); const [message, setMessage] = useState("");
   const [err, setErr] = useState<string | null>(null);
-  const [tab, setTab] = useState<"clock" | "leave" | "duty" | "sop" | "log" | "desk" | "night" | "manual" | "training" | "tasks" | "assets">("clock");
+  const [tab, setTab] = useState<"morning" | "clock" | "leave" | "duty" | "sop" | "log" | "desk" | "night" | "manual" | "training" | "tasks" | "assets">("morning");
   const [desk, setDesk] = useState<{
     today: { weekday: string; title: string; method: string; ingredients: { name: string; qty: string }[] };
     tomorrow: { weekday: string; title: string; method: string; ingredients: { name: string; qty: string }[] };
@@ -142,8 +143,9 @@ export default function Pocket() {
   return (
     <>
       <div className="hero"><div className="kicker">{me.role_name ?? me.role.replace(/_/g, " ")}</div><h1>{me.name}</h1><div className="hero-status"><span>{clock?.last === "IN" ? "On shift" : "Off shift"}</span><span>{tasks?.counts.open ?? 0} open tasks</span><span>{duty.length} shifts on your board</span></div></div>
-      <div className="wrap">
+      <div className={tab === "morning" ? "wrap morning-wrap" : "wrap"}>
         <div className="tabs">
+          <button className={tab === "morning" ? "on" : ""} onClick={() => setTab("morning")}>Morning board</button>
           <button className={tab === "clock" ? "on" : ""} onClick={() => setTab("clock")}>Clock</button>
           <button className={tab === "leave" ? "on" : ""} onClick={() => setTab("leave")}>Holiday</button>
           <button className={tab === "duty" ? "on" : ""} onClick={() => setTab("duty")}>Duty</button>
@@ -156,6 +158,7 @@ export default function Pocket() {
           <button className={tab === "training" ? "on" : ""} onClick={() => setTab("training")}>Training</button>
           <button className={tab === "sop" ? "on" : ""} onClick={() => setTab("sop")}>SOP</button>
         </div>
+        {tab === "morning" && <MorningDashboard request={api} canViewArrivals={me.permissions?.includes('group.read')??false} onTasks={()=>setTab('tasks')}/>}
         {tab === "clock" && (
           <div className="card">
             <h2>This week · {pay?.hours ?? clock?.hours_this_week ?? 0} hours</h2>

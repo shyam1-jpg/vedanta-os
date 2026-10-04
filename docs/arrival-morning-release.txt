@@ -1,0 +1,57 @@
+VEDANTA — PRE-ARRIVAL AND MORNING DASHBOARD
+Prepared 4 October 2026. Implementation branch: codex/arrival-morning.
+Status: local implementation; not deployed by this change.
+
+WHAT IS INCLUDED
+- Guest My Stay: review saved details, confirm them, report arrival and see reception acknowledgement.
+- Staff Pocket: Morning board is the initial tab. Existing Clock, Tasks, House log and other tools remain available.
+- House/admin: /morning/, linked from House log. Uses existing staff authentication and permissions.
+- Morning board: confirmed arriving/departing bookings, guest arrival notifications, room status counts, assigned task owners and deadlines, overdue/blocked/unassigned attention view, recent handovers and daily checks.
+- Task and assignment buttons lead to the existing task workspace, retaining the existing task editing and approval workflow.
+
+PROFESSIONAL DEFAULTS / SAFETY
+- Pre-arrival opens 14 calendar days before a confirmed booking, in Europe/London time.
+- An enquiry or provisional/cancelled/completed booking cannot register arrival.
+- Overnight arrival notifications are accepted from arrival day until, but not on, departure day; same-day retreats can arrive on their only day.
+- A guest must have an authenticated session owning the stay. Staff cannot use a staff token as a guest.
+- Current saved details are shown before confirmation. An opaque version check rejects a stale review if another session edits the details.
+- Changes to relevant details invalidate confirmation; changes to stay dates invalidate prior arrival milestones.
+- Arrival retries preserve the first timestamp. Reception acknowledgement is idempotent and records its staff actor.
+- Registration never changes booking status, room status or room occupancy, and never issues keys or door codes.
+- No new payment, passport upload, identity verification, email, SMS or external lock integration.
+- Staff must complete their existing reception checks, room inspection and key handover separately.
+- Arrival board requires group.read. Acknowledgement also requires group.update. Existing handover/task permissions still apply.
+- Responses are property-scoped. The morning board excludes private dietary/accessibility/travel text and does not expose emails.
+- Morning board refresh is explicit, not push notifications. It shows last refresh and errors rather than treating missing data as zero.
+- Booking counts and individual guest arrival registrations are deliberately separate to avoid double counting.
+- Room counts describe recorded status only, not a guarantee of room readiness.
+- All demo guest/staff data lives only in tools/preview-arrival.mjs and is never seeded into production.
+
+DATABASE / RELEASE
+- New additive migration: db/migrations/0043_guest_arrival_registration.sql.
+- Creates guest_arrival_registration plus its property/date index. Does not rewrite existing guest, booking or room records.
+- Existing API production command runs migrations before starting the server.
+- When publication is authorised, deploy the API (including migration) and the three web portals from the same commit.
+- The frontend needs the existing NEXT_PUBLIC_API_URL production setting. The loopback preview uses an empty value with connect-src 'self'.
+- Do not publish the local preview server or use it as a production API.
+- Existing production guest authentication/email delivery configuration is unchanged.
+- Rollback: return frontend/API to the prior commit; retain the additive table and collected records. Do not drop guest data.
+
+AUTOMATED VALIDATION
+- 190 domain tests passed (including 6 new arrival-policy tests).
+- 24 guest booking and room-selection tests passed.
+- Existing API suite plus initial 12 arrival integration tests: 48 passed.
+- Final arrival registration suite, including the added stale-review test: 13 passed.
+- 263 distinct automated tests covered across these runs.
+- Real PostgreSQL-compatible PGlite integration tests apply the new migration twice and exercise authentication, property/guest ownership, permissions, date/status gating, review invalidation, repeat clicks, reception acknowledgement and no room/key-state changes.
+- Full npm run build:web-bundle passed: admin (43 static routes), guest and staff, including TypeScript validation and combined dist-web export.
+- Local browser UI tests passed: guest confirmation -> arrival notification -> staff acknowledgement -> guest acknowledgement display; handover creation/read acknowledgement; daily checklist completion.
+- House/admin /morning/ rendered under the existing authenticated shell. The preview server needed text/plain for Next static-export navigation; that local-only serving fix is included.
+- Phone viewport checks: both guest and staff pages were 375 CSS pixels wide within a 390px viewport, with no page-wide horizontal overflow. Staff navigation remains independently scrollable.
+- Viewport override restored. No production guest records or messages were created in testing.
+- Physical iPhone/Safari and production staff-role smoke tests remain recommended after publication.
+- Existing Node child-process shell deprecation and guest package module-type notices remain unchanged.
+
+NOT PART OF THIS RELEASE
+Group organisers, waiting lists, unattended key access, payments, automatic messages, new maintenance or kitchen-planning modules.
+Existing unrelated modules and Parslia services are unchanged.
