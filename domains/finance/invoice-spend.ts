@@ -196,7 +196,7 @@ export function confirmInvoice(input: {
   localName?: string | null;
   note?: string | null;
 }): { ok: true; date: string; total: number; code: string; name: string; local: boolean; note: string | null } | { ok: false; error: string } {
-  if (!/^\d{4}-\d{2}-\d{2}$/.test(input.invoiceDate)) return { ok: false, error: "Enter the invoice date." };
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(input.invoiceDate) || !parseDateToken(input.invoiceDate)) return { ok: false, error: "Enter a valid invoice date." };
   if (input.total == null || !Number.isFinite(input.total) || input.total <= 0 || input.total > 1_000_000) {
     return { ok: false, error: BLANK_TOTAL };
   }
@@ -354,7 +354,7 @@ function yearChart(invoices: SavedInvoice[], year: string): InvoiceChart {
     const spend = money(invoices.filter(invoice => invoice.date.startsWith(key)).reduce((n, invoice) => n + invoice.amount, 0));
     return { key, label, spend };
   });
-  return { year, points, hasSpend: points.some(point => point.spend > 0) };
+  return { year, points, hasSpend: points.some(point => point.spend !== 0) };
 }
 
 export function invoiceSpendReport(input: {

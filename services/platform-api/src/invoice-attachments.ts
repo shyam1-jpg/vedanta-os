@@ -4,6 +4,8 @@
  * Sage, Xero, Payday and Hotelkit are not called.
  */
 import type { FastifyInstance, FastifyReply } from "fastify";
+import { createHash } from "node:crypto";
+import { validateLedger, validDate, decimal } from "../../../domains/finance/invoice-ledger.ts";
 import { pool } from "./db.ts";
 import { requireActor, problem, type Actor } from "./auth.ts";
 import { DEFAULT_SUPPLIERS } from "../../../domains/finance/back-office.ts";
@@ -17,7 +19,6 @@ import {
   type StoredIncome,
 } from "../../../domains/finance/invoice-spend.ts";
 
-const DATE = /^\d{4}-\d{2}-\d{2}$/;
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const BODY = { bodyLimit: 8_000_000 };
 
@@ -25,13 +26,6 @@ function canRead(a: Actor, reply: FastifyReply): boolean {
   if (a.perms.has("group.read") || a.perms.has("report.read")) return true;
   reply.code(403).send(problem(403, "forbidden", "You cannot read invoices."));
   return false;
-}
-
-function pounds(value: unknown): number | null {
-  if (value == null || value === "") return null;
-  const n = typeof value === "number" ? value : Number(String(value).trim());
-  if (!Number.isFinite(n)) return null;
-  return Math.round(n * 100) / 100;
 }
 
 function cleanName(name: unknown): string {
@@ -49,11 +43,12 @@ export default async function invoiceAttachments(f: FastifyInstance) {
   f.get("/v1/invoice-attachments/spend", async (req: any, reply) => {
     const a = await requireActor(req, reply, ["ADMIN", "STAFF"]); if (!a || !canRead(a, reply)) return;
     const today = await londonToday();
-    const anchor = DATE.test(req.query?.anchor ?? "") ? req.query.anchor : today;
+    const anchor = validDate(req.query?.anchor) ? req.query.anchor : today;
 
     const [invoiceR, incomeR, paymentR, bookingR] = await Promise.all([
       pool.query(`select a.id, a.filename, a.invoice_date::text as date, a.total, a.supplier_code, a.supplier_name,
-          a.local_shop, a.booking_id, a.note, g.name as booking_name
+          a.local_shop, a.booking_id, a.note, g.name as booking_name,
+          a.document_type, a.invoice_number, a.purchase_date::text, a.due_date::text, a.currency, a.subtotal, a.vat, a.lines
         from invoice_attachment a
         left join booking_group g on g.id = a.booking_id and g.property_id = a.property_id
         where a.property_id = $1
@@ -73,9 +68,9 @@ export default async function invoiceAttachments(f: FastifyInstance) {
         order by g.arrival_date desc nulls last, g.name`, [a.propertyId]),
     ]);
 
-    const invoices: SavedInvoice[] = invoiceR.rows.map((row: { date: string; total: string; booking_id: string | null; booking_name: string | null }) => ({
+    const invoices: SavedInvoice[] = invoiceR.rows.map((row: any) => ({
       date: row.date,
-      amount: Number(row.total),
+      amount: Number(row.total) * (row.document_type === "credit" ? -1 : 1),
       bookingId: row.booking_id,
       bookingName: row.booking_name,
     }));
@@ -101,7 +96,7 @@ export default async function invoiceAttachments(f: FastifyInstance) {
       ...report,
       incomeNote: report.empty ? null : incomeLedgerNote(incomeSource),
       anchor: report.empty ? anchor : report.anchor,
-      items: invoiceR.rows.slice(0, 100).map((row: any) => ({
+      items: invoiceR.rows.map((row: any) => ({
         id: row.id,
         filename: row.filename,
         date: row.date,
@@ -112,6 +107,14 @@ export default async function invoiceAttachments(f: FastifyInstance) {
         bookingId: row.booking_id,
         bookingName: row.booking_name,
         note: row.note,
+        documentType: row.document_type,
+        invoiceNumber: row.invoice_number,
+        purchaseDate: row.purchase_date ?? "",
+        dueDate: row.due_date ?? "",
+        currency: row.currency,
+        subtotal: row.subtotal == null ? null : Number(row.subtotal),
+        vat: row.vat == null ? null : Number(row.vat),
+        lines: row.lines,
       })),
       retreatsOnBook: bookingR.rows.map((row: { id: string; name: string; status: string; arrival: string | null; departure: string | null }) => ({
         id: row.id,
@@ -135,13 +138,15 @@ export default async function invoiceAttachments(f: FastifyInstance) {
     const a = await requireActor(req, reply, ["ADMIN", "STAFF"]); if (!a || !canRead(a, reply)) return;
     const file = parseInvoiceDataUrl(String(req.body?.data ?? ""));
     if (!file.ok) return reply.code(422).send(problem(422, "validation", file.error));
+    const ledger = validateLedger(req.body ?? {});
+    if (!ledger.ok) return reply.code(422).send(problem(422, "validation", ledger.error));
     // The saved total is the figure the person submitted. The file is not read again to fill a blank.
     const confirmed = confirmInvoice({
       invoiceDate: String(req.body?.invoiceDate ?? ""),
-      total: pounds(req.body?.total),
-      supplierCode: req.body?.supplierCode,
-      localName: req.body?.localName,
-      note: req.body?.note,
+      total: decimal(req.body?.total),
+      supplierCode: String(req.body?.supplierCode ?? ""),
+      localName: String(req.body?.localName ?? ""),
+      note: String(req.body?.note ?? ""),
     });
     if (!confirmed.ok) return reply.code(422).send(problem(422, "validation", confirmed.error));
     let bookingId: string | null = null;
@@ -153,11 +158,23 @@ export default async function invoiceAttachments(f: FastifyInstance) {
       bookingId = rawBooking;
     }
     const dataUrl = String(req.body.data);
-    const saved = await pool.query(`insert into invoice_attachment
-      (tenant_id, property_id, filename, mime, file_data, supplier_code, supplier_name, local_shop, invoice_date, total, booking_id, note, entered_by)
-      values ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13) returning id`,
-      [a.tenantId, a.propertyId, cleanName(req.body?.filename), file.mime, dataUrl, confirmed.code, confirmed.name, confirmed.local, confirmed.date, confirmed.total, bookingId, confirmed.note, a.userId]);
-    return { id: saved.rows[0].id };
+    const hash = createHash("sha256").update(file.bytes).digest("hex");
+    // Include older, pre-hash uploads in duplicate detection. Unique indexes cover concurrent new uploads.
+    const duplicate = await pool.query(`select id from invoice_attachment where property_id=$1 and (file_sha256=$2 or (file_sha256 is null and file_data=$3)) limit 1`, [a.propertyId,hash,dataUrl]);
+    if (duplicate.rowCount) return reply.code(409).send(problem(409,"duplicate","This file is already saved. Find it in the ledger instead of counting it twice."));
+    const v = ledger.value;
+    try {
+      const saved = await pool.query(`insert into invoice_attachment
+        (tenant_id, property_id, filename, mime, file_data, supplier_code, supplier_name, local_shop, invoice_date, total, booking_id, note, entered_by,
+        document_type,invoice_number,purchase_date,due_date,currency,subtotal,vat,lines,file_sha256,reviewed_at)
+        values ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21::jsonb,$22,now()) returning id`,
+        [a.tenantId,a.propertyId,cleanName(req.body?.filename),file.mime,dataUrl,confirmed.code,confirmed.name,confirmed.local,confirmed.date,confirmed.total,bookingId,confirmed.note,a.userId,
+        v.documentType,v.invoiceNumber,v.purchaseDate||null,v.dueDate||null,v.currency,v.subtotal,v.vat,JSON.stringify(v.lines),hash]);
+      return { id: saved.rows[0].id };
+    } catch (error: any) {
+      if (error.code === "23505") return reply.code(409).send(problem(409,"duplicate","This file or supplier/document number is already saved. Check the ledger first."));
+      throw error;
+    }
   });
 
   f.get("/v1/invoice-attachments/:id", async (req: any, reply) => {

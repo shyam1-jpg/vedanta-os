@@ -1,0 +1,19 @@
+/** Loopback-only synthetic records. Does not call a live API or save files. */
+import http from 'node:http';import{readFile,stat}from'node:fs/promises';import{resolve,extname,sep}from'node:path';import{fileURLToPath}from'node:url';
+import{invoiceSpendReport}from'../domains/finance/invoice-spend.ts';import{validateLedger}from'../domains/finance/invoice-ledger.ts';
+const root=fileURLToPath(new URL('../apps/web-admin/out/',import.meta.url)),port=4321,items=[],files=new Map();
+const user={name:'Finance preview',email:'preview@example.invalid',role:'FINANCE_HR',permissions:['group.read','report.read','clock.manage','user.manage'],property_name:'The Vedanta Way'};
+const send=(res,n,body)=>{res.writeHead(n,{'content-type':'application/json','cache-control':'no-store'});res.end(JSON.stringify(body));};
+http.createServer(async(req,res)=>{res.setHeader('Content-Security-Policy',"connect-src 'self' blob:");try{const url=new URL(req.url,`http://127.0.0.1:${port}`),p=url.pathname;let body={};if(req.method==='POST'){let raw='';for await(const chunk of req){raw+=chunk;if(raw.length>8_000_000)return send(res,413,{});}body=JSON.parse(raw||'{}');}
+ if(p==='/auth/providers')return send(res,200,{microsoft:false,email:true,email_code:false,dev:true});
+ if(p==='/auth/login')return send(res,200,{token:'local-test-only',user});if(p==='/me')return send(res,200,user);
+ if(p==='/v1/planday')return send(res,200,{connected:false,secureStorageReady:false,canConfigure:true,snapshot:null});
+ if(p==='/v1/finance/kpi'||p==='/v1/finance/summary')return send(res,503,{detail:'Other finance cards excluded from this isolated preview.'});
+ if(p==='/v1/invoice-attachments/spend'){const anchor=url.searchParams.get('anchor')||'2026-10-05';return send(res,200,{...invoiceSpendReport({anchor,invoices:items.map(i=>({date:i.date,amount:i.total*(i.documentType==='credit'?-1:1),bookingId:null,bookingName:null})),income:null,booked:[]}),anchor,items,localShops:[...new Set(items.map(i=>i.supplierName))],retreatsOnBook:[],incomeNote:null});}
+ if(p==='/v1/invoice-attachments'&&req.method==='POST'){const v=validateLedger(body);if(!v.ok)return send(res,422,{detail:v.error});if([...files.values()].some(f=>f.data===body.data))return send(res,409,{detail:'This file is already saved.'});const id=String(items.length+1);items.unshift({...v.value,id,filename:body.filename,date:body.invoiceDate,total:Number(body.total),supplierName:body.localName||body.supplierCode,supplierCode:body.supplierCode,bookingName:null,note:body.note});files.set(id,{data:body.data,filename:body.filename});return send(res,200,{id});}
+ if(p.startsWith('/v1/invoice-attachments/'))return send(res,200,files.get(p.split('/').at(-1))??{});
+ if(p.startsWith('/v1/'))return send(res,200,{items:[]});
+ let file=resolve(root,'.'+decodeURIComponent(p));if(!file.startsWith(resolve(root)+sep))return send(res,404,{});if(p.endsWith('/'))file=resolve(file,'index.html');if(!(await stat(file)).isFile())return send(res,404,{});
+ let content=await readFile(file);const ext=extname(file);if(ext==='.html')content=Buffer.from(content.toString().replace('</head>','<script>sessionStorage.setItem("vedanta.token","local-test-only")</script><style>body::after{content:"LOCAL TEST · Synthetic invoice records only";position:fixed;bottom:8px;left:8px;z-index:9999;background:#f8e5b9;color:#173f35;padding:8px;font:11px system-ui;pointer-events:none}</style></head>'));
+ const mime={'.html':'text/html','.txt':'text/plain','.js':'text/javascript','.mjs':'text/javascript','.wasm':'application/wasm','.css':'text/css','.png':'image/png','.woff2':'font/woff2'};res.writeHead(200,{'content-type':mime[ext]??'application/octet-stream','cache-control':'no-store'});res.end(content);
+ }catch{send(res,404,{detail:'Local fixture resource not found.'});}}).listen(port,'127.0.0.1',()=>console.log(`Synthetic finance preview: http://127.0.0.1:${port}/finance/`));

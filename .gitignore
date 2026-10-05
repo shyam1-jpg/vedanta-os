@@ -7,3 +7,5 @@ out/
 dist/
 *.log
 .DS_Store
+apps/web-admin/public/invoice-ocr/
+tmp/invoice-qa/
