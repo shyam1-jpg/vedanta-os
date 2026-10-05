@@ -1,6 +1,7 @@
 "use client";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
+import { useState } from "react";
 import { useStore } from "@/lib/store";
 import { PageIcon } from "@/components/icons";
 
@@ -26,12 +27,16 @@ const ROLE_NAMES: Record<string, string> = {
 
 export default function Nav() {
   const p = usePathname(); const { user, can, signOut } = useStore();
+  const [search,setSearch] = useState("");
+  const matches = sections.map(sec=>({...sec,items:sec.items.filter(([href,label])=>`${sec.label} ${label} ${href==='/finance/'?'invoice credit product spend':''}`.toLowerCase().includes(search.trim().toLowerCase()))})).filter(sec=>sec.items.length);
   const propertyName = (user as any)?.property_name ?? "The Vedanta Way";
   const propertyKicker = (user as any)?.property_kicker ?? "Retreat Center";
   return (
     <nav className="nav">
       <div className="brand official-house-brand"><img src="/vedanta-official-logo.png" alt="The Vedanta" width="386" height="102" /><small>{propertyName} · {propertyKicker}</small></div>
-      {user && sections.map(sec => (
+      {user && <label style={{display:"grid",gap:6,padding:"12px 16px",fontSize:11}}>Find a page<input type="search" placeholder="Search pages…" value={search} onChange={e=>setSearch(e.target.value)} style={{width:"100%",padding:10,borderRadius:8,border:"1px solid #597165",background:"#fff",color:"#183b2d"}}/></label>}
+      {user && !matches.length && <p style={{padding:16,fontSize:12}}>No matching pages.</p>}
+      {user && matches.map(sec => (
         <div key={sec.label} className="nav-group">
           <div className="nav-sec">{sec.label}</div>
           {sec.items.map(([href, label, perm], i) => {

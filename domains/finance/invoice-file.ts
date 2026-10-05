@@ -41,13 +41,18 @@ function pdfText(bytes: Buffer): string {
   const parts: string[] = [];
   const re = /stream\r?\n([\s\S]*?)endstream/g;
   let match: RegExpExecArray | null;
+  let remaining = 4_000_000, streams = 0;
   while ((match = re.exec(src))) {
+    if (++streams > 100 || remaining <= 0) break;
     const body = Buffer.from(match[1].replace(/\r?\n$/, ""), "latin1");
+    let content: string;
     try {
-      parts.push(stringsFromPdf(inflateSync(body).toString("latin1")));
+      content = inflateSync(body, { maxOutputLength: Math.min(remaining, 1_000_000) }).toString("latin1");
     } catch {
-      parts.push(stringsFromPdf(body.toString("latin1")));
+      content = body.subarray(0, remaining).toString("latin1");
     }
+    remaining -= content.length;
+    parts.push(stringsFromPdf(content));
   }
   return parts.filter(Boolean).join("\n");
 }

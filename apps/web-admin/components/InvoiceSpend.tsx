@@ -1,272 +1,99 @@
 "use client";
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { api, ApiError } from "@/lib/api";
 import { DEFAULT_SUPPLIERS } from "../../../domains/finance/back-office.ts";
-import { ACCOUNTS_NOT_CONNECTED, BLANK_TOTAL, NO_INVOICES_YET } from "../../../domains/finance/invoice-spend.ts";
+import { extractInvoice, filterLedger, ledgerTotals, reconciliationWarnings, type LedgerItem, type InvoiceLine } from "../../../domains/finance/invoice-ledger.ts";
+import { scanInvoice } from "@/lib/invoice-ocr";
+import styles from "./InvoiceSpend.module.css";
 
-type Read = { supplierName: string | null; supplierCode: string | null; localShop: boolean; date: string | null; total: number | null };
-type PeriodKey = "day" | "week" | "month" | "year";
-type PeriodMoney = {
-  from: string; to: string; spend: number; income: number | null; profit: number | null;
-  outcome: "profit" | "loss" | "even" | "income_missing"; pnlMessage: string;
-  bookedIncome: number | null; forecast: number | null;
-  forecastOutcome: "profit" | "loss" | "even" | "income_missing";
-  bookingsLeftOut: number; forecastMessage: string;
-};
-type Item = {
-  id: string; filename: string; date: string; total: number; supplierName: string;
-  bookingId: string | null; bookingName: string | null; note: string | null;
-};
-type Retreat = { id: string; name: string; status: string; arrival: string | null; departure: string | null };
-type Spend = {
-  empty: boolean; message: string | null; accounts: string; anchor: string; incomeNote: string | null;
-  periods?: Record<PeriodKey, PeriodMoney>;
-  retreats?: { bookingId: string | null; name: string; spend: number }[];
-  chart?: { year: string; points: { key: string; label: string; spend: number }[]; hasSpend: boolean };
-  items: Item[];
-  retreatsOnBook: Retreat[];
-  localShops: string[];
-};
-type Draft = { supplierCode: string; localName: string; invoiceDate: string; total: string; bookingId: string; note: string };
-type HeldFile = { name: string; data: string };
+type Spend = { anchor:string;items:LedgerItem[];localShops:string[];retreatsOnBook:{id:string;name:string;status:string}[];incomeNote:string|null;periods?:Record<string,{from:string;to:string;spend:number;income:number|null;bookedIncome:number|null;forecastMessage:string}>;retreats?:{bookingId:string|null;name:string;spend:number}[] };
+type Row = {code:string;description:string;quantity:string;unit:string;unitPrice:string;net:string};
+type Draft = {supplierCode:string;localName:string;invoiceDate:string;invoiceNumber:string;purchaseDate:string;dueDate:string;documentType:"invoice"|"credit";currency:string;subtotal:string;vat:string;total:string;bookingId:string;note:string;lines:Row[]};
+const blank=():Draft=>({supplierCode:"",localName:"",invoiceDate:"",invoiceNumber:"",purchaseDate:"",dueDate:"",documentType:"invoice",currency:"",subtotal:"",vat:"",total:"",bookingId:"",note:"",lines:[]});
+const blankRow=():Row=>({code:"",description:"",quantity:"",unit:"",unitPrice:"",net:""});
+const gbp=(n:number)=>new Intl.NumberFormat("en-GB",{style:"currency",currency:"GBP"}).format(n);
+const amount=(s:string)=>s.trim()===""?null:Number(s);
+const message=(e:unknown)=>e instanceof ApiError?e.problem.detail:e instanceof Error?e.message:"Something went wrong. Try again.";
 
-const gbp = (n: number) => new Intl.NumberFormat("en-GB", { style: "currency", currency: "GBP" }).format(n);
-const PERIODS: [PeriodKey, string][] = [["day", "This day"], ["week", "This week"], ["month", "This month"], ["year", "This year"]];
-const blankDraft = (): Draft => ({ supplierCode: "", localName: "", invoiceDate: "", total: "", bookingId: "", note: "" });
-
-function resultText(kind: PeriodMoney["outcome"], amount: number | null, missing: string): string {
-  if (kind === "income_missing" || amount == null) return missing;
-  if (kind === "even") return "Neither profit nor loss.";
-  if (kind === "profit") return `Profit ${gbp(amount)}`;
-  return `Loss ${gbp(Math.abs(amount))}`;
-}
-
-export default function InvoiceSpend() {
-  const [spend, setSpend] = useState<Spend | null>(null);
-  const [anchor, setAnchor] = useState("");
-  const [error, setError] = useState("");
-  const [held, setHeld] = useState<HeldFile | null>(null);
-  const [draft, setDraft] = useState<Draft>(blankDraft);
-  const [busy, setBusy] = useState(false);
-
-  const load = (next = anchor) => {
-    const q = next ? `?anchor=${encodeURIComponent(next)}` : "";
-    api<Spend>(`/v1/invoice-attachments/spend${q}`).then(data => {
-      setSpend(data);
-      if (!next) setAnchor(data.anchor);
-    }).catch(e => setError(e instanceof ApiError ? e.problem.detail : "Could not load invoices."));
-  };
-  useEffect(() => { load(""); }, []); // eslint-disable-line react-hooks/exhaustive-deps
-
-  const onFile = async (file: File | undefined) => {
-    setError("");
-    setHeld(null);
-    setDraft(blankDraft());
-    if (!file) return;
-    if (file.size > 4_000_000) { setError("That file is too large."); return; }
-    const data = await new Promise<string>((resolve, reject) => {
-      const reader = new FileReader();
-      reader.onload = () => resolve(String(reader.result));
-      reader.onerror = () => reject(new Error("Could not read the file."));
-      reader.readAsDataURL(file);
-    }).catch((e: Error) => { setError(e.message); return ""; });
-    if (!data) return;
-    setBusy(true);
-    try {
-      const read = await api<Read>("/v1/invoice-attachments/read", { method: "POST", body: JSON.stringify({ data, filename: file.name }) });
-      setHeld({ name: file.name, data });
-      setDraft({
-        supplierCode: read.supplierCode ?? (read.localShop ? "LOCAL" : ""),
-        localName: read.localShop ? (read.supplierName ?? "") : "",
-        invoiceDate: read.date ?? "",
-        total: read.total == null ? "" : read.total.toFixed(2),
-        bookingId: "",
-        note: "",
-      });
-    } catch (e) {
-      setError(e instanceof ApiError ? e.problem.detail : "Could not read the invoice.");
-    } finally { setBusy(false); }
-  };
-
-  const supplierCode = draft.supplierCode.startsWith("local:") ? "LOCAL" : draft.supplierCode;
-  const localName = draft.supplierCode.startsWith("local:") ? draft.supplierCode.slice(6) : draft.localName;
-  const shopReady = Boolean(supplierCode) && (supplierCode !== "LOCAL" || localName.trim().length >= 2);
-
-  const save = async (event: React.FormEvent) => {
-    event.preventDefault();
-    if (!held) return;
-    if (!draft.total.trim()) { setError(BLANK_TOTAL); return; }
-    setBusy(true);
-    setError("");
-    try {
-      await api("/v1/invoice-attachments", { method: "POST", body: JSON.stringify({
-        filename: held.name,
-        data: held.data,
-        supplierCode,
-        localName,
-        invoiceDate: draft.invoiceDate,
-        total: draft.total,
-        bookingId: draft.bookingId,
-        note: draft.note,
-      }) });
-      setHeld(null);
-      setDraft(blankDraft());
-      load(anchor);
-    } catch (e) {
-      setError(e instanceof ApiError ? e.problem.detail : "Could not save the invoice.");
-    } finally { setBusy(false); }
-  };
-
-  const openFile = async (id: string) => {
-    setError("");
-    try {
-      const file = await api<{ data: string }>(`/v1/invoice-attachments/${id}`);
-      const blob = await (await fetch(file.data)).blob();
-      window.open(URL.createObjectURL(blob), "_blank", "noopener");
-    } catch (e) {
-      setError(e instanceof ApiError ? e.problem.detail : "Could not open the invoice.");
-    }
-  };
-
-  const periods = spend && !spend.empty ? spend.periods : undefined;
-  const chart = spend && !spend.empty ? spend.chart : undefined;
-  const maxBar = chart?.hasSpend ? Math.max(...chart.points.map(point => point.spend)) : 0;
-
-  return (
-    <section className="house-panel" style={{ marginTop: 8 }}>
-      <h2>Invoice attachments</h2>
-      <p>Attach an image or PDF. The house reads the supplier, date and total when they are written on the file. Anything it cannot read stays blank. You confirm the fields before they are saved as spend. A total is never guessed.</p>
-      <p className="m">{spend?.accounts ?? ACCOUNTS_NOT_CONNECTED}</p>
-      <p className="m">Guests do not pay for food. The restaurant is buffet only. The only point of sale is reception.</p>
-      {error && <div className="note" role="alert">{error}</div>}
-
-      <label style={{ display: "block", margin: "12px 0" }}>
-        Invoice file
-        <input type="file" accept="image/jpeg,image/png,image/webp,application/pdf" disabled={busy} onChange={e => { onFile(e.target.files?.[0]); e.target.value = ""; }} />
-      </label>
-
-      {held && (
-        <form onSubmit={save} style={{ display: "grid", gap: 8, maxWidth: 720, marginBottom: 16 }}>
-          <p className="m">Check these fields for {held.name}. Nothing is saved until you confirm. A field the file did not show is left blank.</p>
-          <label>Shop
-            <select value={draft.supplierCode} onChange={e => setDraft({ ...draft, supplierCode: e.target.value })}>
-              <option value="">Choose a shop</option>
-              <optgroup label="Regular">
-                {DEFAULT_SUPPLIERS.filter(shop => shop.regular).map(shop => <option key={shop.code} value={shop.code}>{shop.name}</option>)}
-              </optgroup>
-              <optgroup label="Also used">
-                {DEFAULT_SUPPLIERS.filter(shop => !shop.regular).map(shop => <option key={shop.code} value={shop.code}>{shop.name}</option>)}
-              </optgroup>
-              {(spend?.localShops.length ?? 0) > 0 && <optgroup label="Local shops already typed">
-                {spend?.localShops.map(name => <option key={name} value={`local:${name}`}>{name}</option>)}
-              </optgroup>}
-              <option value="LOCAL">Another local shop</option>
-            </select>
-          </label>
-          {(draft.supplierCode === "LOCAL" || draft.supplierCode.startsWith("local:")) && (
-            <label>Local shop
-              <input value={draft.supplierCode.startsWith("local:") ? draft.supplierCode.slice(6) : draft.localName} onChange={e => setDraft({ ...draft, supplierCode: "LOCAL", localName: e.target.value })} />
-            </label>
-          )}
-          <label>Invoice date
-            <input type="date" value={draft.invoiceDate} onChange={e => setDraft({ ...draft, invoiceDate: e.target.value })} />
-          </label>
-          <label>Total
-            <input inputMode="decimal" value={draft.total} placeholder="Blank until you enter it" onChange={e => setDraft({ ...draft, total: e.target.value })} />
-          </label>
-          <label>Retreat
-            <select value={draft.bookingId} onChange={e => setDraft({ ...draft, bookingId: e.target.value })}>
-              <option value="">Unassigned</option>
-              {(spend?.retreatsOnBook ?? []).map(retreat => (
-                <option key={retreat.id} value={retreat.id}>{retreat.name}{retreat.arrival ? ` · ${retreat.arrival}` : ""} · {retreat.status}</option>
-              ))}
-            </select>
-          </label>
-          {(spend?.retreatsOnBook.length ?? 0) === 0 && <p className="m">No retreats are on the board. This invoice will be unassigned.</p>}
-          <label>Note
-            <input value={draft.note} onChange={e => setDraft({ ...draft, note: e.target.value })} />
-          </label>
-          <button className="btn primary" type="submit" disabled={busy || !draft.invoiceDate || !draft.total.trim() || !shopReady}>Save as spend</button>
-        </form>
-      )}
-
-      <label style={{ display: "block", marginBottom: 12 }}>Date
-        <input type="date" value={anchor} onChange={e => { setAnchor(e.target.value); load(e.target.value); }} />
-      </label>
-
-      {!spend && !error && <p className="m">Loading invoices…</p>}
-      {spend?.empty && <p role="status">{spend.message ?? NO_INVOICES_YET}</p>}
-
-      {periods && (
-        <>
-          <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit,minmax(140px,1fr))", gap: 12, margin: "12px 0" }}>
-            {PERIODS.map(([key, label]) => (
-              <div key={key} style={{ background: "var(--surface-2)", borderRadius: 10, padding: "12px 14px" }}>
-                <div className="m">{label}</div>
-                <div style={{ fontSize: 20, fontWeight: 700 }}>{gbp(periods[key].spend)}</div>
-                <div className="m">{periods[key].from} → {periods[key].to}</div>
-              </div>
-            ))}
-          </div>
-
-          <h3>Spend per retreat</h3>
-          <p className="m">Retreat totals for {chart?.year}. An invoice that is not linked is Unassigned.</p>
-          {(spend?.retreats?.length ?? 0) === 0
-            ? <p>No attached invoices fall in {chart?.year}.</p>
-            : <ul>{spend?.retreats?.map(row => <li key={row.bookingId ?? "unassigned"}>{row.name} · {gbp(row.spend)}</li>)}</ul>}
-
-          <h3>Spend in {chart?.year}</h3>
-          {chart && !chart.hasSpend && <p>No attached invoices fall in {chart.year}.</p>}
-          {chart?.hasSpend && (
-            <div aria-label={`Invoice spend in ${chart.year}`} style={{ display: "flex", gap: 8, alignItems: "end", minHeight: 160, marginBottom: 16 }}>
-              {chart.points.map(point => (
-                <div key={point.key} style={{ flex: 1, textAlign: "center" }}>
-                  <div className="m">{gbp(point.spend)}</div>
-                  <div style={{ height: `${Math.max(4, Math.round((point.spend / maxBar) * 120))}px`, background: "var(--forest, #1f3a32)", borderRadius: 4 }} />
-                  <div className="m">{point.label}</div>
-                </div>
-              ))}
-            </div>
-          )}
-
-          <h3>Expenditure, profit and loss</h3>
-          {spend?.incomeNote && <p className="m">{spend.incomeNote}</p>}
-          <div style={{ overflowX: "auto" }}>
-            <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 14 }}>
-              <thead>
-                <tr>{["Period", "Spend", "Income", "Profit or loss", "Forecast"].map(heading => <th key={heading} style={{ textAlign: "left", padding: 8 }}>{heading}</th>)}</tr>
-              </thead>
-              <tbody>
-                {PERIODS.map(([key, label]) => {
-                  const row = periods[key];
-                  return (
-                    <tr key={key} style={{ borderTop: "1px solid var(--line)" }}>
-                      <td style={{ padding: 8 }}>{label}</td>
-                      <td style={{ padding: 8 }}>{gbp(row.spend)}</td>
-                      <td style={{ padding: 8 }}>{row.income == null ? "Not recorded" : gbp(row.income)}</td>
-                      <td style={{ padding: 8 }}>{resultText(row.outcome, row.profit, row.pnlMessage)}</td>
-                      <td style={{ padding: 8 }}><div>{resultText(row.forecastOutcome, row.forecast, row.forecastMessage)}</div>{row.forecast != null && <div className="m">{row.forecastMessage}</div>}</td>
-                    </tr>
-                  );
-                })}
-              </tbody>
-            </table>
-          </div>
-        </>
-      )}
-
-      {(spend?.items.length ?? 0) > 0 && (
-        <>
-          <h3>Saved invoices</h3>
-          {spend?.items.map(item => (
-            <div key={item.id} className="panel" style={{ marginBottom: 8 }}>
-              <div className="t">{item.date} · {item.supplierName} · {gbp(item.total)}</div>
-              <div className="m">{item.bookingId ? (item.bookingName ?? "Unassigned") : "Unassigned"} · {item.filename}{item.note ? ` · ${item.note}` : ""}</div>
-              <button className="btn" type="button" onClick={() => openFile(item.id)}>Open file</button>
-            </div>
-          ))}
-        </>
-      )}
-    </section>
-  );
+export default function InvoiceSpend(){
+ const [spend,setSpend]=useState<Spend|null>(null),[anchor,setAnchor]=useState(""),[error,setError]=useState(""),[notice,setNotice]=useState("");
+ const [held,setHeld]=useState<{name:string;data:string;url:string}|null>(null),[draft,setDraft]=useState<Draft>(blank),[reviewed,setReviewed]=useState(false),[busy,setBusy]=useState(false),[scanning,setScanning]=useState(false),[progress,setProgress]=useState(""),[rawText,setRawText]=useState("");
+ const [query,setQuery]=useState(""),[from,setFrom]=useState(""),[to,setTo]=useState(""),[supplier,setSupplier]=useState(""),[type,setType]=useState(""),[view,setView]=useState<"documents"|"products">("documents"),[limit,setLimit]=useState(50);
+ const controller=useRef<AbortController|null>(null);const upload=useRef<HTMLInputElement|null>(null);
+ const load=async(next="")=>{try{const data=await api<Spend>(`/v1/invoice-attachments/spend${next?`?anchor=${encodeURIComponent(next)}`:""}`);setSpend(data);setAnchor(data.anchor);}catch(e){setError(message(e));}};
+ useEffect(()=>{void load();return()=>controller.current?.abort();},[]);
+ useEffect(()=>()=>{if(held)URL.revokeObjectURL(held.url);},[held]);
+ useEffect(()=>{setLimit(50);},[query,from,to,supplier,type,view]);
+ const edit=(key:keyof Draft,value:Draft[keyof Draft])=>{setDraft(d=>({...d,[key]:value}));setReviewed(false);};
+ const editLine=(index:number,key:keyof Row,value:string)=>{setDraft(d=>({...d,lines:d.lines.map((l,i)=>i===index?{...l,[key]:value}:l)}));setReviewed(false);};
+ const onFile=async(file?:File)=>{
+  if(!file)return;setError("");setNotice("");setRawText("");setDraft(blank());setReviewed(false);setHeld(null);
+  if(file.size>4_000_000){setError("Choose a PDF or image smaller than 4 MB.");return;}
+  if(!['application/pdf','image/png','image/jpeg','image/webp'].includes(file.type)){setError("Use a PDF, JPEG, PNG or WebP file.");return;}
+  setBusy(true);setScanning(true);controller.current=new AbortController();
+  try{
+   const data=await new Promise<string>((resolve,reject)=>{const r=new FileReader();r.onload=()=>resolve(String(r.result));r.onerror=()=>reject(new Error("Could not open this file."));r.readAsDataURL(file);});
+   setHeld({name:file.name,data,url:URL.createObjectURL(file)});
+   const text=await scanInvoice(file,setProgress,controller.current.signal);setRawText(text);
+   const r=extractInvoice(text,DEFAULT_SUPPLIERS);
+   setDraft({...blank(),supplierCode:r.supplierCode??(r.supplierName?"LOCAL":""),localName:r.supplierName??"",invoiceDate:r.date??"",invoiceNumber:r.invoiceNumber,purchaseDate:r.purchaseDate,dueDate:r.dueDate,documentType:r.documentType,currency:r.currency,subtotal:r.subtotal==null?"":String(r.subtotal),vat:r.vat==null?"":String(r.vat),total:r.total==null?"":String(r.total),lines:r.lines.map(l=>({...l,quantity:l.quantity==null?"":String(l.quantity),unitPrice:l.unitPrice==null?"":String(l.unitPrice),net:l.net==null?"":String(l.net)}))});
+   setNotice(text.trim()?"Scan complete. Check every field against the original before saving.":"No readable text found. Enter the details manually or try a clearer copy.");
+  }catch(e){setError(message(e));}finally{setBusy(false);setScanning(false);setProgress("");}
+ };
+ const numericLines:InvoiceLine[]=draft.lines.map(l=>({...l,quantity:amount(l.quantity),unitPrice:amount(l.unitPrice),net:amount(l.net)}));
+ const warnings=reconciliationWarnings({lines:numericLines,subtotal:amount(draft.subtotal),vat:amount(draft.vat),total:amount(draft.total)});
+ const save=async(e:React.FormEvent)=>{
+  e.preventDefault();if(!held||!reviewed)return;setBusy(true);setError("");setNotice("");
+  try{await api("/v1/invoice-attachments",{method:"POST",body:JSON.stringify({...draft,reviewed,filename:held.name,data:held.data})});setHeld(null);setDraft(blank());setReviewed(false);setRawText("");setNotice("Document saved. The ledger totals have been updated.");await load(anchor);}catch(e){setError(message(e));}finally{setBusy(false);}
+ };
+ const openFile=async(id:string)=>{try{const f=await api<{data:string;filename:string}>(`/v1/invoice-attachments/${id}`);const blob=await(await fetch(f.data)).blob();const url=URL.createObjectURL(blob);const a=document.createElement('a');a.href=url;a.download=f.filename;document.body.appendChild(a);a.click();a.remove();setTimeout(()=>URL.revokeObjectURL(url),30_000);}catch(e){setError(message(e));}};
+ const items=useMemo(()=>filterLedger(spend?.items??[],{query,from,to,supplier,type}),[spend,query,from,to,supplier,type]);
+ const totals=useMemo(()=>ledgerTotals(items),[items]);
+ const products=items.flatMap(i=>i.lines.map((l,index)=>({...l,document:i,key:`${i.id}-${index}`})));
+ const words=query.toLowerCase().trim().split(/\s+/).filter(Boolean);
+ const visibleProducts=products.filter(l=>{const hay=[l.code,l.description,l.document.supplierName,l.document.invoiceNumber,l.document.date,l.document.purchaseDate,l.document.filename,l.document.note].join(' ').toLowerCase();return words.every(w=>hay.includes(w));});
+ const exportCsv=()=>{
+  const cell=(v:unknown)=>{let s=String(v??"");if(/^[=+\-@\t\r]/.test(s))s="'"+s;return '"'+s.replaceAll('"','""')+'"';};
+  const rows=view==='documents'?[['Type','Supplier','Document number','Invoice date','Purchase date','Due date','Currency','Subtotal','VAT','Total','Signed spend','Retreat','Note'],...items.map(i=>[i.documentType,i.supplierName,i.invoiceNumber,i.date,i.purchaseDate,i.dueDate,'GBP',i.subtotal,i.vat,i.total,i.total*(i.documentType==='credit'?-1:1),i.bookingName,i.note])]:[['Supplier','Document','Invoice date','Purchase date','Type','Product code','Description','Quantity','Unit','Unit price','Line net GBP'],...visibleProducts.map(l=>[l.document.supplierName,l.document.invoiceNumber,l.document.date,l.document.purchaseDate,l.document.documentType,l.code,l.description,l.quantity,l.unit,l.unitPrice,l.net])];
+  const url=URL.createObjectURL(new Blob(['\uFEFF'+rows.map(r=>r.map(cell).join(',')).join('\r\n')],{type:'text/csv;charset=utf-8'}));const a=document.createElement('a');a.href=url;a.download=`vedanta-${view}-${new Date().toISOString().slice(0,10)}.csv`;document.body.appendChild(a);a.click();a.remove();setTimeout(()=>URL.revokeObjectURL(url),30_000);
+ };
+ return <section className={styles.ledger} aria-label="Invoice and credit ledger">
+  <header className={styles.hero}><div><p className={styles.eyebrow}>PURCHASES · CREDITS · CLARITY</p><h2>Your invoice desk</h2><p>Upload once. Review the scan. Find every purchase.</p></div><button className="btn primary" disabled={busy} onClick={()=>upload.current?.click()}>＋ Add invoice or credit</button></header>
+  <div className={styles.upload}><label htmlFor="invoice-upload">Scan a PDF or invoice photo</label><input id="invoice-upload" ref={upload} type="file" accept="image/jpeg,image/png,image/webp,application/pdf" disabled={busy} onChange={e=>{void onFile(e.target.files?.[0]);e.target.value="";}}/><small>English text · up to 4 MB / 10 PDF pages. Scanning runs in your browser. Nothing counts as spend until you confirm it.</small></div>
+  {scanning&&<p role="status">{progress||"Starting scan…"} <button className="btn" onClick={()=>controller.current?.abort()}>Cancel scan</button></p>}
+  {error&&<div className={styles.alert} role="alert">{error}</div>}{notice&&<p className={styles.notice} role="status">{notice}</p>}
+  {held&&!scanning&&<form className={styles.review} onSubmit={save}>
+   <div className={styles.heading}><div><p className={styles.eyebrow}>REVIEW BEFORE RECORDING</p><h3>{held.name}</h3></div><a href={held.url} target="_blank" rel="noreferrer">View original ↗</a></div>
+   <fieldset disabled={busy} className={styles.fields}>
+    <label>Document type<select value={draft.documentType} onChange={e=>edit('documentType',e.target.value as Draft['documentType'])}><option value="invoice">Purchase invoice</option><option value="credit">Credit note — reduces spend</option></select></label>
+    <label>Supplier<select required value={draft.supplierCode} onChange={e=>edit('supplierCode',e.target.value)}><option value="">Choose supplier</option>{DEFAULT_SUPPLIERS.map(s=><option key={s.code} value={s.code}>{s.name}</option>)}<option value="LOCAL">Other supplier / local shop</option></select></label>
+    {draft.supplierCode==='LOCAL'&&<label>Supplier name<input required minLength={2} maxLength={80} list="saved-suppliers" value={draft.localName} onChange={e=>edit('localName',e.target.value)}/><datalist id="saved-suppliers">{spend?.localShops.map(s=><option key={s} value={s}/>)}</datalist></label>}
+    <label>Invoice / credit number<input maxLength={80} value={draft.invoiceNumber} onChange={e=>edit('invoiceNumber',e.target.value)} placeholder="If shown on the document"/></label>
+    <label>Invoice / credit date<input required type="date" value={draft.invoiceDate} onChange={e=>edit('invoiceDate',e.target.value)}/></label>
+    <label>Purchase date (if shown)<input type="date" value={draft.purchaseDate} onChange={e=>edit('purchaseDate',e.target.value)}/></label>
+    <label>Due date (optional)<input type="date" value={draft.dueDate} onChange={e=>edit('dueDate',e.target.value)}/></label>
+    <label>Document currency<select required value={draft.currency} onChange={e=>edit('currency',e.target.value)}><option value="">Confirm currency</option><option value="GBP">GBP — British pounds</option>{draft.currency&&draft.currency!=='GBP'&&<option value={draft.currency}>{draft.currency} — not supported</option>}</select></label>
+    {(['subtotal','vat','total'] as const).map(key=><label key={key}>{key==='vat'?'VAT':key==='total'?'Total including VAT':'Subtotal (net)'}<input required={key==='total'} type="number" min={key==='total'?'0.01':'0'} max="1000000" step="0.01" value={draft[key]} onChange={e=>edit(key,e.target.value)} placeholder="Enter from original"/></label>)}
+    <label>Retreat allocation<select value={draft.bookingId} onChange={e=>edit('bookingId',e.target.value)}><option value="">Unassigned / house purchase</option>{spend?.retreatsOnBook.map(r=><option key={r.id} value={r.id}>{r.name} · {r.status}</option>)}</select></label>
+    <label>Note<input maxLength={500} value={draft.note} onChange={e=>edit('note',e.target.value)} placeholder="Delivery, discount or other context"/></label>
+   </fieldset>
+   <h3>Product lines <small>({draft.lines.length})</small></h3><p className={styles.muted}>Positive amounts for invoices and credits. Line totals exclude VAT. Missing fields stay blank; unrecognised layouts need manual entry.</p>
+   <div className={styles.tableWrap}><table><thead><tr>{['Product code','Description','Qty','Unit','Unit price','Line net',''].map((h,i)=><th key={i}>{h}</th>)}</tr></thead><tbody>{draft.lines.map((l,i)=><tr key={i}>{(['code','description','quantity','unit','unitPrice','net'] as const).map(key=><td key={key}><input aria-label={`${key} row ${i+1}`} disabled={busy} value={l[key]} type={['quantity','unitPrice','net'].includes(key)?'number':'text'} step="0.0001" min="0" maxLength={key==='description'?240:60} onChange={e=>editLine(i,key,e.target.value)}/></td>)}<td><button type="button" className="btn" disabled={busy} aria-label={`Remove row ${i+1}`} onClick={()=>edit('lines',draft.lines.filter((_,j)=>i!==j))}>×</button></td></tr>)}</tbody></table></div>
+   <button type="button" className="btn" disabled={busy||draft.lines.length>=100} onClick={()=>edit('lines',[...draft.lines,blankRow()])}>＋ Add product row</button>
+   {warnings.length>0&&<div className={styles.warning}><b>Check before saving</b><ul>{warnings.map(w=><li key={w}>{w}</li>)}</ul></div>}
+   {rawText&&<details><summary>Show scanned text</summary><pre className={styles.ocrText}>{rawText}</pre></details>}
+   <label className={styles.confirm}><input type="checkbox" checked={reviewed} disabled={busy} onChange={e=>setReviewed(e.target.checked)}/>I checked the supplier, currency, dates, totals and product rows against the original, including any warnings above.</label>
+   <div className={styles.actions}><button className="btn primary" disabled={busy||!reviewed||draft.currency!=='GBP'}>{busy?'Saving…':draft.documentType==='credit'?'Confirm & record credit':'Confirm & record purchase'}</button><button type="button" className="btn" disabled={busy} onClick={()=>{setHeld(null);setRawText('');setDraft(blank());setError('');setNotice('Draft discarded. Nothing was saved.');}}>Discard draft</button></div>
+  </form>}
+  <div className={styles.toolbar}><label className={styles.search}>Search your ledger<input type="search" value={query} onChange={e=>setQuery(e.target.value)} placeholder="Supplier, product code, item, invoice number…"/></label><label>From<input type="date" value={from} onChange={e=>setFrom(e.target.value)}/></label><label>To<input type="date" value={to} onChange={e=>setTo(e.target.value)}/></label><label>Supplier<select value={supplier} onChange={e=>setSupplier(e.target.value)}><option value="">All suppliers</option>{[...new Set(spend?.items.map(i=>i.supplierName)??[])].sort().map(s=><option key={s}>{s}</option>)}</select></label><label>Type<select value={type} onChange={e=>setType(e.target.value)}><option value="">Purchases & credits</option><option value="invoice">Purchases only</option><option value="credit">Credits only</option></select></label><button className="btn" onClick={()=>{setQuery('');setFrom('');setTo('');setSupplier('');setType('');}}>Clear filters</button></div>
+  {from&&to&&from>to&&<p role="alert">The start date is after the end date.</p>}
+  <div className={styles.metrics}>{[['Purchases',gbp(totals.invoices),'Confirmed invoices · including VAT'],['Credit notes',gbp(totals.credits),'Reductions in recorded spend'],['Net spend',gbp(totals.net),'Purchases less credits'],['Documents',String(totals.count),'Matching your current filters']].map(([label,value,sub])=><article key={label}><span>{label}</span><strong>{value}</strong><small>{sub}</small></article>)}</div>
+  <div className={styles.heading}><div className="seg"><button className={view==='documents'?'active':''} onClick={()=>setView('documents')}>Documents</button><button className={view==='products'?'active':''} onClick={()=>setView('products')}>Product history</button></div><button className="btn" disabled={!items.length} onClick={exportCsv}>Export filtered CSV</button></div>
+  {view==='products'&&<p className={styles.muted}>Matching captured product lines: <b>{gbp(visibleProducts.reduce((sum,l)=>sum+(l.net??0)*(l.document.documentType==='credit'?-1:1),0))} net, excluding VAT</b>. Credits are subtracted; rows without a recorded line value are excluded. The cards above show whole-document totals.</p>}
+  {!spend?<p>Loading your ledger…</p>:!items.length?<div className={styles.empty}><h3>{spend.items.length?'No matches yet':'A clear picture starts with your first invoice'}</h3><p>{spend.items.length?'Try a different product code, supplier or date range.':'Add an invoice above. Only confirmed documents appear in these totals.'}</p></div>:view==='documents'?<div className={styles.documents}>{items.slice(0,limit).map(i=><details key={i.id} className={styles.document}><summary><span className={i.documentType==='credit'?styles.credit:styles.badge}>{i.documentType==='credit'?'CREDIT':'INVOICE'}</span><span><b>{i.supplierName}</b><small>{i.invoiceNumber||'No document number'} · {i.date}</small></span><strong>{i.documentType==='credit'?'−':''}{gbp(i.total)}</strong></summary><div className={styles.detail}><p>Purchase date: {i.purchaseDate||'Not recorded'} · Due: {i.dueDate||'Not recorded'} · Retreat: {i.bookingName||'Unassigned'}</p><p>Subtotal: {i.subtotal==null?'Not recorded':gbp(i.subtotal)} · VAT: {i.vat==null?'Not recorded':gbp(i.vat)}</p>{i.note&&<p>{i.note}</p>}<p>{i.lines.length} product rows · {i.filename}</p><button className="btn" onClick={()=>void openFile(i.id)}>Download original</button>{i.lines.length>0&&<ul>{i.lines.map((l,j)=><li key={j}>{l.code} · {l.description} · {l.quantity??'—'} {l.unit} × {l.unitPrice==null?'—':gbp(l.unitPrice)} · {l.net==null?'—':gbp(l.net)} net</li>)}</ul>}</div></details>)}</div>:<div className={styles.tableWrap}><table><thead><tr>{['Date / supplier','Code','Product','Qty / unit','Unit price','Line net','Document'].map(h=><th key={h}>{h}</th>)}</tr></thead><tbody>{visibleProducts.slice(0,limit).map(l=><tr key={l.key}><td>{l.document.purchaseDate||l.document.date}<small>{l.document.supplierName}</small></td><td>{l.code||'—'}</td><td>{l.description||'—'}</td><td>{l.quantity??'—'} {l.unit}</td><td>{l.unitPrice==null?'—':gbp(l.unitPrice)}</td><td>{l.net==null?'—':gbp(l.net*(l.document.documentType==='credit'?-1:1))}</td><td>{l.document.invoiceNumber||l.document.filename}<small>{l.document.documentType}</small></td></tr>)}</tbody></table>{!visibleProducts.length&&<p>No product rows captured for these documents. Older invoices keep their original totals.</p>}</div>}
+  {(view==='documents'?items.length:visibleProducts.length)>limit&&<button className="btn" onClick={()=>setLimit(n=>n+50)}>Show 50 more</button>}
+  <p className={styles.muted}>Totals follow the filters and use invoice dates, not payment dates. Credits reduce spend; this is not a bank balance or an outstanding-payments ledger. Other purchasing records are not added again.</p>
+  {items.length>0&&<div className={styles.breakdowns}><article><h3>Spend by supplier</h3>{totals.suppliers.slice(0,10).map(([s,n])=><div className={styles.statRow} key={s}><span>{s}</span><b>{gbp(n)}</b></div>)}</article><article><h3>Monthly net spend</h3>{totals.months.slice(-12).map(([m,n])=><div className={styles.statRow} key={m}><span>{m}</span><b>{gbp(n)}</b></div>)}</article></div>}
+  <details className={styles.periods}><summary>Period and retreat reporting — all invoices and credits</summary><label>Reporting date<input type="date" value={anchor} onChange={e=>{setAnchor(e.target.value);if(e.target.value)void load(e.target.value);}}/></label><p>{spend?.incomeNote} These comparisons exclude costs not recorded here; they are not a full profit-and-loss statement.</p><div className={styles.metrics}>{Object.entries(spend?.periods??{}).map(([key,p])=><article key={key}><span>{key}</span><strong>{gbp(p.spend)}</strong><small>{p.from} to {p.to}</small><p>Recorded income: {p.income==null?'Not recorded':gbp(p.income)}</p><p>Booked income: {p.bookedIncome==null?'Not recorded':gbp(p.bookedIncome)}</p><small>{p.forecastMessage}</small></article>)}</div>{spend?.retreats?.map(r=><div className={styles.statRow} key={r.bookingId??'house'}><span>{r.name}</span><b>{gbp(r.spend)}</b></div>)}</details>
+ </section>;
 }

@@ -1,0 +1,87 @@
+VEDANTA FINANCE AND PLANDAY - 5 OCTOBER 2026
+
+Scope
+This change belongs only to Vedanta OS. It does not change Parslia, store listings,
+Avanti accounts, payroll, bank transactions or the existing booking records.
+
+Invoice desk (/finance, Invoices tab)
+- Upload a PDF, JPEG, PNG or WebP to start extraction in the browser.
+- English OCR is self-hosted; documents are not sent to an external OCR/AI vendor.
+- Limit: 4 MB, 10 PDF pages, 100 product rows. Slow scans time out after 3 minutes.
+- Review/correct supplier, currency, dates, document number, product codes,
+  quantities, unit prices, VAT and totals against the original before confirming.
+- OCR is not guaranteed. For example, O and 0 may be confused in product codes.
+  Unrecognised layouts and uncertain totals stay blank for manual entry.
+- GBP only; never relabel a foreign-currency invoice as GBP.
+- Credit amounts are entered positively and subtracted once in reports.
+- Search supplier, product code, description, document number, filename or dates.
+- Supplier/date/type filters, product history, filtered CSV and original downloads.
+- Headline totals are whole-document totals. Product history separately shows
+  captured matching line net values excluding VAT; unknown values are excluded.
+- These are recorded purchases, not a bank reconciliation, payment-status ledger
+  or complete profit-and-loss report. Existing purchasing totals are not added again.
+- Exact file hashes and supplier/document-number indexes prevent duplicates.
+- Existing invoices and originals are retained. Older records have no inferred rows.
+- Existing invoice permissions are retained; property isolation is enforced.
+
+Planday (/hr or /finance > Accounting & workforce connections)
+- Read-only, manually triggered snapshots of employees, departments, shifts and
+  Punch Clock records. Planday remains the source of truth.
+- No live portal has been connected or tested: an administrator must authorise it.
+- A successful sync replaces the snapshot for one chosen range, at most 31 days.
+- It does not merge staff into Vedanta, edit a rota, approve attendance or run payroll.
+- Raw times are shown as Planday supplies them. Breaks/rounding/payroll rules are not
+  applied, so these are not calculated paid hours or labour-cost figures.
+- Names and relevant rota fields only; email, home address, salary, bank details,
+  birth dates and comments are excluded from persisted snapshots.
+- ADMIN session and clock.manage permission needed to read/sync; user.manage
+  also required to connect/disconnect. No guest or staff-portal access.
+- Credentials use AES-256-GCM encryption bound to the property. Refresh-token
+  rotation is retained even if a later resource read fails. Failed syncs preserve
+  the last successful snapshot. Database advisory locks prevent concurrent syncs.
+- Read requests are limited to 5,000 records/resource, 20 seconds/request and a
+  shared 90-second read budget; sync attempts are limited to once a minute.
+
+One-time Planday activation (account administrator)
+1. Planday > Settings > Integrations > API Access. Create "Vedanta read-only".
+2. Select only employee:read, department:read, shift:read, punchclockshift:read.
+3. Authorise in Planday. In Vedanta's Planday panel, enter the App ID and refresh
+   token, confirm the property/data consent, then connect and sync a date range.
+4. Verify names, shift times and approval status against the actual Planday portal.
+Do not put the token in chat, screenshots, GitHub or a public client environment.
+Disconnect clears Vedanta's saved token/snapshot; separately revoke in Planday
+API Access if authorisation must end there too.
+Official guide: https://developer.planday.com/gettingstarted/authorization#authorization-flow-for-customers
+
+Deployment
+- Existing GitHub repository: shyam1-jpg/vedanta-os, existing main auto-deploys.
+- API: vedanta-api; frontend: vedanta-admin, Render My Workspace.
+- Additive migrations: 0044_invoice_ledger.sql and 0045_planday_readonly.sql.
+- Server secret PLANDAY_TOKEN_ENCRYPTION_KEY is 32 random bytes encoded as 64 hex
+  characters. It is configured on the API service only, not committed here.
+  Do not rotate without re-encrypting stored tokens or reconnecting all properties.
+- Build hook copies pinned OCR workers/models/fonts into generated public assets.
+  Generated OCR assets and synthetic fixture outputs are ignored by Git.
+- No new paid service or infrastructure tier has been provisioned.
+
+Verification
+- 197 domain tests, 72 API tests and 27 guest tests pass (296 total).
+- Production builds of admin, guest and staff portals pass; admin rerun after polish.
+- API tests exercise real PostgreSQL semantics through PGlite, additive legacy
+  migration, validation, property isolation, duplicates, credits, encrypted tokens,
+  refresh rotation, upstream errors and disconnect behaviour.
+- Browser QA uses loopback-only synthetic invoices: photo, text PDF, image-only PDF,
+  editable review, saved credit arithmetic, product search and no-result states.
+- No synthetic invoices or staff were written into the live database.
+- Planday upstream calls are mocked in automated tests. Live authorisation is still
+  required. CSV generation is implemented; the embedded browser's download event
+  was not captured reliably during QA.
+
+Maintenance notes
+- npm audit reports pre-existing framework/server/email dependency advisories.
+  No forced major upgrade was mixed into this feature. Review and patch those
+  dependencies in a separately tested security maintenance change.
+- Existing guest email-delivery configuration is outside this change; this feature
+  does not claim to fix email-code delivery.
+- The invoice ledger currently loads all property metadata for search; for large
+  document volumes, add server pagination/search without truncating report totals.

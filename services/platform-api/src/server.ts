@@ -39,6 +39,7 @@ import hrRoutes from "./hr.ts";
 import purchasingRoutes from "./purchasing.ts";
 import financeRoutes from "./finance.ts";
 import invoiceAttachments from "./invoice-attachments.ts";
+import planday from "./planday.ts";
 import emergencyRoutes from "./emergency.ts";
 import stripeRoutes from "./stripe.ts";
 import guestEmailCode, { takeGuestEmailCode } from "./guestEmailCode.ts";
@@ -167,6 +168,7 @@ app.setErrorHandler((err: any, req, reply) => {
 app.get("/health", async () => { await pool.query("select 1"); return { ok: true }; });
 await app.register(authRoutes); await app.register(microsoft); await app.register(staffEmailCode); await app.register(guestEmailCode); await app.register(groups, { prefix: "/v1" }); await app.register(occupancy, { prefix: "/v1" }); await app.register(users, { prefix: "/v1" }); await app.register(guests, { prefix: "/v1" }); await app.register(housekeeping, { prefix: "/v1" }); await app.register(reports, { prefix: "/v1" }); await app.register(packages, { prefix: "/v1" }); await app.register(forms); await app.register(integrations); await app.register(email); await app.register(maintenance, { prefix: "/v1" }); await app.register(autoplace, { prefix: "/v1" }); await app.register(estate, { prefix: "/v1" }); await app.register(workforce); await app.register(guestPortal); await app.register(ops); await app.register(service); await app.register(manuals); await app.register(tasks); await app.register(readiness); await app.register(preRetreat); await app.register(backOfficeRoutes); await app.register(staffAssets); await app.register(guestNeedsReviews); await app.register(quality, { prefix: "/v1" }); await app.register(sessions); await app.register(folioRoutes); await app.register(programmeRoutes); await app.register(autoCommsRoutes); await app.register(aiDutyManagerRoutes); await app.register(hrRoutes); await app.register(purchasingRoutes); await app.register(financeRoutes); await app.register(invoiceAttachments); await app.register(emergencyRoutes); await app.register(stripeRoutes);
 await app.register(guestArrival);
+await app.register(planday);
 app.listen({ port: Number(process.env.PORT ?? 4000), host: "0.0.0.0" }).then(async () => {
   // Process due auto-communications every 15 minutes
   try {

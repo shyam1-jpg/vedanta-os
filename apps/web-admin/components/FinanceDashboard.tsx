@@ -17,7 +17,7 @@ export default function FinanceDashboard() {
   const [kpi, setKpi] = useState<KPI | null>(null);
   const [summary, setSummary] = useState<Summary | null>(null);
   const [year, setYear] = useState(new Date().getFullYear());
-  const [tab, setTab] = useState<"house" | "revenue" | "purchasing" | "sustainability" | "invoices">("house");
+  const [tab, setTab] = useState<"house" | "revenue" | "purchasing" | "sustainability" | "invoices">("invoices");
   const [sustainability, setSustainability] = useState<{ reading_date: string; category: string; value: number }[]>([]);
 
   useEffect(() => {
@@ -37,8 +37,8 @@ export default function FinanceDashboard() {
   const currentYear = new Date().getFullYear();
 
   return (
-    <div style={{ padding: "24px 32px", maxWidth: 1200 }}>
-      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 24 }}>
+    <div style={{ padding: "24px clamp(12px, 3vw, 32px)", maxWidth: 1400, minWidth:0 }}>
+      <div style={{ display: "flex", flexWrap: "wrap", gap: 14, justifyContent: "space-between", alignItems: "center", marginBottom: 24 }}>
         <div><div className="kicker">Finance</div><h1 style={{ margin: 0 }}>Dashboard</h1></div>
         <div style={{ display: "flex", gap: 8 }}>
           {[currentYear - 1, currentYear, currentYear + 1].map(y => (
@@ -47,11 +47,11 @@ export default function FinanceDashboard() {
         </div>
       </div>
 
-      <ExternalConnections />
+      <details style={{marginBottom:20}}><summary style={{cursor:"pointer"}}>Accounting & workforce connections</summary><ExternalConnections /></details>
 
       {/* KPI strip */}
       {kpi && (
-        <div style={{ display: "grid", gridTemplateColumns: "repeat(6, 1fr)", gap: 12, marginBottom: 28 }}>
+        <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(150px, 1fr))", gap: 12, marginBottom: 28 }}>
           {[
             { label: "Revenue this month", value: gbp(kpi.revenue_received), sub: `of ${gbp(kpi.revenue_agreed)} agreed` },
             { label: "Balance outstanding", value: gbp(kpi.balance_outstanding), sub: "across all open folios" },
@@ -71,7 +71,7 @@ export default function FinanceDashboard() {
 
       {/* YTD totals */}
       {summary && (
-        <div style={{ background: "var(--surface-2)", borderRadius: 10, padding: "14px 20px", marginBottom: 24, display: "flex", gap: 32 }}>
+        <div style={{ background: "var(--surface-2)", borderRadius: 10, padding: "14px 20px", marginBottom: 24, display: "flex", flexWrap:"wrap", gap: 24 }}>
           <div><span className="m" style={{ color: "var(--ink-2)" }}>YTD Revenue received </span><b>{gbp(summary.ytd.revenue_received)}</b></div>
           <div><span className="m" style={{ color: "var(--ink-2)" }}>YTD Agreed </span><b>{gbp(summary.ytd.revenue_agreed)}</b></div>
           <div><span className="m" style={{ color: "var(--ink-2)" }}>YTD Bookings </span><b>{summary.ytd.bookings}</b></div>
@@ -81,7 +81,7 @@ export default function FinanceDashboard() {
       )}
 
       {/* Tabs */}
-      <div className="seg" style={{ marginBottom: 16 }}>
+      <div className="seg" style={{ marginBottom: 16,flexWrap:"wrap" }}>
         {([["house", "House money"], ["revenue", "Revenue"], ["purchasing", "Purchasing"], ["sustainability", "Sustainability"], ["invoices", "Invoices"]] as const).map(([t, label]) => (
           <button key={t} className={tab === t ? "active" : ""} onClick={() => setTab(t)}>{label}</button>
         ))}
