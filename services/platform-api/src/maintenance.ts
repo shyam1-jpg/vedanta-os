@@ -10,7 +10,8 @@ const FLOW: Record<string, Record<string, string>> = {
   DONE: { reopen: "OPEN" }, CANCELLED: { reopen: "OPEN" },
 };
 const COLS = `t.id, t.number, t.title, t.description, t.priority, t.status, t.location, t.department, t.takes_room_out, t.resolution, t.created_at, t.updated_at, t.resolved_at, t.version,
-  r.number room, rep.display_name reported_by, asg.display_name assigned_to, t.assigned_to_user_id`;
+  r.number room, rep.display_name reported_by, asg.display_name assigned_to, t.assigned_to_user_id,
+  (select count(*)::int from maintenance_photo p where p.ticket_id = t.id) photo_count`;
 const FROM = `from maintenance_ticket t left join room r on r.id=t.room_id left join app_user rep on rep.id=t.reported_by_user_id left join app_user asg on asg.id=t.assigned_to_user_id`;
 
 export default async function routes(f: FastifyInstance) {
@@ -70,5 +71,41 @@ export default async function routes(f: FastifyInstance) {
       await audit(c, a, "maintenance_ticket", t.id, "maintenance." + req.params.cmd, { from: t.status, to, reason: req.body?.resolution });
       return { ok: true, status: to };
     });
+  });
+
+  f.get<{ Params: { id: string } }>("/maintenance/:id/photos", async (req, reply) => {
+    const a = await requireActor(req, reply); if (!a || !allow(a, "maintenance.read", reply)) return;
+    const rows = (await pool.query(
+      `select id, filename, mime, created_at from maintenance_photo where property_id=$1 and ticket_id=$2 order by created_at`,
+      [a.propertyId, req.params.id],
+    )).rows;
+    return { items: rows };
+  });
+
+  f.post<{ Params: { id: string }; Body: { data?: string; filename?: string } }>("/maintenance/:id/photos", { bodyLimit: 2_000_000 }, async (req, reply) => {
+    const a = await requireActor(req, reply); if (!a || !allow(a, "maintenance.report", reply)) return;
+    const ticket = (await pool.query(`select id from maintenance_ticket where id=$1 and property_id=$2`, [req.params.id, a.propertyId])).rows[0];
+    if (!ticket) return reply.code(404).send(problem(404, "not_found", "No such ticket"));
+    const data = String(req.body?.data ?? "");
+    const match = /^data:(image\/(?:jpeg|png|webp));base64,([a-z0-9+/=\s]+)$/i.exec(data.trim());
+    if (!match) return reply.code(422).send(problem(422, "validation", "Attach a JPEG, PNG or WebP photo"));
+    const bytes = Buffer.from(match[2].replace(/\s/g, ""), "base64");
+    if (!bytes.length || bytes.length > 1_200_000) return reply.code(422).send(problem(422, "validation", "Use a photo under 1 MB"));
+    const r = await pool.query(
+      `insert into maintenance_photo (ticket_id, tenant_id, property_id, filename, mime, bytes, created_by)
+       values ($1,$2,$3,$4,$5,$6,$7) returning id`,
+      [ticket.id, a.tenantId, a.propertyId, String(req.body?.filename ?? "photo").slice(0, 120), match[1].toLowerCase(), bytes, a.userId],
+    );
+    reply.code(201);
+    return { id: r.rows[0].id };
+  });
+
+  f.get<{ Params: { id: string } }>("/maintenance/photos/:id", async (req, reply) => {
+    const a = await requireActor(req, reply); if (!a || !allow(a, "maintenance.read", reply)) return;
+    const row = (await pool.query(`select filename, mime, bytes from maintenance_photo where id=$1 and property_id=$2`, [req.params.id, a.propertyId])).rows[0];
+    if (!row) return reply.code(404).send(problem(404, "not_found", "No such photo"));
+    reply.header("content-type", row.mime);
+    reply.header("content-disposition", `inline; filename="${String(row.filename).replace(/"/g, "")}"`);
+    return reply.send(row.bytes);
   });
 }

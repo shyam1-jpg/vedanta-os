@@ -793,7 +793,21 @@ input, select, textarea { font: inherit; }
 .arrive-card .rule { background: var(--gold); height: 2px; border-radius: 1px; }
 .arrive-card input { border-radius: 12px; min-height: 48px; border-color: #CDD3CC; }
 .arrive-card .btn.primary { border-radius: 14px; min-height: 52px; }
-.arrive-card p a { color: var(--lake); }
+  .arrive-card p a { color: var(--lake); }
+
+.suite-banner { background: var(--lake-soft); border-left: 3px solid var(--forest); padding: 8px 12px; margin: 0 0 14px; }
+.rich { min-height: 140px; border: 1px solid var(--line); background: #fff; padding: 10px 12px; }
+.rich :is(h2, h3, p) { margin: 0 0 8px; }
+.attach { display: flex; justify-content: space-between; gap: 8px; padding: 8px 0; border-bottom: 1px solid var(--line); }
+.cal-day { border: 1px solid var(--line); background: var(--paper); padding: 10px 12px; margin-bottom: 8px; }
+.cal-day h3 { font-size: 16px; }
+@media print {
+  .nav, .pg-mark, .no-print, .toast { display: none !important; }
+  .shell { display: block; background: #fff; }
+  .main { padding: 0; }
+  body { background: #fff; }
+  .print-sheet { max-width: 720px; }
+}
 @media (max-width: 900px) {
   .arrive { min-height: 100dvh; grid-template-columns: 1fr; }
   .arrive-hero { min-height: 220px; padding: 32px 24px; }

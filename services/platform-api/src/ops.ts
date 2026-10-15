@@ -15,6 +15,8 @@ import {
   routeGuestRequest,
   shiftLabel,
 } from "../../../domains/ops/board.ts";
+import { parseHandoverAudience } from "../../../domains/ops/suite.ts";
+import { parseUuid } from "../../../domains/ops/tasks.ts";
 
 async function londonDate(): Promise<string> {
   const r = await pool.query(`select (timezone('Europe/London', now()))::date::text t`);
@@ -66,6 +68,10 @@ function shapeBoard(
       author_name: row.author_name,
       created_at: row.created_at,
       acknowledged: Boolean(row.acknowledged),
+      audience: row.audience ?? "shift",
+      recipient_user_id: row.recipient_user_id ?? null,
+      recipient_name: row.recipient_name ?? null,
+      audience_group: row.audience_group ?? null,
     })),
     notices: notices.map(row => ({
       id: row.id,
@@ -94,11 +100,13 @@ function shapeBoard(
 async function loadBoard(propertyId: string, date: string, userId: string) {
   const [handover, notices, checks, ticks, requests] = await Promise.all([
     pool.query(
-      `select id, department, shift, for_date::text, body, author_name, created_at,
-        exists(select 1 from ops_handover_ack a where a.handover_id=ops_handover.id and a.user_id=$3) acknowledged
-       from ops_handover
-       where property_id = $1 and for_date >= $2::date - 1
-       order by created_at desc
+      `select h.id, h.department, h.shift, h.for_date::text, h.body, h.author_name, h.created_at,
+        h.audience, h.recipient_user_id, h.audience_group, u.display_name recipient_name,
+        exists(select 1 from ops_handover_ack a where a.handover_id=h.id and a.user_id=$3) acknowledged
+       from ops_handover h
+       left join app_user u on u.id = h.recipient_user_id
+       where h.property_id = $1 and h.for_date >= $2::date - 1
+       order by h.created_at desc
        limit 40`,
       [propertyId, date, userId],
     ),
@@ -155,13 +163,50 @@ export default async function ops(f: FastifyInstance) {
     if (!note) return reply.code(422).send(problem(422, "validation", "Write the handover note"));
     const department = parseDepartment(req.body?.department, "HOUSE");
     const shift = parseShift(req.body?.shift);
+    const audience = parseHandoverAudience(req.body?.audience);
+    const recipient = audience === "person" ? parseUuid(req.body?.recipient_user_id) : null;
+    const group = audience === "group" ? parseDepartment(req.body?.audience_group, department) : null;
+    if (audience === "person" && !recipient) return reply.code(422).send(problem(422, "validation", "Choose the person this note is for"));
     const r = await pool.query(
-      `insert into ops_handover (tenant_id, property_id, department, shift, for_date, body, author_user_id, author_name)
-       values ($1, $2, $3, $4, (timezone('Europe/London', now()))::date, $5, $6, $7)
+      `insert into ops_handover (tenant_id, property_id, department, shift, for_date, body, author_user_id, author_name, audience, recipient_user_id, audience_group)
+       values ($1, $2, $3, $4, (timezone('Europe/London', now()))::date, $5, $6, $7, $8, $9, $10)
        returning id`,
-      [a.tenantId, a.propertyId, department, shift, note, a.userId, a.name],
+      [a.tenantId, a.propertyId, department, shift, note, a.userId, a.name, audience, recipient, group],
     );
     return { id: r.rows[0].id };
+  });
+
+  f.get("/v1/ops/handovers", async (req: any, reply) => {
+    const a = await requireLogActor(req, reply); if (!a) return;
+    const department = String(req.query?.department ?? "").trim().toUpperCase();
+    const shift = String(req.query?.shift ?? "").trim().toLowerCase();
+    const audience = String(req.query?.audience ?? "").trim().toLowerCase();
+    const q = String(req.query?.q ?? "").trim();
+    const mine = String(req.query?.mine ?? "") === "1";
+    const params: unknown[] = [a.propertyId, a.userId];
+    const where = ["h.property_id = $1"];
+    if (department && department !== "ALL") { params.push(department); where.push(`h.department = $${params.length}`); }
+    if (shift === "am" || shift === "pm" || shift === "night") { params.push(shift); where.push(`h.shift = $${params.length}`); }
+    if (audience === "shift" || audience === "person" || audience === "group") { params.push(audience); where.push(`h.audience = $${params.length}`); }
+    if (mine) where.push(`(h.author_user_id = $2 or h.recipient_user_id = $2 or h.audience_group = (select d.code from membership m join department d on d.id = m.department_id where m.user_id = $2 and m.property_id = $1 limit 1))`);
+    if (q) { params.push(`%${q.replace(/[%_]/g, "")}%`); where.push(`(h.body ilike $${params.length} or h.author_name ilike $${params.length})`); }
+    const rows = (await pool.query(
+      `select h.id, h.department, h.shift, h.for_date::text, h.body, h.author_name, h.created_at,
+              h.audience, h.recipient_user_id, h.audience_group, u.display_name recipient_name,
+              exists(select 1 from ops_handover_ack a where a.handover_id=h.id and a.user_id=$2) acknowledged
+       from ops_handover h
+       left join app_user u on u.id = h.recipient_user_id
+       where ${where.join(" and ")}
+       order by h.created_at desc
+       limit 80`,
+      params,
+    )).rows;
+    return { items: rows.map(row => ({
+      ...row,
+      department_label: departmentLabel(row.department),
+      shift_label: shiftLabel(row.shift),
+      acknowledged: Boolean(row.acknowledged),
+    })) };
   });
 
   f.post("/v1/ops/notices", async (req: any, reply) => {
@@ -198,6 +243,24 @@ export default async function ops(f: FastifyInstance) {
       [a.tenantId, a.propertyId, req.params.id, done, a.userId, a.name],
     );
     return { ok: true, done };
+  });
+
+  f.get("/v1/ops/guest-requests", async (req: any, reply) => {
+    const a = await requireLogActor(req, reply); if (!a) return;
+    const status = String(req.query?.status ?? "").trim().toLowerCase();
+    const department = String(req.query?.department ?? "").trim().toUpperCase();
+    const q = String(req.query?.q ?? "").trim();
+    const params: unknown[] = [a.propertyId];
+    const where = ["property_id = $1"];
+    if (status === "open" || status === "doing" || status === "done") { params.push(status); where.push(`status = $${params.length}`); }
+    if (department && department !== "ALL") { params.push(department); where.push(`department = $${params.length}`); }
+    if (q) { params.push(`%${q.replace(/[%_]/g, "")}%`); where.push(`(request_text ilike $${params.length} or guest_name ilike $${params.length} or room_label ilike $${params.length})`); }
+    const rows = (await pool.query(
+      `select id, guest_name, room_label, department, request_text, status, created_at
+       from ops_guest_request where ${where.join(" and ")} order by created_at desc limit 200`,
+      params,
+    )).rows;
+    return { items: rows.map(row => ({ ...row, department_label: departmentLabel(row.department) })) };
   });
 
   f.post("/v1/ops/guest-requests", async (req: any, reply) => {

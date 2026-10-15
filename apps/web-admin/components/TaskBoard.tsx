@@ -38,6 +38,12 @@ type Task = {
   assigned_name: string | null;
   created_by_name: string | null;
   created_at: string;
+  recurrence?: string;
+  requires_sign?: boolean;
+  signed?: boolean;
+  show_after?: string | null;
+  can_manage?: boolean;
+  can_complete?: boolean;
   next: Action[];
 };
 type Event = {
@@ -64,6 +70,7 @@ type Board = {
   severities: { code: string; label: string }[];
   can_assign: boolean;
   can_approve: boolean;
+  can_manage?: boolean;
 };
 type Person = { id: string; name: string; role_name: string };
 
@@ -71,6 +78,7 @@ const emptyForm = {
   title: "", notes: "", department: "HOUSE", priority: "normal", severity: "none",
   due_at: "", assigned_staff_id: "", assigned_label: "", room_label: "", guest_name: "",
   location_label: "", asset_label: "", event_label: "", sop_slug: "", expected_minutes: "",
+  show_after: "", recurrence: "none", requires_sign: false,
 };
 
 const templates = [
@@ -121,6 +129,7 @@ export default function TaskBoard() {
     if (filter === "mine") p.set("mine", "1");
     if (filter === "overdue") p.set("overdue", "1");
     if (filter === "done") p.set("status", "done");
+    else if (filter === "later") { p.set("status", "open"); p.set("later", "1"); }
     else if (filter !== "all") p.set("status", "open");
     return p.toString();
   };
@@ -216,6 +225,7 @@ export default function TaskBoard() {
         <button className={filter === "overdue" ? "on" : ""} onClick={() => setFilter("overdue")}>Overdue</button>
         <button className={filter === "all" ? "on" : ""} onClick={() => setFilter("all")}>All statuses</button>
         <button className={filter === "done" ? "on" : ""} onClick={() => setFilter("done")}>Done</button>
+        {board.can_manage && <button className={filter === "later" ? "on" : ""} onClick={() => setFilter("later")}>Show later</button>}
       </div>
 
       <div className="task-command-toolbar">
@@ -241,7 +251,7 @@ export default function TaskBoard() {
           {items.length === 0 && <div className="empty">No tasks match this view. Change the focus or search.</div>}
           {board.items.length < board.matched_total && <button className="btn" disabled={busy} onClick={() => load(true)}>{busy ? "Loading…" : "Load more tasks"}</button>}
 
-          <form className="house-panel" style={{ marginTop: 16 }} onSubmit={async e => {
+          {board.can_manage && <form className="house-panel" style={{ marginTop: 16 }} onSubmit={async e => {
             e.preventDefault();
             try {
               const created = await api<Task>("/v1/ops/tasks", {
@@ -249,8 +259,11 @@ export default function TaskBoard() {
                 body: JSON.stringify({
                   ...form,
                   due_at: form.due_at ? new Date(form.due_at).toISOString() : null,
+                  show_after: form.show_after ? new Date(form.show_after).toISOString() : null,
                   expected_minutes: form.expected_minutes || null,
                   assigned_staff_id: form.assigned_staff_id || null,
+                  recurrence: form.recurrence,
+                  requires_sign: form.requires_sign,
                 }),
               });
               setForm(emptyForm);
@@ -297,10 +310,15 @@ export default function TaskBoard() {
               <div className="frow"><input aria-label="Equipment or asset" value={form.asset_label} onChange={e => setForm({ ...form, asset_label: e.target.value })} placeholder="Equipment / asset" /><input aria-label="Retreat or event" value={form.event_label} onChange={e => setForm({ ...form, event_label: e.target.value })} placeholder="Retreat / event" /></div>
               <input aria-label="SOP reference" value={form.sop_slug} onChange={e => setForm({ ...form, sop_slug: e.target.value })} placeholder="SOP reference" />
               <p className="m">Enter the deadline in your device’s local time. Templates are drafts; check the estimate and requirements before creating a task.</p>
+              <div className="frow">
+                <select aria-label="Repeat" value={form.recurrence} onChange={e => setForm({ ...form, recurrence: e.target.value })}><option value="none">Does not repeat</option><option value="daily">Daily</option><option value="weekly">Weekly</option><option value="monthly">Monthly</option></select>
+                <input aria-label="Show later" type="datetime-local" value={form.show_after} onChange={e => setForm({ ...form, show_after: e.target.value })} />
+              </div>
+              <label style={{ display: "flex", gap: 8, alignItems: "center" }}><input type="checkbox" checked={form.requires_sign} onChange={e => setForm({ ...form, requires_sign: e.target.checked })} />Read and sign</label>
               <textarea rows={2} value={form.notes} onChange={e => setForm({ ...form, notes: e.target.value })} placeholder="Notes" />
               <button className="btn primary" type="submit">Open task</button>
             </div>
-          </form>
+          </form>}
         </div>
 
         <div className="detail">
@@ -332,7 +350,8 @@ export default function TaskBoard() {
                 </p>
               )}
               <div className="actions" style={{ flexWrap: "wrap", gap: 8 }}>
-                {detail.next.map(a => (
+                {(detail.requires_sign && !detail.signed) && <button className="btn" onClick={() => api(`/v1/ops/tasks/${detail.id}/sign`, { method: "POST", body: "{}" }).then(() => { say("Signed"); loadOne(detail.id); }).catch(e => say(e instanceof ApiError ? e.problem.detail : "Could not sign"))}>I have read this</button>}
+                {detail.next.filter(a => board.can_manage || (a.status === "completed" && detail.can_complete !== false)).map(a => (
                   <button key={a.status} className="btn primary" onClick={() => a.status === "blocked" ? setBlocking(true) : move(detail.id, a.status)}>{a.label}</button>
                 ))}
                 {board.can_approve && detail.status === "completed" && (

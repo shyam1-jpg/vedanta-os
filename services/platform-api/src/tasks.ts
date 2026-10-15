@@ -18,6 +18,7 @@ import {
   sanitizeTaskInput,
   type TaskStatus,
 } from "../../../domains/ops/tasks.ts";
+import { assigneeCanMarkDone, mayPublish, nextOpenDue, staffMayComplete } from "../../../domains/ops/suite.ts";
 
 const PHOTO_MAX = 700_000;
 const TRACKED_FIELDS = [
@@ -49,6 +50,10 @@ function canAssign(a: { perms: Set<string> }) {
 
 function canApprove(a: { perms: Set<string> }) {
   return a.perms.has("task.approve") || a.perms.has("sop.manage") || a.perms.has("user.manage") || a.perms.has("package.manage");
+}
+
+function canManageTasks(a: { perms: Set<string> }) {
+  return canAssign(a) || mayPublish(a.perms);
 }
 
 function shape(row: any, now = new Date()) {
@@ -93,6 +98,11 @@ function shape(row: any, now = new Date()) {
     source: row.source,
     created_at: row.created_at,
     updated_at: row.updated_at,
+    show_after: row.show_after,
+    recurrence: row.recurrence ?? "none",
+    recurrence_until: row.recurrence_until,
+    requires_sign: Boolean(row.requires_sign),
+    signed: Boolean(row.signed),
     next: formatted.next,
   };
 }
@@ -103,6 +113,7 @@ const TASK_SELECT = `
   t.status, t.due_at, t.start_at, t.started_at, t.finished_at, t.expected_minutes,
   t.paused_at, t.pause_accumulated_ms, t.blocked_reason, t.created_by, t.assigned_staff_id,
   t.assigned_staff_ids, t.assigned_label, t.verification_note, t.approval_note, t.source,
+  t.show_after, t.recurrence, t.recurrence_until::text, t.requires_sign,
   t.created_at, t.updated_at,
   au.display_name assigned_name,
   cu.display_name created_by_name
@@ -199,6 +210,8 @@ export default async function tasks(f: FastifyInstance) {
       params.push(`%${search.replace(/[%_]/g, "")}%`);
       where.push(`(t.title ilike $${params.length} or t.notes ilike $${params.length} or t.room_label ilike $${params.length} or t.guest_name ilike $${params.length})`);
     }
+    const includeLater = (String(q.later ?? "") === "1" || String(q.later ?? "") === "true") && canManageTasks(a);
+    if (!includeLater) where.push(`(t.show_after is null or t.show_after <= now())`);
     const rows = (await pool.query(
       `select ${TASK_SELECT}
        from ops_task t
@@ -234,6 +247,7 @@ export default async function tasks(f: FastifyInstance) {
       ...TASK_CATALOGUE,
       can_assign: canAssign(a),
       can_approve: canApprove(a),
+      can_manage: canManageTasks(a),
     };
   });
 
@@ -275,11 +289,26 @@ export default async function tasks(f: FastifyInstance) {
        order by t.created_at`,
       [a.propertyId, row.id],
     )).rows.map((c: any) => shape(c));
-    return { ...shape(row), events, children, can_assign: canAssign(a), can_approve: canApprove(a) };
+    const signed = (await pool.query(`select 1 from ops_task_sign where task_id=$1 and user_id=$2`, [row.id, a.userId])).rowCount;
+    const shaped = shape({ ...row, signed: Boolean(signed) });
+    const canComplete = canManageTasks(a) || staffMayComplete(row, a.userId);
+    const next = (!canManageTasks(a) && canComplete && assigneeCanMarkDone(row.status) && !shaped.next.some((step: { status: string }) => step.status === "completed"))
+      ? [...shaped.next, { status: "completed", label: "Complete" }]
+      : shaped.next;
+    return {
+      ...shaped,
+      next,
+      events, children,
+      can_assign: canAssign(a),
+      can_approve: canApprove(a),
+      can_manage: canManageTasks(a),
+      can_complete: canComplete,
+    };
   });
 
   f.post("/v1/ops/tasks", async (req: any, reply) => {
     const a = await requireTaskWriter(req, reply); if (!a) return;
+    if (!canManageTasks(a)) return reply.code(403).send(problem(403, "forbidden", "Only a manager opens a task. You can mark your own assigned tasks done."));
     const draft = sanitizeTaskInput(req.body);
     if (!draft.title) return reply.code(422).send(problem(422, "validation", "Give the task a title"));
     if (draft.booking_id && !(await pool.query(`select id from booking_group where id=$1 and property_id=$2`, [draft.booking_id, a.propertyId])).rowCount) return reply.code(422).send(problem(422, "invalid_booking", "Choose a booking at this property"));
@@ -292,9 +321,9 @@ export default async function tasks(f: FastifyInstance) {
          tenant_id, property_id, title, notes, department, team, location_label, asset_label,
          room_label, guest_name, booking_id, event_label, sop_slug, parent_id, priority, severity,
          status, due_at, start_at, expected_minutes, blocked_reason, created_by, assigned_staff_id,
-         assigned_staff_ids, assigned_label, source
+         assigned_staff_ids, assigned_label, source, show_after, recurrence, recurrence_until, requires_sign
        ) values (
-         $1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22,$23,$24,$25,'house'
+         $1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22,$23,$24,$25,'house',$26,$27,$28,$29
        ) returning id`,
       [
         a.tenantId, a.propertyId, draft.title, draft.notes, draft.department, draft.team,
@@ -302,6 +331,7 @@ export default async function tasks(f: FastifyInstance) {
         draft.event_label, draft.sop_slug, draft.parent_id, draft.priority, draft.severity, status,
         draft.due_at, draft.start_at, draft.expected_minutes, draft.blocked_reason, a.userId,
         draft.assigned_staff_id, draft.assigned_staff_ids, draft.assigned_label,
+        draft.show_after, draft.recurrence, draft.recurrence_until, draft.requires_sign,
       ],
     );
     await writeEvent({
@@ -315,6 +345,7 @@ export default async function tasks(f: FastifyInstance) {
 
   f.patch("/v1/ops/tasks/:id", async (req: any, reply) => {
     const a = await requireTaskWriter(req, reply); if (!a) return;
+    if (!canManageTasks(a)) return reply.code(403).send(problem(403, "forbidden", "Only a manager edits a task. You can mark your own assigned tasks done."));
     const current = await loadTask(a.propertyId, req.params.id);
     if (!current) return reply.code(404).send(problem(404, "not_found", "That task is not on the house list"));
     const draft = sanitizeTaskInput({ ...current, ...(req.body ?? {}) });
@@ -347,6 +378,10 @@ export default async function tasks(f: FastifyInstance) {
       blocked_reason: "blocked_reason" in (req.body ?? {}) ? draft.blocked_reason : current.blocked_reason,
       verification_note: typeof req.body?.verification_note === "string" ? String(req.body.verification_note).trim().slice(0, 800) : current.verification_note,
       approval_note: typeof req.body?.approval_note === "string" ? String(req.body.approval_note).trim().slice(0, 800) : current.approval_note,
+      show_after: "show_after" in (req.body ?? {}) ? draft.show_after : current.show_after,
+      recurrence: "recurrence" in (req.body ?? {}) ? draft.recurrence : current.recurrence,
+      recurrence_until: "recurrence_until" in (req.body ?? {}) ? draft.recurrence_until : current.recurrence_until,
+      requires_sign: "requires_sign" in (req.body ?? {}) ? draft.requires_sign : current.requires_sign,
     };
     await pool.query(
       `update ops_task set
@@ -354,7 +389,8 @@ export default async function tasks(f: FastifyInstance) {
          room_label=$9, guest_name=$10, booking_id=$11, event_label=$12, sop_slug=$13, parent_id=$14,
          priority=$15, severity=$16, due_at=$17, start_at=$18, expected_minutes=$19,
          assigned_staff_id=$20, assigned_staff_ids=$21, assigned_label=$22, blocked_reason=$23,
-         verification_note=$24, approval_note=$25, updated_at=now()
+         verification_note=$24, approval_note=$25, show_after=$26, recurrence=$27, recurrence_until=$28,
+         requires_sign=$29, updated_at=now()
        where property_id=$1 and id=$2`,
       [
         a.propertyId, current.id, next.title, next.notes, next.department, next.team,
@@ -362,6 +398,7 @@ export default async function tasks(f: FastifyInstance) {
         next.event_label, next.sop_slug, next.parent_id, next.priority, next.severity, next.due_at,
         next.start_at, next.expected_minutes, next.assigned_staff_id, next.assigned_staff_ids,
         next.assigned_label, next.blocked_reason, next.verification_note, next.approval_note,
+        next.show_after, next.recurrence, next.recurrence_until, next.requires_sign,
       ],
     );
     for (const field of TRACKED_FIELDS) {
@@ -391,7 +428,11 @@ export default async function tasks(f: FastifyInstance) {
     if (!current) return reply.code(404).send(problem(404, "not_found", "That task is not on the house list"));
     const next = parseTaskStatus(req.body?.status, current.status) as TaskStatus;
     if (next === current.status) return shape(current);
-    if (!canTransition(current.status, next)) {
+    const assigneeDone = !canManageTasks(a) && next === "completed" && staffMayComplete(current, a.userId) && assigneeCanMarkDone(current.status);
+    if (!canManageTasks(a) && !assigneeDone) {
+      return reply.code(403).send(problem(403, "forbidden", "You can only mark a task assigned to you as done"));
+    }
+    if (!assigneeDone && !canTransition(current.status, next)) {
       return reply.code(409).send(problem(409, "invalid_transition", `Cannot move a ${current.status.replace(/_/g, " ")} task to ${next.replace(/_/g, " ")}`));
     }
     if ((next === "verified" || next === "cancelled" || next === "reopened") && !canApprove(a)) {
@@ -424,12 +465,55 @@ export default async function tasks(f: FastifyInstance) {
       from_status: current.status, to_status: next,
       body: String(req.body?.note ?? "").trim().slice(0, 800),
     });
+    if (next === "completed" && current.recurrence && current.recurrence !== "none") {
+      const due = nextOpenDue(current.due_at ? new Date(current.due_at).toISOString() : null, current.recurrence, current.recurrence_until ?? null, now);
+      if (due) {
+        const spawned = initialStatus({
+          assigned_staff_id: current.assigned_staff_id,
+          assigned_staff_ids: current.assigned_staff_ids ?? [],
+          assigned_label: current.assigned_label,
+          team: current.team,
+          start_at: null,
+        });
+        await pool.query(
+          `insert into ops_task (
+             tenant_id, property_id, title, notes, department, team, location_label, asset_label,
+             room_label, guest_name, booking_id, event_label, sop_slug, priority, severity,
+             status, due_at, expected_minutes, created_by, assigned_staff_id, assigned_staff_ids,
+             assigned_label, source, recurrence, recurrence_until, requires_sign
+           ) values (
+             $1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22,'house',$23,$24,$25
+           )`,
+          [
+            a.tenantId, a.propertyId, current.title, current.notes, current.department, current.team,
+            current.location_label, current.asset_label, current.room_label, current.guest_name, current.booking_id,
+            current.event_label, current.sop_slug, current.priority, current.severity, spawned, due,
+            current.expected_minutes, a.userId, current.assigned_staff_id, current.assigned_staff_ids ?? [],
+            current.assigned_label, current.recurrence, current.recurrence_until, current.requires_sign,
+          ],
+        );
+      }
+    }
     const updated = await loadTask(a.propertyId, current.id);
     return { ...shape(updated), actual_minutes: actualMinutes(updated, now) };
   });
 
+  f.post("/v1/ops/tasks/:id/sign", async (req: any, reply) => {
+    const a = await requireTaskReader(req, reply); if (!a) return;
+    const current = await loadTask(a.propertyId, req.params.id);
+    if (!current) return reply.code(404).send(problem(404, "not_found", "That task is not on the house list"));
+    if (!current.requires_sign) return reply.code(409).send(problem(409, "not_required", "This task does not ask for a signature"));
+    await pool.query(`insert into ops_task_sign (task_id, user_id) values ($1,$2) on conflict do nothing`, [current.id, a.userId]);
+    await writeEvent({
+      tenantId: a.tenantId, propertyId: a.propertyId, taskId: current.id,
+      actorId: a.userId, actorName: a.name, kind: "sign", body: "Read and signed",
+    });
+    return { ok: true };
+  });
+
   f.post("/v1/ops/tasks/:id/comment", async (req: any, reply) => {
     const a = await requireTaskWriter(req, reply); if (!a) return;
+    if (!canManageTasks(a)) return reply.code(403).send(problem(403, "forbidden", "Only a manager adds a note. Mark your own task done instead."));
     const current = await loadTask(a.propertyId, req.params.id);
     if (!current) return reply.code(404).send(problem(404, "not_found", "That task is not on the house list"));
     const body = String(req.body?.body ?? "").trim();
@@ -446,6 +530,9 @@ export default async function tasks(f: FastifyInstance) {
     const a = await requireTaskWriter(req, reply); if (!a) return;
     const current = await loadTask(a.propertyId, req.params.id);
     if (!current) return reply.code(404).send(problem(404, "not_found", "That task is not on the house list"));
+    if (!canManageTasks(a) && !staffMayComplete(current, a.userId)) {
+      return reply.code(403).send(problem(403, "forbidden", "You can add a photo only on a task assigned to you"));
+    }
     const data = String(req.body?.data ?? req.body?.image_data ?? "");
     const kind = String(req.body?.kind ?? "photo").toLowerCase();
     const allowed = ["photo", "video", "voice", "signature"];
