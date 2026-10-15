@@ -81,8 +81,56 @@ export default function Housekeeping() {
               </div>))}
           </div>
         </div>))}
+      <DailyPlan date={date} say={say} />
       {fault && <ReportFault room={fault} onClose={() => setFault(null)} onDone={m => { setFault(null); say(m); load(); }} />}
       {toast && <div className="toast">{toast}</div>}
     </>
+  );
+}
+
+function DailyPlan({ date, say }: { date: string; say: (t: string) => void }) {
+  const [plan, setPlan] = useState<{ number: string; occupancy: string; clean_type: string; assignee_user_id: string | null; assignee_name: string | null }[]>([]);
+  const [people, setPeople] = useState<{ id: string; name: string }[]>([]);
+  const [canPlan, setCanPlan] = useState(false);
+  const [report, setReport] = useState<{ by_user: { name: string; rooms: number; to_clean: number }[]; by_room: { number: string; on_date: string; occupancy: string; clean_type: string; assignee: string }[]; cleaned: { name: string; cleans: number }[] } | null>(null);
+  const [number, setNumber] = useState("");
+  const [row, setRow] = useState({ assignee_user_id: "", occupancy: "departure", clean_type: "full" });
+  useEffect(() => {
+    api<{ items: typeof plan; can_plan: boolean }>(`/v1/housekeeping/plan?date=${date}`).then(r => { setPlan(r.items); setCanPlan(r.can_plan); }).catch(() => {});
+    api<{ items: { id: string; name: string }[] }>("/v1/staff/directory").then(r => setPeople(r.items)).catch(() => {});
+    api<NonNullable<typeof report>>(`/v1/housekeeping/reports?from=${date}&to=${date}`).then(setReport).catch(() => {});
+  }, [date]);
+  return (
+    <section className="panel" style={{ marginTop: 18 }}>
+      <h3 style={{ marginTop: 0 }}>Daily room plan</h3>
+      <p className="m">Choose who cleans, the occupancy for the day, and the clean. Bookings on the room board are unchanged.</p>
+      {plan.map(p => <p key={p.number} className="m"><b>{p.number}</b> · {p.occupancy} · {p.clean_type} · {p.assignee_name || "Unassigned"}</p>)}
+      {plan.length === 0 && <p className="m">No assignments for this day yet.</p>}
+      {canPlan && (
+        <form onSubmit={async e => {
+          e.preventDefault();
+          try {
+            await api("/v1/housekeeping/plan", { method: "PUT", body: JSON.stringify({ date, rooms: [{ number, ...row }] }) });
+            const r = await api<{ items: typeof plan }>(`/v1/housekeeping/plan?date=${date}`);
+            setPlan(r.items); say(`Room ${number} planned`);
+          } catch (err) { say(err instanceof ApiError ? err.problem.detail : "Could not save the plan"); }
+        }} className="ops-form" style={{ marginTop: 8 }}>
+          <div className="frow">
+            <input aria-label="Room number" required placeholder="Room" value={number} onChange={e => setNumber(e.target.value)} />
+            <select aria-label="Occupancy" value={row.occupancy} onChange={e => setRow({ ...row, occupancy: e.target.value })}><option>vacant</option><option>occupied</option><option>arrival</option><option>departure</option><option>stayover</option></select>
+            <select aria-label="Clean" value={row.clean_type} onChange={e => setRow({ ...row, clean_type: e.target.value })}><option>full</option><option>stayover</option><option>linen</option><option>none</option></select>
+            <select aria-label="Staff" value={row.assignee_user_id} onChange={e => setRow({ ...row, assignee_user_id: e.target.value })}><option value="">Unassigned</option>{people.map(p => <option key={p.id} value={p.id}>{p.name}</option>)}</select>
+          </div>
+          <button className="btn primary">Save room</button>
+        </form>
+      )}
+      {report && (
+        <div className="facts" style={{ marginTop: 12 }}>
+          <div><span>By person</span><b>{report.by_user.map(u => `${u.name} ${u.rooms}`).join(" · ") || "—"}</b></div>
+          <div><span>Cleans started</span><b>{report.cleaned.map(u => `${u.name} ${u.cleans}`).join(" · ") || "—"}</b></div>
+          <div><span>Rooms on the plan</span><b>{report.by_room.length}</b></div>
+        </div>
+      )}
+    </section>
   );
 }

@@ -4,6 +4,7 @@
  */
 
 import { departmentLabel, parseDepartment, type OpsDepartment } from "./board.ts";
+import { parseRecurrence, type Recurrence } from "./suite.ts";
 
 export const TASK_STATUSES = [
   "new",
@@ -165,6 +166,10 @@ export type TaskDraft = {
   assigned_staff_ids: string[];
   assigned_label: string;
   blocked_reason: string;
+  show_after: string | null;
+  recurrence: Recurrence;
+  recurrence_until: string | null;
+  requires_sign: boolean;
 };
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
@@ -227,6 +232,12 @@ export function sanitizeTaskInput(body: Record<string, unknown> | null | undefin
     assigned_staff_ids,
     assigned_label: trim(src.assigned_label, 120),
     blocked_reason: trim(src.blocked_reason, 400),
+    show_after: parseIso(src.show_after),
+    recurrence: parseRecurrence(src.recurrence),
+    recurrence_until: /^\d{4}-\d{2}-\d{2}$/.test(String(src.recurrence_until ?? "").slice(0, 10))
+      ? String(src.recurrence_until).slice(0, 10)
+      : null,
+    requires_sign: src.requires_sign === true || src.requires_sign === "true" || src.requires_sign === 1,
   };
 }
 

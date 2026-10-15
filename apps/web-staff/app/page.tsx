@@ -5,6 +5,7 @@ import { API,api,tok } from "../lib/api";
 import StaffTaskDetail from "../components/StaffTaskDetail";
 import StaffAssetViewer from "../components/StaffAssetViewer";
 import MorningDashboard from "../components/MorningDashboard";
+import StaffSuite from "../components/StaffSuite";
 import { staffTrainingSections } from "../../../domains/staff/training.ts";
 
 type Me = { name: string; email: string; role: string; role_name?: string; permissions?: string[]; property_name?: string | null; property_kicker?: string | null };
@@ -17,7 +18,7 @@ export default function Pocket() {
   const [providers, setProviders] = useState<{ microsoft: boolean; email: boolean; dev: boolean; email_code: boolean } | null>(null);
   const [code, setCode] = useState(""); const [codeSent, setCodeSent] = useState(false); const [busy, setBusy] = useState(false); const [message, setMessage] = useState("");
   const [err, setErr] = useState<string | null>(null);
-  const [tab, setTab] = useState<"morning" | "clock" | "leave" | "duty" | "sop" | "log" | "desk" | "night" | "manual" | "training" | "tasks" | "assets">("morning");
+  const [tab, setTab] = useState<"morning" | "clock" | "leave" | "duty" | "sop" | "log" | "desk" | "night" | "manual" | "training" | "tasks" | "assets" | "home" | "handbook" | "news" | "ideas" | "calendar" | "repairs">("morning");
   const [desk, setDesk] = useState<{
     today: { weekday: string; title: string; method: string; ingredients: { name: string; qty: string }[] };
     tomorrow: { weekday: string; title: string; method: string; ingredients: { name: string; qty: string }[] };
@@ -145,6 +146,7 @@ export default function Pocket() {
       <div className="hero"><img className="official-house-logo" src="/pocket/vedanta-official-logo.png" alt="The Vedanta — The Vedanta Way Ltd" width="386" height="102" /><div className="kicker">{me.role_name ?? me.role.replace(/_/g, " ")}</div><h1>{me.name}</h1><div className="hero-status"><span>{clock?.last === "IN" ? "On shift" : "Off shift"}</span><span>{tasks?.counts.open ?? 0} open tasks</span><span>{duty.length} shifts on your board</span></div></div>
       <div className={tab === "morning" ? "wrap morning-wrap" : "wrap"}>
         <div className="tabs">
+          <button className={tab === "home" ? "on" : ""} onClick={() => setTab("home")}>Home</button>
           <button className={tab === "morning" ? "on" : ""} onClick={() => setTab("morning")}>Morning board</button>
           <button className={tab === "clock" ? "on" : ""} onClick={() => setTab("clock")}>Clock</button>
           <button className={tab === "leave" ? "on" : ""} onClick={() => setTab("leave")}>Holiday</button>
@@ -152,12 +154,23 @@ export default function Pocket() {
           <button className={tab === "log" ? "on" : ""} onClick={() => setTab("log")}>House log</button>
           <button className={tab === "assets" ? "on" : ""} onClick={() => setTab("assets")}>Equipment</button>
           <button className={tab === "tasks" ? "on" : ""} onClick={() => setTab("tasks")}>Tasks</button>
+          <button className={tab === "handbook" ? "on" : ""} onClick={() => setTab("handbook")}>Handbook</button>
+          <button className={tab === "news" ? "on" : ""} onClick={() => setTab("news")}>News</button>
+          <button className={tab === "ideas" ? "on" : ""} onClick={() => setTab("ideas")}>Ideas</button>
+          <button className={tab === "calendar" ? "on" : ""} onClick={() => setTab("calendar")}>Diary</button>
+          <button className={tab === "repairs" ? "on" : ""} onClick={() => setTab("repairs")}>Repairs</button>
           <button className={tab === "desk" ? "on" : ""} onClick={() => setTab("desk")}>Front desk</button>
           <button className={tab === "night" ? "on" : ""} onClick={() => setTab("night")}>Night</button>
           <button className={tab === "manual" ? "on" : ""} onClick={() => setTab("manual")}>Manual</button>
           <button className={tab === "training" ? "on" : ""} onClick={() => setTab("training")}>Training</button>
           <button className={tab === "sop" ? "on" : ""} onClick={() => setTab("sop")}>SOP</button>
         </div>
+        {tab === "home" && <StaffSuite mode="home" />}
+        {tab === "handbook" && <StaffSuite mode="handbook" />}
+        {tab === "news" && <StaffSuite mode="news" />}
+        {tab === "ideas" && <StaffSuite mode="ideas" />}
+        {tab === "calendar" && <StaffSuite mode="calendar" />}
+        {tab === "repairs" && <StaffSuite mode="repairs" />}
         {tab === "morning" && <MorningDashboard request={api} canViewArrivals={me.permissions?.includes('group.read')??false} onTasks={()=>setTab('tasks')}/>}
         {tab === "clock" && (
           <div className="card">
@@ -222,8 +235,8 @@ export default function Pocket() {
               <h2>Tasks · {tasks?.counts.open ?? 0} open across the house</h2>
               <div className="tabs"><button className="btn" onClick={async()=>{setTaskScope("open");setTasks(await api("/v1/ops/tasks?status=open&limit=100"));}}>All open</button><button className="btn" onClick={async()=>{setTaskScope("mine");setTasks(await api("/v1/ops/tasks?status=open&mine=1&limit=100"));}}>Assigned to me</button></div>
               <p className="m">{taskScope==="mine"?"Your assigned open tasks":"Open house tasks"} · showing up to 100. Open a task for instructions, blockers, photos and history.</p>
-              <p className="m">Acknowledge, start, pause, finish. History stays even if the wording is edited later.</p>
-              <input value={taskTitle} onChange={e => setTaskTitle(e.target.value)} placeholder="New task for the house" />
+              <p className="m">Mark a task assigned to you as done. Opening a new task is for a manager.</p>
+              {(me.permissions?.includes("content.publish") || me.permissions?.includes("task.assign")) && <><input value={taskTitle} onChange={e => setTaskTitle(e.target.value)} placeholder="New task for the house" />
               <button className="btn" onClick={async () => {
                 setErr(null);
                 try {
@@ -231,7 +244,7 @@ export default function Pocket() {
                   setTaskTitle("");
                   setTasks(await api("/v1/ops/tasks?status=open&limit=100"));
                 } catch (e) { setErr((e as Error).message); }
-              }}>Open task</button>
+              }}>Open task</button></>}
             </div>
             {(tasks?.items ?? []).map(t => (
               <div className="card" key={t.id}>
