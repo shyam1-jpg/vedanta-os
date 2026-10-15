@@ -85,11 +85,12 @@ Do not put real privileged staff emails back into public SQL seed files.
 
 ### Staff authentication
 
-For production staff access, configure Microsoft 365 or staff email codes. Microsoft requires:
+For production staff access, configure Microsoft 365 or staff email codes. Microsoft sign-in stays off until all of these are set on the API:
 
 - `MS_TENANT_ID`
 - `MS_CLIENT_ID`
 - `MS_CLIENT_SECRET`
+- `PUBLIC_URL`
 
 Keep:
 
@@ -103,9 +104,7 @@ Alternatively, set `SMTP_URL` and `MAIL_FROM` for one-time staff email codes. Th
 
 Create a Microsoft Entra app registration for Vedanta Admin.
 
-Use a Web redirect URI matching the deployed API, for example:
-
-`https://<vedanta-api-domain>/auth/microsoft/callback`
+The Web redirect URI must be exactly `${PUBLIC_URL}/auth/microsoft/callback` (the API origin, for example `https://vedanta-api.onrender.com/auth/microsoft/callback`). These values are deployment secrets. They are not set from the repository.
 
 Use the Vedanta organisational tenant unless there is an explicit business requirement for another account type.
 
