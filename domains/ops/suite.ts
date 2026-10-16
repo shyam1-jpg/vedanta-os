@@ -21,6 +21,51 @@ export type IdeaStatus = (typeof IDEA_STATUSES)[number];
 export const HANDOVER_AUDIENCES = ["shift", "person", "group"] as const;
 export type HandoverAudience = (typeof HANDOVER_AUDIENCES)[number];
 
+/** Handbook home folders, in the order the house desk shows them. */
+export const HANDBOOK_FOLDERS = [
+  "Administration",
+  "Emergencies / Safety",
+  "Events & Groups",
+  "F&B",
+  "General Hotel Information",
+  "Housekeeping",
+  "HR & Employee Services",
+  "IT & Systems",
+  "Kitchen – Risk Assessments & Training",
+  "Maintenance",
+  "Marketing & Sales",
+  "Reception / FO",
+  "Estate",
+] as const;
+
+/** Handover filter tree. Template categories are separate and managed by the owner. */
+export const HANDOVER_CATEGORIES = [
+  "Daily Plan",
+  "Events",
+  "F&B Handovers",
+  "FO Handovers",
+  "Housekeeping Handovers",
+  "MOD Handovers",
+  "Welcome Messages",
+] as const;
+
+export function handoverCategory(v: unknown): string {
+  const raw = String(v ?? "").trim();
+  return (HANDOVER_CATEGORIES as readonly string[]).includes(raw) ? raw : "";
+}
+
+/** Turn a pasted video link into an embeddable player URL. Anything else stays a plain link. */
+export function tutorialEmbed(url: string): string | null {
+  const raw = String(url ?? "").trim();
+  if (!/^https:\/\//i.test(raw)) return null;
+  const yt = raw.match(/(?:youtu\.be\/|youtube\.com\/(?:watch\?v=|embed\/|shorts\/))([\w-]{6,})/i);
+  if (yt) return `https://www.youtube.com/embed/${yt[1]}`;
+  const vimeo = raw.match(/vimeo\.com\/(?:video\/)?(\d+)/i);
+  if (vimeo) return `https://player.vimeo.com/video/${vimeo[1]}`;
+  if (/\.(mp4|webm)(\?|$)/i.test(raw)) return raw;
+  return null;
+}
+
 const COMPLAINT_NEXT: Record<ComplaintStatus, ComplaintStatus[]> = {
   open: ["acknowledged", "resolving", "closed"],
   acknowledged: ["resolving", "resolved", "closed"],

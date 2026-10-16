@@ -21,8 +21,11 @@ import {
   audienceAllows,
   buildTextPdf,
   canMoveComplaint,
+  HANDBOOK_FOLDERS,
+  HANDOVER_CATEGORIES,
   mayOperate,
   mayPublish,
+  tutorialEmbed,
   nextOpenDue,
   parseEventIdeas,
   PUBLISH_ROLES,
@@ -49,6 +52,19 @@ describe("content publishing", () => {
     const grant = seed.split("INSERT INTO role_permission").pop() ?? "";
     for (const role of PUBLISH_ROLES) assert.match(grant, new RegExp(role));
     assert.doesNotMatch(grant, /FRONT_OFFICE_MANAGER|HK_SUPERVISOR|RECEPTIONIST|KITCHEN|HEAD_CHEF/);
+  });
+});
+
+describe("handbook folders and handover categories", () => {
+  it("seeds every handbook folder and keeps the hotelkit handover tree", () => {
+    const seed = readFileSync(join(here, "../../db/seed/0022_handbook_folders.sql"), "utf8");
+    for (const name of HANDBOOK_FOLDERS) assert.ok(seed.includes(name), name);
+    assert.deepEqual([...HANDOVER_CATEGORIES], [
+      "Daily Plan", "Events", "F&B Handovers", "FO Handovers", "Housekeeping Handovers", "MOD Handovers", "Welcome Messages",
+    ]);
+    assert.equal(tutorialEmbed("https://youtu.be/abcdefghijk"), "https://www.youtube.com/embed/abcdefghijk");
+    assert.equal(tutorialEmbed("https://vimeo.com/12345"), "https://player.vimeo.com/video/12345");
+    assert.equal(tutorialEmbed("javascript:alert(1)"), null);
   });
 });
 

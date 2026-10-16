@@ -8,13 +8,14 @@ import PwaRegister from "@/components/PwaRegister";
 import { StoreProvider, useStore } from "@/lib/store";
 import { token } from "@/lib/api";
 
-const PUBLISH_HERE = ["/news/", "/handbook/", "/ideas/", "/calendar/", "/feed/"];
+const PUBLISH_HERE = ["/news/", "/handbook/", "/ideas/", "/calendar/", "/feed/", "/tutorials/"];
 const ADD_MENU: [string, string][] = [
   ["/news/", "News"],
   ["/handbook/", "Handbook article"],
   ["/ideas/", "Idea"],
   ["/calendar/", "Diary entry"],
   ["/feed/", "Moment"],
+  ["/tutorials/", "Tutorial"],
 ];
 
 type Trail = { href: string; label: string };

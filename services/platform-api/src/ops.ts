@@ -15,7 +15,7 @@ import {
   routeGuestRequest,
   shiftLabel,
 } from "../../../domains/ops/board.ts";
-import { mayOperate, parseHandoverAudience } from "../../../domains/ops/suite.ts";
+import { mayOperate, parseHandoverAudience, richTextToPlain } from "../../../domains/ops/suite.ts";
 import { parseUuid } from "../../../domains/ops/tasks.ts";
 
 async function londonDate(): Promise<string> {
@@ -64,7 +64,7 @@ function shapeBoard(
       shift: row.shift,
       shift_label: shiftLabel(row.shift),
       for_date: row.for_date,
-      body: row.body,
+      body: richTextToPlain(String(row.body ?? "")),
       author_name: row.author_name,
       created_at: row.created_at,
       acknowledged: Boolean(row.acknowledged),

@@ -10,14 +10,7 @@ type Moment = { id: string; body: string; author_name: string | null; created_at
 type Note = { id: string; title: string; body: string; read: boolean; created_at?: string };
 type Birthday = { name: string; on: string; days: number };
 
-const TUTORIALS: { href: string; title: string; fresh?: boolean }[] = [
-  { href: "/handbook/", title: "Kitchen risk assessments and training", fresh: true },
-  { href: "/news/", title: "Read the house news" },
-  { href: "/tasks/", title: "How tasks move through the house" },
-  { href: "/handovers/", title: "Leave a shift handover" },
-  { href: "/housekeeping/", title: "Housekeeping daily plan" },
-  { href: "/repairs/", title: "Report a repair" },
-];
+type Tutorial = { id: string; title: string; category: string; is_new: boolean; video_url: string | null; has_file: boolean };
 
 function picture(text: string) {
   const match = text.match(/https?:\/\/\S+\.(?:jpg|jpeg|png|webp)/i);
@@ -38,6 +31,7 @@ export default function HomeFeed() {
   const [likes, setLikes] = useState<Record<string, boolean>>({});
   const [replyFor, setReplyFor] = useState<string | null>(null);
   const [reply, setReply] = useState("");
+  const [tutorials, setTutorials] = useState<Tutorial[]>([]);
   const [err, setErr] = useState<string | null>(null);
 
   const load = () => {
@@ -45,7 +39,7 @@ export default function HomeFeed() {
       setActivity(r.activity); setMoments(r.moments); setNotes(r.notifications); setBirthdays(r.birthdays); setCanPublish(r.can_publish);
     }).catch(e => setErr(e instanceof ApiError ? e.problem.detail : "Could not open the feed"));
   };
-  useEffect(() => { load(); }, []);
+  useEffect(() => { load(); api<{ items: Tutorial[] }>("/v1/tutorials").then(r => setTutorials(r.items)).catch(() => {}); }, []);
   useEffect(() => { if (window.location.hash === "#notifications") setTab("notifications"); }, []);
   useKitBus({
     onAdd: () => { if (!canPublish) return false; setTab("moments"); setAdding(true); },
@@ -126,13 +120,14 @@ export default function HomeFeed() {
       </section>
       <aside className="kit-col">
         <article className="kit-card kit-tutorials">
-          <header><h2>Tutorials</h2><Link href="/handbook/">See all</Link></header>
-          {TUTORIALS.map(item => (
-            <Link key={item.href + item.title} href={item.href} className="kit-tutorial">
-              <span className="material-icons">school</span>
-              <span>{item.title}{item.fresh && <em>NEW</em>}</span>
+          <header><h2>Tutorials</h2><Link href="/tutorials/">See all</Link></header>
+          {tutorials.slice(0, 6).map(item => (
+            <Link key={item.id} href={`/tutorials/?id=${item.id}`} className="kit-tutorial">
+              <span className="material-icons">{item.video_url || item.has_file ? "play_circle" : "menu_book"}</span>
+              <span><strong>{item.title}</strong><small>{item.category || "House"}</small>{item.is_new && <em>NEW</em>}</span>
             </Link>
           ))}
+          {tutorials.length === 0 && <p className="m">Tutorials the owner publishes show up here.</p>}
         </article>
       </aside>
     </div>

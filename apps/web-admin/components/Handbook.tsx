@@ -5,7 +5,7 @@ import { API, api, ApiError, token } from "@/lib/api";
 import { kitStamp, useKitBus } from "@/components/OpsChrome";
 
 type Chapter = { id: string; parent_id: string | null; title: string; sort_order: number };
-type Article = { id: string; chapter_id: string; title: string; keywords: string[]; audience: string[]; review_on: string | null; status: string; version: number; created_at?: string; updated_at?: string; editor?: string; attachment_count?: number; signed: boolean; signed_count: number };
+type Article = { id: string; chapter_id: string | null; title: string; keywords: string[]; audience: string[]; review_on: string | null; status: string; version: number; created_at?: string; updated_at?: string; editor?: string; attachment_count?: number; signed: boolean; signed_count: number };
 type Version = { version: number; title: string; body_html?: string; edited_at: string; note: string; editor?: string };
 type Detail = Article & { body_html: string; editor?: string; created_at?: string; updated_at?: string; versions: Version[]; attachments: { id: string; kind: string; filename: string; url: string | null }[]; signers: { name: string; signed_at: string }[]; can_publish: boolean };
 const DEPTS = ["ALL", "HOUSE", "FRONT", "NIGHT", "HK", "KITCHEN", "RESTAURANT", "MAINT", "GROUNDS", "MGMT"];
@@ -103,14 +103,14 @@ export default function Handbook() {
       </div>
       {!detail && (
         <div className="kit-sheet">
-          {!chapterId && chapters.map(ch => (
+          {!chapterId && [...chapters].sort((a, b) => a.sort_order - b.sort_order || a.title.localeCompare(b.title)).map(ch => (
             <button type="button" key={ch.id} className="kit-row" onClick={() => setChapterId(ch.id)}>
               <span className="material-icons">folder</span>
               <strong>{ch.title}</strong>
               <span className="m">{articles.filter(a => a.chapter_id === ch.id).length} articles</span>
             </button>
           ))}
-          {(chapterId || q) && rows.map(a => (
+          {!chapterId && rows.filter(a => !a.chapter_id).map(a => (
             <button type="button" key={a.id} className="kit-row" onClick={() => setSel(a.id)}>
               <span className="material-icons">description</span>
               <strong>{a.title}</strong>
@@ -121,7 +121,18 @@ export default function Handbook() {
               </span>
             </button>
           ))}
-          {((chapterId || q) ? rows.length === 0 : chapters.length === 0) && <p className="kit-empty">{q ? "Nothing matches this search." : "The handbook is empty until an admin publishes a chapter."}</p>}
+          {(chapterId || q) && rows.filter(a => !q || chapterId || a.chapter_id).map(a => (
+            <button type="button" key={a.id} className="kit-row" onClick={() => setSel(a.id)}>
+              <span className="material-icons">description</span>
+              <strong>{a.title}</strong>
+              <span className="kit-row-side">
+                <span className="m">{a.editor ?? "House"}, {kitStamp(a.updated_at)}</span>
+                {(a.attachment_count ?? 0) > 0 && <span className="material-icons kit-clip" title="Attachment">attach_file</span>}
+                <em>Version {a.version}</em>
+              </span>
+            </button>
+          ))}
+          {chapters.length === 0 && rows.length === 0 && <p className="kit-empty">{q ? "Nothing matches this search." : "The handbook is empty until an admin publishes a folder."}</p>}
         </div>
       )}
       {detail && (
@@ -165,6 +176,16 @@ export default function Handbook() {
             <button type="button" className="kit-outline" onClick={() => saveFile(`/v1/handbook/articles/${detail.id}/pdf`, "handbook.pdf").catch(e2 => setErr((e2 as Error).message))}>Download PDF</button>
           </div>
           {publish && detail.signers.length > 0 && <p className="m">{detail.signers.length} signed this version: {detail.signers.map(s => s.name).join(", ")}</p>}
+          <h2>Version history</h2>
+          <div className="kit-sheet">
+            {detail.versions.map(v => (
+              <div className="kit-row" key={v.version}>
+                <span className="material-icons">history</span>
+                <strong>Version {v.version}</strong>
+                <span className="kit-row-side"><span className="m">{v.editor ?? detail.editor ?? "House"}, {kitStamp(v.edited_at)} · {v.note}</span></span>
+              </div>
+            ))}
+          </div>
         </article>
       )}
       {publish && adding && (
@@ -188,7 +209,7 @@ export default function Handbook() {
             } catch (e2) { setErr(e2 instanceof ApiError ? e2.problem.detail : "Could not publish"); }
           }}>
             <h2>Add article</h2>
-            <label>Chapter<select required value={draft.chapter_id} onChange={e => setDraft({ ...draft, chapter_id: e.target.value })}><option value="">Choose</option>{chapters.map(c => <option key={c.id} value={c.id}>{c.title}</option>)}</select></label>
+            <label>Folder<select value={draft.chapter_id} onChange={e => setDraft({ ...draft, chapter_id: e.target.value })}><option value="">Handbook home</option>{chapters.map(c => <option key={c.id} value={c.id}>{c.title}</option>)}</select></label>
             <label>Title<input required value={draft.title} onChange={e => setDraft({ ...draft, title: e.target.value })} /></label>
             <label>Keywords<input value={draft.keywords} onChange={e => setDraft({ ...draft, keywords: e.target.value })} placeholder="risk, training" /></label>
             <div className="frow">
