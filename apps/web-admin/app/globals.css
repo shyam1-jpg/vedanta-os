@@ -864,10 +864,11 @@ input, select, textarea { font: inherit; }
 .kit-outline .material-icons, .kit-text { color: #757575; }
 .kit-body { flex: 1; display: flex; min-width: 0; min-height: 0; }
 .kit .main { flex: 1; min-width: 0; padding: 16px 18px 40px; background: #FAFAFA; }
-.kit-nav { width: 190px; flex: none; background: #FAFAFA; border-right: 1px solid #E0E0E0; display: flex; flex-direction: column; padding: 8px; position: sticky; top: 48px; height: calc(100vh - 48px); overflow: auto; }
+.kit-nav { width: 232px; flex: none; background: #FAFAFA; border-right: 1px solid #E0E0E0; display: flex; flex-direction: column; padding: 8px 8px 24px; position: sticky; top: 48px; height: calc(100vh - 48px); overflow: auto; }
 .kit.nav-closed .kit-nav { display: none; }
-.kit-nav a, .kit-nav .kit-link { display: flex; align-items: center; gap: 10px; min-height: 34px; padding: 0 10px; border-radius: 8px; border: 0; background: transparent; color: #212121; font-size: 13.5px; font-weight: 500; width: 100%; text-align: left; }
-.kit-nav a .material-icons, .kit-nav .kit-link .material-icons { color: #757575; font-size: 18px; }
+.kit-nav a, .kit-nav .kit-link { display: flex; align-items: flex-start; gap: 10px; min-height: 34px; padding: 7px 10px; border-radius: 8px; border: 0; background: transparent; color: #212121; font-size: 13.5px; font-weight: 500; width: 100%; text-align: left; line-height: 1.25; }
+.kit-nav-empty { margin: 12px 10px; color: #757575; font-size: 13px; }
+.kit-nav a .material-icons, .kit-nav .kit-link .material-icons { color: #757575; font-size: 18px; margin-top: 0; }
 .kit-nav a.on, .kit-nav .kit-link.on { background: #F7F2EF; color: #D9C5BC; font-weight: 600; }
 .kit-nav a.on .material-icons, .kit-nav .kit-link.on .material-icons { color: #D9C5BC; }
 .kit-nav a:hover, .kit-nav .kit-link:hover { background: #F7F2EF; }
@@ -981,6 +982,29 @@ input, select, textarea { font: inherit; }
   .kit-top, .kit-nav, .kit-bottom, .kit-scrim, .no-print { display: none !important; }
   .kit, .kit-body, .kit .main { display: block; background: #fff; padding: 0; }
 }
+
+/* Original house pages, inside the hotelkit shell. */
+.kit .topbar h1 { font-size: 20px; font-weight: 700; }
+.kit .btn { border-radius: 6px; min-height: 32px; border-color: #E0E0E0; background: #fff; color: #212121; }
+.kit .btn:hover { border-color: #D9C5BC; }
+.kit .btn.primary, .kit .btn.primary:hover { background: #D9C5BC; border-color: #D9C5BC; color: #fff; }
+.kit .seg { border-radius: 6px; background: #F3F3F3; border: 0; padding: 2px; }
+.kit .seg button { border-radius: 4px; min-height: 32px; color: #757575; }
+.kit .seg button.on { background: #fff; color: #212121; box-shadow: 0 1px 2px rgba(0,0,0,.06); }
+.kit .panel, .kit .house-panel, .kit .list, .kit .detail, .kit .ops-card, .kit .card { background: #fff; border: 1px solid #E0E0E0; border-radius: 6px; box-shadow: 0 1px 2px rgba(0,0,0,.04); }
+.kit .detail input, .kit .panel input, .kit .detail select, .kit .panel select, .kit .detail textarea, .kit .panel textarea, .kit .readiness-select { border-radius: 6px; border-color: #E0E0E0; min-height: 36px; }
+.kit .kicker, .kit .ht-date { color: #757575; }
+.kit .ht h1, .kit .ht h2 { font-family: Inter, system-ui, sans-serif; }
+.kit .ht-hero, .kit .task-command-hero, .kit .house-masthead { background: #fff; color: #212121; border: 1px solid #E0E0E0; border-radius: 6px; box-shadow: 0 1px 2px rgba(0,0,0,.04); }
+.kit .ht-hero h1, .kit .ht-hero h1 em, .kit .task-command-hero h1, .kit .house-masthead h1 { color: #212121; font-size: 22px; font-family: Inter, system-ui, sans-serif; }
+.kit .ht-hero p, .kit .task-command-hero p, .kit .task-command-hero .m, .kit .task-command-hero .k { color: #757575; }
+.kit .task-command-stats > div { border-radius: 6px; border-color: #E0E0E0; }
+.kit .task-command-stats strong { color: #212121; }
+.kit .task-command-tools .btn { background: #fff; color: #212121; }
+.kit .ht-card, .kit .ht-quick a, .kit .ht-stat { border-radius: 6px; border-color: #E0E0E0; }
+.kit .ht-hero-nums div { background: #F7F2EF; border-radius: 6px; }
+.kit .ht-hero-nums b { color: #212121; }
+.kit .ht-hero-nums span { color: #757575; }
 
 @media (max-width: 900px) {
   .arrive { min-height: 100dvh; grid-template-columns: 1fr; }
