@@ -1,6 +1,7 @@
 "use client";
 import { useEffect, useState } from "react";
 import { api, ApiError } from "@/lib/api";
+import { DeskBar, EmptyState, EntryRow } from "@/components/OpsChrome";
 
 type Person = { id: string; name: string; email: string; phone: string | null; job_title: string | null; birthday: string | null; role_name: string; department_name: string | null; department: string | null };
 
@@ -19,19 +20,16 @@ export default function Employees() {
     <>
       <div className="topbar"><div><h1>Employees</h1><p>The house directory: department, job title and how to reach someone. Pay stays on the payroll screen.</p></div></div>
       {err && <div className="note">{err}</div>}
-      <div style={{ display: "flex", gap: 8, marginBottom: 12, flexWrap: "wrap" }}>
-        <input aria-label="Search people" placeholder="Search name or title" value={q} onChange={e => setQ(e.target.value)} style={{ padding: 8, minWidth: 220 }} />
-        <div className="seg"><button className={!dept ? "on" : ""} onClick={() => setDept("")}>All</button>{depts.map(d => <button key={d} className={dept === d ? "on" : ""} onClick={() => setDept(d)}>{d}</button>)}</div>
-      </div>
+      <DeskBar
+        query={q} onQuery={setQ} placeholder="Search name or title"
+        filters={<div className="seg"><button className={!dept ? "on" : ""} onClick={() => setDept("")}>All</button>{depts.map(d => <button key={d} className={dept === d ? "on" : ""} onClick={() => setDept(d)}>{d}</button>)}</div>}
+      />
       <div className="split">
         <div className="list">
           {shown.map(p => (
-            <button key={p.id} className={"row" + (sel?.id === p.id ? " sel" : "")} onClick={() => setSel(p)}>
-              <span className="bar" style={{ background: "var(--forest)" }} />
-              <span><span className="t">{p.name}</span><span className="m">{p.job_title || p.role_name} · {p.department_name ?? "House"}</span></span>
-              <span className="r">{p.phone || p.email}</span>
-            </button>
+            <EntryRow key={p.id} selected={sel?.id === p.id} onClick={() => setSel(p)} name={p.name} title={p.name} meta={`${p.job_title || p.role_name} · ${p.department_name ?? "House"}`} badge={p.department_name ?? "House"} tone="info" />
           ))}
+          {shown.length === 0 && <EmptyState title="No one matches" detail="Try another department. New people are added from Names & positions." />}
         </div>
         {sel && (
           <form className="detail" onSubmit={async e => {

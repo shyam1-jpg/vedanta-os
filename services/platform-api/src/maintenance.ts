@@ -2,6 +2,7 @@ import type { FastifyInstance } from "fastify";
 import { pool, tx } from "./db.ts";
 import { requireActor, allow, problem } from "./auth.ts";
 import { audit } from "./groups.ts";
+import { mayOperate } from "../../../domains/ops/suite.ts";
 
 const FLOW: Record<string, Record<string, string>> = {
   OPEN: { start: "IN_PROGRESS", wait: "WAITING_PARTS", done: "DONE", cancel: "CANCELLED" },
@@ -26,6 +27,7 @@ export default async function routes(f: FastifyInstance) {
 
   f.post<{ Body: { title: string; description?: string; room?: string; location?: string; department?: string; priority?: string; takes_room_out?: boolean } }>("/maintenance", async (req, reply) => {
     const a = await requireActor(req, reply); if (!a || !allow(a, "maintenance.report", reply)) return;
+    if (!mayOperate(a.perms)) return reply.code(403).send(problem(403, "forbidden", "Only a head of department opens a repair. Staff can read the list."));
     const b = req.body ?? {} as any; if (!b.title?.trim()) return reply.code(422).send(problem(422, "validation", "Say what the problem is"));
     if (!b.room?.trim() && !b.location?.trim()) return reply.code(422).send(problem(422, "validation", "Choose a room or a building area"));
     if (!b.department?.trim()) return reply.code(422).send(problem(422, "validation", "Say which department is reporting"));
@@ -84,6 +86,7 @@ export default async function routes(f: FastifyInstance) {
 
   f.post<{ Params: { id: string }; Body: { data?: string; filename?: string } }>("/maintenance/:id/photos", { bodyLimit: 2_000_000 }, async (req, reply) => {
     const a = await requireActor(req, reply); if (!a || !allow(a, "maintenance.report", reply)) return;
+    if (!mayOperate(a.perms)) return reply.code(403).send(problem(403, "forbidden", "Only a head of department adds a repair photo."));
     const ticket = (await pool.query(`select id from maintenance_ticket where id=$1 and property_id=$2`, [req.params.id, a.propertyId])).rows[0];
     if (!ticket) return reply.code(404).send(problem(404, "not_found", "No such ticket"));
     const data = String(req.body?.data ?? "");

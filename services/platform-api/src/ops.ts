@@ -15,7 +15,7 @@ import {
   routeGuestRequest,
   shiftLabel,
 } from "../../../domains/ops/board.ts";
-import { parseHandoverAudience } from "../../../domains/ops/suite.ts";
+import { mayOperate, parseHandoverAudience } from "../../../domains/ops/suite.ts";
 import { parseUuid } from "../../../domains/ops/tasks.ts";
 
 async function londonDate(): Promise<string> {
@@ -159,6 +159,7 @@ export default async function ops(f: FastifyInstance) {
 
   f.post("/v1/ops/handover", async (req: any, reply) => {
     const a = await requireLogActor(req, reply); if (!a) return;
+    if (!mayOperate(a.perms)) return reply.code(403).send(problem(403, "forbidden", "Only a head of department writes a handover. You can still acknowledge one."));
     const note = String(req.body?.body ?? "").trim();
     if (!note) return reply.code(422).send(problem(422, "validation", "Write the handover note"));
     const department = parseDepartment(req.body?.department, "HOUSE");

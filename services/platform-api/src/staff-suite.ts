@@ -107,10 +107,15 @@ export default async function staffSuite(f: FastifyInstance) {
       [a.propertyId],
     )).rows;
     const articles = (await pool.query(
-      `select a.id, a.chapter_id, a.title, a.keywords, a.audience, a.review_on::text, a.status, a.version, a.updated_at,
+      `select a.id, a.chapter_id, a.title, a.keywords, a.audience, a.review_on::text, a.status, a.version, a.created_at, a.updated_at,
+              coalesce(ed.display_name, cr.display_name, 'House') editor,
+              (select count(*)::int from handbook_attachment att where att.article_id=a.id) attachment_count,
               (select count(*)::int from handbook_sign s where s.article_id=a.id and s.version=a.version) signed_count,
               exists(select 1 from handbook_sign s where s.article_id=a.id and s.user_id=$2 and s.version=a.version) signed
-       from handbook_article a where a.property_id=$1 order by a.title`,
+       from handbook_article a
+       left join app_user ed on ed.id = a.updated_by
+       left join app_user cr on cr.id = a.created_by
+       where a.property_id=$1 order by a.title`,
       [a.propertyId, a.userId],
     )).rows.filter((row: any) => (publishing(a) || row.status === "live") && canSee(a, row.audience));
     const visibleChapters = publishing(a)
@@ -175,15 +180,21 @@ export default async function staffSuite(f: FastifyInstance) {
     const a = await reader(req, reply); if (!a) return;
     const row = (await pool.query(
       `select a.*, a.review_on::text review_on,
+              coalesce(ed.display_name, cr.display_name, 'House') editor,
               exists(select 1 from handbook_sign s where s.article_id=a.id and s.user_id=$3 and s.version=a.version) signed
-       from handbook_article a where a.property_id=$1 and a.id=$2`,
+       from handbook_article a
+       left join app_user ed on ed.id = a.updated_by
+       left join app_user cr on cr.id = a.created_by
+       where a.property_id=$1 and a.id=$2`,
       [a.propertyId, req.params.id, a.userId],
     )).rows[0];
     if (!row || (!publishing(a) && row.status !== "live") || !canSee(a, row.audience)) {
       return reply.code(404).send(problem(404, "not_found", "No such article"));
     }
     const versions = (await pool.query(
-      `select version, title, edited_at, note from handbook_version where article_id=$1 order by version desc`,
+      `select v.version, v.title, v.body_html, v.edited_at, v.note, coalesce(u.display_name, 'House') editor
+       from handbook_version v left join app_user u on u.id = v.edited_by
+       where v.article_id=$1 order by v.version desc`,
       [row.id],
     )).rows;
     const attachments = (await pool.query(
@@ -200,7 +211,8 @@ export default async function staffSuite(f: FastifyInstance) {
     return {
       id: row.id, chapter_id: row.chapter_id, title: row.title, body_html: row.body_html,
       keywords: row.keywords, audience: row.audience, review_on: row.review_on, status: row.status,
-      version: row.version, updated_at: row.updated_at, signed: row.signed, versions, attachments, signers,
+      version: row.version, created_at: row.created_at, updated_at: row.updated_at, editor: row.editor,
+      signed: row.signed, versions, attachments, signers,
       can_publish: publishing(a),
     };
   });
@@ -547,6 +559,25 @@ export default async function staffSuite(f: FastifyInstance) {
     );
     if (!r.rowCount) return reply.code(404).send(problem(404, "not_found", "No such person"));
     return { ok: true };
+  });
+
+  f.get("/v1/ops/desk", async (req, reply) => {
+    const a = await reader(req, reply); if (!a) return;
+    const counts = (await pool.query(
+      `select
+         (select count(*)::int from ops_task where property_id=$1 and status not in ('completed','verified','cancelled')) as tasks,
+         (select count(*)::int from ops_news n where n.property_id=$1 and not exists (select 1 from ops_news_read r where r.news_id=n.id and r.user_id=$2)) as news,
+         (select count(*)::int from maintenance_ticket where property_id=$1 and status not in ('DONE','CANCELLED')) as repairs,
+         (select count(*)::int from ops_guest_request where property_id=$1 and status <> 'done') as requests,
+         (select count(*)::int from guest_complaint where property_id=$1 and status not in ('resolved','closed')) as complaints,
+         (select count(*)::int from ops_idea where property_id=$1 and status not in ('done','declined')) as ideas,
+         (select count(*)::int from ops_handover where property_id=$1 and created_at > now() - interval '36 hours') as handovers,
+         (select count(*)::int from handbook_article where property_id=$1 and status='live') as handbook,
+         (select count(*)::int from membership where property_id=$1) as people,
+         (select count(*)::int from ops_appointment where property_id=$1 and starts_at >= now() - interval '1 day' and starts_at < now() + interval '14 days') as diary`,
+      [a.propertyId, a.userId],
+    )).rows[0];
+    return { can_publish: publishing(a), counts };
   });
 
   f.get("/v1/feed", async (req, reply) => {

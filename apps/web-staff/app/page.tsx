@@ -7,6 +7,7 @@ import StaffAssetViewer from "../components/StaffAssetViewer";
 import MorningDashboard from "../components/MorningDashboard";
 import StaffSuite from "../components/StaffSuite";
 import { staffTrainingSections } from "../../../domains/staff/training.ts";
+import { mayOperate } from "../../../domains/ops/suite.ts";
 
 type Me = { name: string; email: string; role: string; role_name?: string; permissions?: string[]; property_name?: string | null; property_kicker?: string | null };
 type Prop = { name: string; kicker: string };
@@ -18,7 +19,8 @@ export default function Pocket() {
   const [providers, setProviders] = useState<{ microsoft: boolean; email: boolean; dev: boolean; email_code: boolean } | null>(null);
   const [code, setCode] = useState(""); const [codeSent, setCodeSent] = useState(false); const [busy, setBusy] = useState(false); const [message, setMessage] = useState("");
   const [err, setErr] = useState<string | null>(null);
-  const [tab, setTab] = useState<"morning" | "clock" | "leave" | "duty" | "sop" | "log" | "desk" | "night" | "manual" | "training" | "tasks" | "assets" | "home" | "handbook" | "news" | "ideas" | "calendar" | "repairs">("morning");
+  const [tab, setTab] = useState<"morning" | "clock" | "leave" | "duty" | "sop" | "log" | "desk" | "night" | "manual" | "training" | "tasks" | "assets" | "home" | "handbook" | "news" | "ideas" | "calendar" | "repairs">("home");
+  const [moreOpen, setMoreOpen] = useState(false);
   const [desk, setDesk] = useState<{
     today: { weekday: string; title: string; method: string; ingredients: { name: string; qty: string }[] };
     tomorrow: { weekday: string; title: string; method: string; ingredients: { name: string; qty: string }[] };
@@ -143,28 +145,22 @@ export default function Pocket() {
 
   return (
     <>
-      <div className="hero"><img className="official-house-logo" src="/pocket/vedanta-official-logo.png" alt="The Vedanta — The Vedanta Way Ltd" width="386" height="102" /><div className="kicker">{me.role_name ?? me.role.replace(/_/g, " ")}</div><h1>{me.name}</h1><div className="hero-status"><span>{clock?.last === "IN" ? "On shift" : "Off shift"}</span><span>{tasks?.counts.open ?? 0} open tasks</span><span>{duty.length} shifts on your board</span></div></div>
+      <header className="pocket-top">
+        <img src="/pocket/vedanta-official-logo.png" alt="The Vedanta" />
+        <div><strong>{me.name}</strong><span>{clock?.last === "IN" ? "On shift" : "Off shift"} · {tasks?.counts.open ?? 0} open tasks</span></div>
+      </header>
       <div className={tab === "morning" ? "wrap morning-wrap" : "wrap"}>
-        <div className="tabs">
-          <button className={tab === "home" ? "on" : ""} onClick={() => setTab("home")}>Home</button>
-          <button className={tab === "morning" ? "on" : ""} onClick={() => setTab("morning")}>Morning board</button>
-          <button className={tab === "clock" ? "on" : ""} onClick={() => setTab("clock")}>Clock</button>
-          <button className={tab === "leave" ? "on" : ""} onClick={() => setTab("leave")}>Holiday</button>
-          <button className={tab === "duty" ? "on" : ""} onClick={() => setTab("duty")}>Duty</button>
-          <button className={tab === "log" ? "on" : ""} onClick={() => setTab("log")}>House log</button>
-          <button className={tab === "assets" ? "on" : ""} onClick={() => setTab("assets")}>Equipment</button>
-          <button className={tab === "tasks" ? "on" : ""} onClick={() => setTab("tasks")}>Tasks</button>
-          <button className={tab === "handbook" ? "on" : ""} onClick={() => setTab("handbook")}>Handbook</button>
-          <button className={tab === "news" ? "on" : ""} onClick={() => setTab("news")}>News</button>
-          <button className={tab === "ideas" ? "on" : ""} onClick={() => setTab("ideas")}>Ideas</button>
-          <button className={tab === "calendar" ? "on" : ""} onClick={() => setTab("calendar")}>Diary</button>
-          <button className={tab === "repairs" ? "on" : ""} onClick={() => setTab("repairs")}>Repairs</button>
-          <button className={tab === "desk" ? "on" : ""} onClick={() => setTab("desk")}>Front desk</button>
-          <button className={tab === "night" ? "on" : ""} onClick={() => setTab("night")}>Night</button>
-          <button className={tab === "manual" ? "on" : ""} onClick={() => setTab("manual")}>Manual</button>
-          <button className={tab === "training" ? "on" : ""} onClick={() => setTab("training")}>Training</button>
-          <button className={tab === "sop" ? "on" : ""} onClick={() => setTab("sop")}>SOP</button>
-        </div>
+        {moreOpen && (
+          <div className="pocket-more">
+            {([
+              ["morning", "Morning board"], ["clock", "Clock"], ["leave", "Holiday"], ["duty", "Duty"], ["log", "House log"],
+              ["ideas", "Ideas"], ["calendar", "Diary"], ["repairs", "Repairs"], ["desk", "Front desk"], ["night", "Night"],
+              ["manual", "Information"], ["training", "Training"], ["sop", "SOP"], ["assets", "Equipment"],
+            ] as const).map(([id, label]) => (
+              <button key={id} className={tab === id ? "on" : ""} onClick={() => { setTab(id); setMoreOpen(false); }}>{label}</button>
+            ))}
+          </div>
+        )}
         {tab === "home" && <StaffSuite mode="home" />}
         {tab === "handbook" && <StaffSuite mode="handbook" />}
         {tab === "news" && <StaffSuite mode="news" />}
@@ -223,8 +219,10 @@ export default function Pocket() {
             <div className="card">
               <h2>Handover</h2>
               {(ops?.handover ?? []).slice(0, 5).map(h => <div className="row" key={h.id} style={{ display: "block" }}><b>{h.department_label} · {h.shift_label}</b><div>{h.body}</div><button className="btn" disabled={h.acknowledged} onClick={async()=>{try{await api(`/v1/ops/handover/${h.id}/acknowledge`,{method:"POST",body:"{}"});setOps(await api("/v1/ops/board"));}catch(e){setErr((e as Error).message);}}}>{h.acknowledged?"Acknowledged":"Acknowledge handover"}</button></div>)}
-              <textarea rows={3} value={note} onChange={e => setNote(e.target.value)} placeholder="What the next shift needs to know" />
-              <button className="btn" onClick={async () => { setErr(null); try { await api("/v1/ops/handover", { method: "POST", body: JSON.stringify({ department: "HOUSE", shift: "am", body: note }) }); setNote(""); setOps(await api("/v1/ops/board")); } catch (e) { setErr((e as Error).message); } }}>Leave a morning note</button>
+              {mayOperate(me.permissions ?? []) && <>
+                <textarea rows={3} value={note} onChange={e => setNote(e.target.value)} placeholder="What the next shift needs to know" />
+                <button className="btn" onClick={async () => { setErr(null); try { await api("/v1/ops/handover", { method: "POST", body: JSON.stringify({ department: "HOUSE", shift: "am", body: note }) }); setNote(""); setOps(await api("/v1/ops/board")); } catch (e) { setErr((e as Error).message); } }}>Leave a morning note</button>
+              </>}
             </div>
             {(ops?.notices ?? []).map(n => <div className="card" key={n.id}><h2>{n.title}</h2><p>{n.body}</p></div>)}
           </div>
@@ -294,8 +292,10 @@ export default function Pocket() {
             <div className="card">
               <h2>Handover to morning</h2>
               {(ops?.handover ?? []).filter(h => h.shift === "night" || h.department === "NIGHT").slice(0, 4).map(h => <div className="row" key={h.id} style={{ display: "block" }}><b>{h.shift_label}</b><div>{h.body}</div><button className="btn" disabled={h.acknowledged} onClick={async()=>{try{await api(`/v1/ops/handover/${h.id}/acknowledge`,{method:"POST",body:"{}"});setOps(await api("/v1/ops/board"));}catch(e){setErr((e as Error).message);}}}>{h.acknowledged?"Acknowledged":"Acknowledge handover"}</button></div>)}
-              <textarea rows={3} value={nightNote} onChange={e => setNightNote(e.target.value)} placeholder="Who arrived late, what was unlocked, what ran out" />
-              <button className="btn" onClick={async () => { setErr(null); try { await api("/v1/ops/handover", { method: "POST", body: JSON.stringify({ department: "NIGHT", shift: "night", body: nightNote }) }); setNightNote(""); setOps(await api("/v1/ops/board")); } catch (e) { setErr((e as Error).message); } }}>Leave the night note</button>
+              {mayOperate(me.permissions ?? []) && <>
+                <textarea rows={3} value={nightNote} onChange={e => setNightNote(e.target.value)} placeholder="Who arrived late, what was unlocked, what ran out" />
+                <button className="btn" onClick={async () => { setErr(null); try { await api("/v1/ops/handover", { method: "POST", body: JSON.stringify({ department: "NIGHT", shift: "night", body: nightNote }) }); setNightNote(""); setOps(await api("/v1/ops/board")); } catch (e) { setErr((e as Error).message); } }}>Leave the night note</button>
+              </>}
             </div>
           </div>
         )}
@@ -362,6 +362,17 @@ export default function Pocket() {
         {err && <div className="note">{err}</div>}
         <button className="btn ghost" onClick={() => { tok.set(null); setMe(null); }}>Sign out</button>
       </div>
+      <nav className="pocket-nav" aria-label="Pocket">
+        {([
+          ["home", "Home", "home"],
+          ["handbook", "Book", "menu_book"],
+          ["news", "News", "newspaper"],
+          ["tasks", "Tasks", "task_alt"],
+        ] as const).map(([id, label, icon]) => (
+          <button key={id} className={tab === id ? "on" : ""} onClick={() => { setTab(id); setMoreOpen(false); }}><span className="material-icons">{icon}</span>{label}</button>
+        ))}
+        <button className={moreOpen || !["home", "handbook", "news", "tasks"].includes(tab) ? "on" : ""} onClick={() => setMoreOpen(v => !v)}><span className="material-icons">more_horiz</span>More</button>
+      </nav>
     </>
   );
 }

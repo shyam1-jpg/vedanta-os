@@ -18,7 +18,7 @@ import {
   sanitizeTaskInput,
   type TaskStatus,
 } from "../../../domains/ops/tasks.ts";
-import { assigneeCanMarkDone, mayPublish, nextOpenDue, staffMayComplete } from "../../../domains/ops/suite.ts";
+import { assigneeCanMarkDone, mayOperate, nextOpenDue, staffMayComplete } from "../../../domains/ops/suite.ts";
 
 const PHOTO_MAX = 700_000;
 const TRACKED_FIELDS = [
@@ -45,7 +45,8 @@ async function requireTaskWriter(req: any, reply: any) {
 }
 
 function canAssign(a: { perms: Set<string> }) {
-  return a.perms.has("task.assign") || a.perms.has("cover.write") || a.perms.has("group.update") || a.perms.has("user.manage");
+  return a.perms.has("task.assign") || a.perms.has("cover.write") || a.perms.has("group.update") || a.perms.has("user.manage")
+    || a.perms.has("leave.approve_hod") || a.perms.has("clock.manage");
 }
 
 function canApprove(a: { perms: Set<string> }) {
@@ -53,7 +54,7 @@ function canApprove(a: { perms: Set<string> }) {
 }
 
 function canManageTasks(a: { perms: Set<string> }) {
-  return canAssign(a) || mayPublish(a.perms);
+  return mayOperate(a.perms);
 }
 
 function shape(row: any, now = new Date()) {

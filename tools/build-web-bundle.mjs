@@ -23,7 +23,17 @@ await cp(resolve(root, "apps/web-staff/out"), resolve(destination, "pocket"), { 
 
 await writeFile(
   resolve(destination, "index.html"),
-  '<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta http-equiv="refresh" content="0;url=/book/"><title>The Vedanta Way</title><link rel="canonical" href="/book/"></head><body><p><a href="/book/">Open the guest website</a></p><script>location.replace("/book/")</script></body></html>',
+  `<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>The Vedanta Way</title></head><body><p><a href="/book/">Open the guest website</a></p><script>
+(function () {
+  var path = location.pathname || "/";
+  var tail = location.search + location.hash;
+  if (path.length > 1 && !path.endsWith("/") && !/\\.[a-z0-9]+$/i.test(path)) {
+    location.replace(path + "/" + tail);
+    return;
+  }
+  if (path === "/" ) location.replace("/book/" + tail);
+})();
+</script></body></html>`,
 );
 
 console.log("Built guest, house and pocket portals in dist-web/");
