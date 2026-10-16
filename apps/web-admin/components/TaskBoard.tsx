@@ -206,7 +206,7 @@ export default function TaskBoard() {
           <p>Every department, one accountable flow. See what needs attention, who owns it and what is holding it up.</p>
           <p className="m">{user?.name ? `Signed in as ${user.name}. ` : ""}Deadlines display in London time.</p>
         </div>
-        <div className="task-command-tools"><button className="btn" disabled={busy} onClick={() => load()}>Refresh</button><button className="btn" onClick={() => window.print()}>Print handover</button></div>
+        <div className="task-command-tools"><button className="btn" disabled={busy} onClick={() => load()}>Refresh</button><button className="btn" onClick={() => window.print()}>Print handover</button>{board.can_manage && <button className="btn primary add-entry" onClick={() => document.getElementById("new-task")?.scrollIntoView({ behavior: "smooth", block: "start" })}>Add entry</button>}</div>
       </div>
       <div className="task-command-workspaces" aria-label="Connected department workspaces">
         {[{ href: "/readiness/", label: "Retreat readiness" }, { href: "/groups/", label: "Retreat bookings" }, { href: "/kitchen/", label: "Kitchen & covers" }, { href: "/housekeeping/", label: "Room readiness" }, { href: "/maintenance/", label: "Maintenance" }, { href: "/labour/", label: "Staffing" }, { href: "/purchasing/", label: "Purchasing" }, { href: "/manual/", label: "SOPs & training" }, { href: "/training/", label: "Staff training" }, { href: "/reports/", label: "Reports" }].map(link => <a key={link.href} href={link.href}>{link.label} <span aria-hidden="true">↗</span></a>)}
@@ -251,7 +251,7 @@ export default function TaskBoard() {
           {items.length === 0 && <div className="empty">No tasks match this view. Change the focus or search.</div>}
           {board.items.length < board.matched_total && <button className="btn" disabled={busy} onClick={() => load(true)}>{busy ? "Loading…" : "Load more tasks"}</button>}
 
-          {board.can_manage && <form className="house-panel" style={{ marginTop: 16 }} onSubmit={async e => {
+          {board.can_manage && <form id="new-task" className="house-panel" style={{ marginTop: 16 }} onSubmit={async e => {
             e.preventDefault();
             try {
               const created = await api<Task>("/v1/ops/tasks", {
@@ -272,8 +272,8 @@ export default function TaskBoard() {
               load();
             } catch (e2) { say(e2 instanceof ApiError ? e2.problem.detail : "Could not open the task"); }
           }}>
-            <div className="k">New task</div>
-            <h2>Add work</h2>
+            <div className="k">Add entry</div>
+            <h2>Open a task</h2>
             <div className="ops-form">
               <label>Start from a department template
                 <select aria-label="Task template" defaultValue="" onChange={e => {

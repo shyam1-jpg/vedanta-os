@@ -144,6 +144,11 @@ export default function Pocket() {
   return (
     <>
       <div className="hero"><img className="official-house-logo" src="/pocket/vedanta-official-logo.png" alt="The Vedanta — The Vedanta Way Ltd" width="386" height="102" /><div className="kicker">{me.role_name ?? me.role.replace(/_/g, " ")}</div><h1>{me.name}</h1><div className="hero-status"><span>{clock?.last === "IN" ? "On shift" : "Off shift"}</span><span>{tasks?.counts.open ?? 0} open tasks</span><span>{duty.length} shifts on your board</span></div></div>
+      <nav className="pocket-nav" aria-label="Operations">
+        {([["home", "Home"], ["handbook", "Book"], ["news", "News"], ["ideas", "Ideas"], ["calendar", "Diary"], ["repairs", "Repairs"], ["tasks", "Tasks"], ["morning", "Board"]] as const).map(([id, label]) => (
+          <button key={id} className={tab === id ? "on" : ""} onClick={() => setTab(id)}>{label}</button>
+        ))}
+      </nav>
       <div className={tab === "morning" ? "wrap morning-wrap" : "wrap"}>
         <div className="tabs">
           <button className={tab === "home" ? "on" : ""} onClick={() => setTab("home")}>Home</button>

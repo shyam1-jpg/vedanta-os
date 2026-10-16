@@ -4,6 +4,7 @@ import { api, ApiError } from "@/lib/api";
 import { useStore } from "@/lib/store";
 import { fmt, addDays } from "@/lib/format";
 import { ReportFault } from "@/components/Maintenance";
+import { DeskBar, EmptyState, EntryRow } from "@/components/OpsChrome";
 type R = { number: string; section: string; status: string; max_capacity: number; notes: string | null; staff_only: boolean; version: number; occupied_last_night: boolean; occupied_tonight: boolean; here_this_morning?: boolean; names: string | null; group_name: string | null; last_change: string | null; task: string | null; stay?: string; cleaning_started?: string | null; cleaning_finished?: string | null; duration_minutes?: number | null; attendant?: string | null };
 type G = { name: string; organisation: string | null; arrival: string; departure: string; expected_rooms: number | null; expected_guests: number | null; rooms_placed: number };
 const STATUS: Record<string, string> = { VACANT_DIRTY: "Dirty", CLEANING: "Cleaning", VACANT_CLEAN: "Clean", INSPECTED: "Inspected", OCCUPIED: "Occupied", OUT_OF_SERVICE: "Out of service", OUT_OF_ORDER: "Out of order" };
@@ -94,6 +95,8 @@ function DailyPlan({ date, say }: { date: string; say: (t: string) => void }) {
   const [canPlan, setCanPlan] = useState(false);
   const [report, setReport] = useState<{ by_user: { name: string; rooms: number; to_clean: number }[]; by_room: { number: string; on_date: string; occupancy: string; clean_type: string; assignee: string }[]; cleaned: { name: string; cleans: number }[] } | null>(null);
   const [number, setNumber] = useState("");
+  const [q, setQ] = useState("");
+  const [adding, setAdding] = useState(false);
   const [row, setRow] = useState({ assignee_user_id: "", occupancy: "departure", clean_type: "full" });
   useEffect(() => {
     api<{ items: typeof plan; can_plan: boolean }>(`/v1/housekeeping/plan?date=${date}`).then(r => { setPlan(r.items); setCanPlan(r.can_plan); }).catch(() => {});
@@ -104,9 +107,14 @@ function DailyPlan({ date, say }: { date: string; say: (t: string) => void }) {
     <section className="panel" style={{ marginTop: 18 }}>
       <h3 style={{ marginTop: 0 }}>Daily room plan</h3>
       <p className="m">Choose who cleans, the occupancy for the day, and the clean. Bookings on the room board are unchanged.</p>
-      {plan.map(p => <p key={p.number} className="m"><b>{p.number}</b> · {p.occupancy} · {p.clean_type} · {p.assignee_name || "Unassigned"}</p>)}
-      {plan.length === 0 && <p className="m">No assignments for this day yet.</p>}
-      {canPlan && (
+      <DeskBar query={q} onQuery={setQ} placeholder="Search rooms" onAdd={canPlan ? () => setAdding(v => !v) : undefined} addLabel={adding ? "Close" : "Add entry"} />
+      <div className="list">
+        {plan.filter(p => `${p.number} ${p.assignee_name ?? ""} ${p.occupancy}`.toLowerCase().includes(q.toLowerCase())).map(p => (
+          <EntryRow key={p.number} name={p.assignee_name || "Unassigned"} title={p.number} meta={`${p.occupancy} · ${p.clean_type}`} badge={p.assignee_name ? "Assigned" : "Open"} />
+        ))}
+        {plan.length === 0 && <EmptyState title="No rooms on this plan" detail="Add a room when you know who is cleaning it. This does not change the booking board." />}
+      </div>
+      {canPlan && adding && (
         <form onSubmit={async e => {
           e.preventDefault();
           try {

@@ -549,6 +549,25 @@ export default async function staffSuite(f: FastifyInstance) {
     return { ok: true };
   });
 
+  f.get("/v1/ops/desk", async (req, reply) => {
+    const a = await reader(req, reply); if (!a) return;
+    const counts = (await pool.query(
+      `select
+         (select count(*)::int from ops_task where property_id=$1 and status not in ('completed','verified','cancelled')) as tasks,
+         (select count(*)::int from ops_news n where n.property_id=$1 and not exists (select 1 from ops_news_read r where r.news_id=n.id and r.user_id=$2)) as news,
+         (select count(*)::int from maintenance_ticket where property_id=$1 and status not in ('DONE','CANCELLED')) as repairs,
+         (select count(*)::int from ops_guest_request where property_id=$1 and status <> 'done') as requests,
+         (select count(*)::int from guest_complaint where property_id=$1 and status not in ('resolved','closed')) as complaints,
+         (select count(*)::int from ops_idea where property_id=$1 and status not in ('done','declined')) as ideas,
+         (select count(*)::int from ops_handover where property_id=$1 and created_at > now() - interval '36 hours') as handovers,
+         (select count(*)::int from handbook_article where property_id=$1 and status='live') as handbook,
+         (select count(*)::int from membership where property_id=$1) as people,
+         (select count(*)::int from ops_appointment where property_id=$1 and starts_at >= now() - interval '1 day' and starts_at < now() + interval '14 days') as diary`,
+      [a.propertyId, a.userId],
+    )).rows[0];
+    return { can_publish: publishing(a), counts };
+  });
+
   f.get("/v1/feed", async (req, reply) => {
     const a = await reader(req, reply); if (!a) return;
     const activityRows = (await pool.query(

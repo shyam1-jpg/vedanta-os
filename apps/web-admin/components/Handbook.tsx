@@ -2,6 +2,7 @@
 import { useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { API, api, ApiError, token } from "@/lib/api";
+import { DeskBar, EmptyState, EntryRow } from "@/components/OpsChrome";
 
 type Chapter = { id: string; parent_id: string | null; title: string; sort_order: number };
 type Article = { id: string; chapter_id: string; title: string; keywords: string[]; audience: string[]; review_on: string | null; status: string; version: number; signed: boolean; signed_count: number };
@@ -43,6 +44,8 @@ export default function Handbook() {
   const [detail, setDetail] = useState<Detail | null>(null);
   const [err, setErr] = useState<string | null>(null);
   const [chapterTitle, setChapterTitle] = useState("");
+  const [q, setQ] = useState("");
+  const [adding, setAdding] = useState(false);
   const [draft, setDraft] = useState({ chapter_id: "", title: "", body_html: "", keywords: "", audience: "ALL", review_on: "" });
 
   const load = () => api<{ chapters: Chapter[]; articles: Article[]; can_publish: boolean }>("/v1/handbook").then(r => { setChapters(r.chapters); setArticles(r.articles); setCanPublish(r.can_publish); }).catch(e => setErr(e instanceof ApiError ? e.problem.detail : "Could not open the handbook"));
@@ -60,22 +63,23 @@ export default function Handbook() {
       </div>
       {!publish && <p className="suite-banner">You can read articles and confirm you have read them. Publishing is for the owner and admins.</p>}
       {err && <div className="note">{err}</div>}
+      <DeskBar query={q} onQuery={setQ} placeholder="Search articles" onAdd={publish ? () => setAdding(v => !v) : undefined} addLabel={adding ? "Close" : "Add entry"} />
       <div className="split">
         <div className="list">
-          {chapters.map(ch => (
+          {chapters.map(ch => {
+            const rows = articles.filter(a => a.chapter_id === ch.id && `${a.title} ${a.keywords.join(" ")}`.toLowerCase().includes(q.toLowerCase()));
+            if (!rows.length) return null;
+            return (
             <div key={ch.id}>
               <div className="month">{ch.title}</div>
-              {articles.filter(a => a.chapter_id === ch.id).map(a => (
-                <button key={a.id} className={"row" + (sel === a.id ? " sel" : "")} onClick={() => setSel(a.id)}>
-                  <span className="bar" style={{ background: a.signed ? "var(--moss)" : "var(--gold)" }} />
-                  <span><span className="t">{a.title}</span><span className="m">v{a.version}{a.review_on ? ` · review ${a.review_on}` : ""}{a.signed ? " · signed" : ""}</span></span>
-                  <span className="r">{a.keywords.slice(0, 2).join(", ")}</span>
-                </button>
+              {rows.map(a => (
+                <EntryRow key={a.id} selected={sel === a.id} onClick={() => setSel(a.id)} name={ch.title} title={a.title} meta={`v${a.version}${a.review_on ? ` · review ${a.review_on}` : ""}`} badge={a.signed ? "Signed" : "To read"} tone={a.signed ? "good" : "warn"} />
               ))}
             </div>
-          ))}
-          {chapters.length === 0 && <div className="empty">No chapters yet.</div>}
-          {publish && (
+            );
+          })}
+          {articles.filter(a => `${a.title} ${a.keywords.join(" ")}`.toLowerCase().includes(q.toLowerCase())).length === 0 && <EmptyState title="No articles" detail={q ? "Nothing matches this search." : "The handbook is empty until an admin publishes a chapter."} />}
+          {publish && adding && (
             <form className="detail" style={{ position: "static", margin: 12 }} onSubmit={async e => {
               e.preventDefault();
               try {
@@ -120,7 +124,7 @@ export default function Handbook() {
               {publish && detail.signers.length > 0 && <p className="m">{detail.signers.length} signed this version: {detail.signers.map(s => s.name).join(", ")}</p>}
             </article>
           )}
-          {publish && (
+          {publish && adding && (
             <form className="detail no-print" style={{ position: "static", marginTop: 16 }} onSubmit={async e => {
               e.preventDefault();
               try {
@@ -128,7 +132,7 @@ export default function Handbook() {
                 setSel(created.id); load();
               } catch (e2) { setErr(e2 instanceof ApiError ? e2.problem.detail : "Could not publish"); }
             }}>
-              <h3>New article</h3>
+              <h3>Add entry</h3>
               <label>Chapter<select required value={draft.chapter_id} onChange={e => setDraft({ ...draft, chapter_id: e.target.value })}><option value="">Choose</option>{chapters.map(c => <option key={c.id} value={c.id}>{c.title}</option>)}</select></label>
               <label>Title<input required value={draft.title} onChange={e => setDraft({ ...draft, title: e.target.value })} /></label>
               <label>Keywords<input value={draft.keywords} onChange={e => setDraft({ ...draft, keywords: e.target.value })} placeholder="risk, training" /></label>

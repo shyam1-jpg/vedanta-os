@@ -1,6 +1,7 @@
 "use client";
 import { useEffect, useState } from "react";
 import { api, ApiError } from "@/lib/api";
+import { Badge, DeskBar, EmptyState } from "@/components/OpsChrome";
 
 type Appt = { id: string; title: string; body: string; location: string; starts_at: string; ends_at: string | null; audience: string[] };
 type Retreat = { id: string; name: string; organisation: string | null; status: string; arrival: string; departure: string; expected_guests: number | null };
@@ -13,6 +14,8 @@ export default function HouseCalendar() {
   const [retreats, setRetreats] = useState<Retreat[]>([]);
   const [canPublish, setCanPublish] = useState(false);
   const [err, setErr] = useState<string | null>(null);
+  const [q, setQ] = useState("");
+  const [adding, setAdding] = useState(false);
   const [form, setForm] = useState({ title: "", location: "", starts_at: "", ends_at: "", body: "" });
   const load = () => {
     const to = new Date(from + "T12:00:00Z"); to.setUTCDate(to.getUTCDate() + 21);
@@ -41,18 +44,25 @@ export default function HouseCalendar() {
       </div>
       {!canPublish && <p className="suite-banner">You can see the diary. Only an admin adds or changes an event.</p>}
       {err && <div className="note">{err}</div>}
+      <DeskBar query={q} onQuery={setQ} placeholder="Search the diary" onAdd={canPublish ? () => setAdding(v => !v) : undefined} addLabel={adding ? "Close" : "Add entry"} />
       <div className="split">
-        <div>
-          {keys.length === 0 && <div className="empty">Nothing in the next three weeks.</div>}
-          {keys.map(key => (
+        <div className="list">
+          {keys.length === 0 && <EmptyState title="Nothing in the next three weeks" detail="Retreats already booked still appear here, beside any events an admin adds." />}
+          {keys.map(key => {
+            const bucket = days.get(key)!;
+            const retreatsShown = bucket.retreats.filter(r => `${r.name} ${r.status}`.toLowerCase().includes(q.toLowerCase()));
+            const apptsShown = bucket.appointments.filter(a => `${a.title} ${a.location} ${a.body}`.toLowerCase().includes(q.toLowerCase()));
+            if (!retreatsShown.length && !apptsShown.length) return null;
+            return (
             <section className="cal-day" key={key}>
               <h3>{new Date(key + "T12:00:00").toLocaleDateString("en-GB", { weekday: "long", day: "numeric", month: "long" })}</h3>
-              {days.get(key)!.retreats.map(r => <p key={r.id}><b>{r.name}</b> · retreat {r.arrival} to {r.departure} · {r.status}{r.expected_guests ? ` · ${r.expected_guests} guests` : ""}</p>)}
-              {days.get(key)!.appointments.map(a => <p key={a.id}>{new Date(a.starts_at).toLocaleTimeString("en-GB", { hour: "2-digit", minute: "2-digit", timeZone: "Europe/London" })} · <b>{a.title}</b>{a.location ? ` · ${a.location}` : ""}{a.body ? ` — ${a.body}` : ""}</p>)}
+              {retreatsShown.map(r => <p key={r.id}><Badge tone="info">Retreat</Badge> <b>{r.name}</b> · {r.arrival} to {r.departure} · <Badge>{r.status}</Badge>{r.expected_guests ? ` · ${r.expected_guests} guests` : ""}</p>)}
+              {apptsShown.map(a => <p key={a.id}><Badge tone="warn">Event</Badge> {new Date(a.starts_at).toLocaleTimeString("en-GB", { hour: "2-digit", minute: "2-digit", timeZone: "Europe/London" })} · <b>{a.title}</b>{a.location ? ` · ${a.location}` : ""}{a.body ? ` — ${a.body}` : ""}</p>)}
             </section>
-          ))}
+            );
+          })}
         </div>
-        {canPublish && (
+        {canPublish && adding && (
           <form className="detail" onSubmit={async e => {
             e.preventDefault();
             try {
@@ -60,7 +70,7 @@ export default function HouseCalendar() {
               setForm({ title: "", location: "", starts_at: "", ends_at: "", body: "" }); load();
             } catch (e2) { setErr(e2 instanceof ApiError ? e2.problem.detail : "Could not save"); }
           }}>
-            <h2>New event</h2>
+            <h2>Add entry</h2>
             <label>Title<input required value={form.title} onChange={e => setForm({ ...form, title: e.target.value })} /></label>
             <label>Where<input value={form.location} onChange={e => setForm({ ...form, location: e.target.value })} /></label>
             <label>Starts<input required type="datetime-local" value={form.starts_at} onChange={e => setForm({ ...form, starts_at: e.target.value })} /></label>
