@@ -1,89 +1,123 @@
 "use client";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useState } from "react";
 import { useStore } from "@/lib/store";
 
-export const sections: { label: string; items: [string, string, string | null][] }[] = [
-  { label: "Operations", items: [["/feed/", "Home", "group.read"], ["/handbook/", "Handbook", "group.read"], ["/news/", "News", "group.read"], ["/ideas/", "Ideas", "group.read"], ["/calendar/", "Calendar", "group.read"], ["/handovers/", "Handovers", "group.read"], ["/tasks/", "Tasks", "group.read"], ["/repairs/", "Repairs", "maintenance.read"], ["/requests/", "Guest requests", "group.read"], ["/complaints/", "Complaints", "group.read"], ["/housekeeping/", "Housekeeping", "group.read"], ["/tutorials/", "Tutorials", "group.read"], ["/people/", "Employees", "group.read"]] },
-  { label: "The house", items: [["/house/", "Today", "group.read"], ["/hub/", "Staff hub", "group.read"], ["/manager/", "Manager view", "report.read"], ["/readiness/", "Retreat readiness", "group.read"], ["/pre-retreat/", "Pre-retreat", "group.read"], ["/groups/", "Bookings", "group.read"], ["/rooms/", "Room board", "group.read"]] },
-  { label: "In service", items: [["/ops/", "House log", "group.read"], ["/front/", "Front desk", "group.read"], ["/night/", "Night porter", "group.read"], ["/service/", "Department boards", "group.read"], ["/manual/", "Manual", "group.read"], ["/training/", "Training", "group.read"], ["/maintenance/", "Maintenance", "maintenance.read"], ["/kitchen/", "Kitchen", "covers.read"]] },
-  { label: "Intelligence", items: [["/duty-manager/", "AI Duty Manager", "group.read"], ["/programme/", "Programme sheet", "group.read"], ["/finance/", "Finance dashboard", "report.read"]] },
-  { label: "People", items: [["/people/", "Employees", "group.read"], ["/guests/", "Guests", "guest.read"], ["/guest-changes/", "Guest updates", "guest.read"], ["/guest-360/", "Guest 360", "guest.read"], ["/hr/", "HR & Rota", "group.read"], ["/labour/", "Labour forecast", "clock.manage"], ["/staff-corner/", "Staff corner", "cover.read"], ["/payroll/", "Payroll", "clock.manage"], ["/users/", "Names & positions", "user.manage"], ["/sessions/", "My devices", null]] },
-  { label: "The estate", items: [["/review/", "Imported bookings", "group.update"], ["/quality/", "Data quality", "group.update"], ["/reports/", "Reports", "report.read"], ["/purchasing/", "Purchasing", "group.read"], ["/emergency/", "Emergency & compliance", "group.read"], ["/assets/", "Equipment & QR", "maintenance.read"], ["/settings/", "Settings", "package.manage"]] },
+type Item = [string, string, string, string | null];
+type Group = { label: string; items: Item[] };
+
+/** Every house page, hotelkit collaboration first, then the original Vedanta modules. */
+export const sections: Group[] = [
+  { label: "Collaboration", items: [
+    ["/handovers/", "Handovers", "swap_horiz", "group.read"],
+    ["/news/", "News", "newspaper", "group.read"],
+    ["/ideas/", "Ideas", "lightbulb", "group.read"],
+    ["/handbook/", "Handbook", "menu_book", "group.read"],
+    ["/tutorials/", "Tutorials", "school", "group.read"],
+    ["/tasks/", "Tasks", "task_alt", "group.read"],
+    ["/calendar/", "Calendar", "calendar_today", "group.read"],
+    ["/repairs/", "Repairs", "build", "maintenance.read"],
+    ["/requests/", "Guest requests", "room_service", "group.read"],
+    ["/complaints/", "Complaints", "report", "group.read"],
+  ] },
+  { label: "Retreats & Groups", items: [
+    ["/groups/", "The book", "event", "group.read"],
+    ["/pre-retreat/", "Pre-retreat", "event_available", "group.read"],
+    ["/readiness/", "Retreat readiness", "fact_check", "group.read"],
+    ["/house/", "Today", "today", "group.read"],
+    ["/morning/", "Morning arrivals", "wb_sunny", "group.read"],
+    ["/rooms/", "Room board", "meeting_room", "group.read"],
+    ["/programme/", "Programme sheet", "schedule", "group.read"],
+    ["/book/", "Guest book", "hotel", null],
+  ] },
+  { label: "Housekeeping", items: [
+    ["/housekeeping/", "Housekeeping", "cleaning_services", "group.read"],
+    ["/maintenance/", "Maintenance", "handyman", "maintenance.read"],
+    ["/kitchen/", "Kitchen", "restaurant", "covers.read"],
+  ] },
+  { label: "Front of house", items: [
+    ["/ops/", "House log", "assignment", "group.read"],
+    ["/front/", "Front desk", "desk", "group.read"],
+    ["/night/", "Night porter", "nights_stay", "group.read"],
+    ["/service/", "Department boards", "dashboard", "group.read"],
+    ["/manual/", "Information", "info", "group.read"],
+    ["/training/", "Training", "menu_book", "group.read"],
+  ] },
+  { label: "People", items: [
+    ["/people/", "Employees", "badge", "group.read"],
+    ["/guests/", "Guests", "person", "guest.read"],
+    ["/guest-changes/", "Guest updates", "person_add", "guest.read"],
+    ["/guest-360/", "Guest 360", "portrait", "guest.read"],
+    ["/hub/", "Staff hub", "groups", "group.read"],
+    ["/staff-corner/", "Staff corner", "favorite", "cover.read"],
+    ["/manager/", "Manager view", "admin_panel_settings", "report.read"],
+    ["/hr/", "HR & Rota", "calendar_month", "group.read"],
+    ["/labour/", "Labour forecast", "show_chart", "clock.manage"],
+    ["/payroll/", "Payroll", "payments", "clock.manage"],
+    ["/users/", "Names & positions", "badge", "user.manage"],
+    ["/sessions/", "My devices", "devices", null],
+    ["/pocket/", "Staff phone", "smartphone", null],
+  ] },
+  { label: "More", items: [
+    ["/duty-manager/", "AI Duty Manager", "auto_awesome", "group.read"],
+    ["/finance/", "Finance", "account_balance", "report.read"],
+    ["/review/", "Imported bookings", "upload_file", "group.update"],
+    ["/quality/", "Data quality", "rule", "group.update"],
+    ["/reports/", "Reports", "assessment", "report.read"],
+    ["/purchasing/", "Purchasing", "shopping_cart", "group.read"],
+    ["/emergency/", "Emergency & compliance", "health_and_safety", "group.read"],
+    ["/assets/", "Equipment & QR", "qr_code", "maintenance.read"],
+    ["/settings/", "Settings", "settings", "package.manage"],
+  ] },
 ];
 
-const COLLAB: [string, string, string, string | null][] = [
-  ["/handovers/", "Handovers", "swap_horiz", "group.read"],
-  ["/news/", "News", "newspaper", "group.read"],
-  ["/ideas/", "Ideas", "lightbulb", "group.read"],
-  ["/handbook/", "Handbook", "menu_book", "group.read"],
-  ["/tasks/", "Tasks", "task_alt", "group.read"],
-  ["/calendar/", "Calendar", "calendar_today", "group.read"],
-  ["/repairs/", "Repairs", "build", "maintenance.read"],
-  ["/requests/", "Guest requests", "room_service", "group.read"],
-  ["/complaints/", "Complaints", "report", "group.read"],
-];
-
-const PRIMARY = new Set(["/feed/", ...COLLAB.map(row => row[0]), "/housekeeping/", "/people/", "/manual/", "/tutorials/"]);
+export const PAGE_LABELS: Record<string, { label: string; section: string }> = Object.fromEntries([
+  ["/feed/", { label: "Home", section: "Home" }],
+  ...sections.flatMap(sec => sec.items.map(([href, label]) => [href, { label, section: sec.label }] as const)),
+]);
 
 function here(path: string | null, href: string) {
   const a = (path || "/").replace(/\/$/, "") || "/";
   const b = href.replace(/\/$/, "") || "/";
-  return a === b;
+  return a === b || (b !== "/" && a.startsWith(b + "/"));
 }
 
 export default function Nav({ open }: { open: boolean }) {
   const p = usePathname();
   const { can } = useStore();
-  const [more, setMore] = useState(false);
-  const pop = useRef<HTMLDivElement>(null);
+  const [query, setQuery] = useState("");
   useEffect(() => {
-    if (!more) return;
-    const close = (e: MouseEvent) => { if (!pop.current?.contains(e.target as Node)) setMore(false); };
-    window.addEventListener("mousedown", close);
-    return () => window.removeEventListener("mousedown", close);
-  }, [more]);
+    const onSearch = (e: Event) => setQuery(String((e as CustomEvent).detail ?? ""));
+    window.addEventListener("vedanta-search", onSearch);
+    return () => window.removeEventListener("vedanta-search", onSearch);
+  }, []);
 
-  const extra = sections.flatMap(sec => sec.items)
-    .filter(([href], i, all) => !PRIMARY.has(href) && all.findIndex(row => row[0] === href) === i);
+  const q = query.trim().toLowerCase();
+  const groups = sections
+    .map(sec => ({ ...sec, items: sec.items.filter(([, label]) => !q || `${sec.label} ${label}`.toLowerCase().includes(q)) }))
+    .filter(sec => sec.items.length);
 
   const item = (href: string, label: string, icon: string, perm: string | null) => {
     const off = perm && !can(perm);
     const on = here(p, href);
     return (
-      <Link key={href} href={off ? "#" : href} className={on ? "on" : ""} aria-disabled={!!off} aria-current={on ? "page" : undefined} style={off ? { opacity: .35, pointerEvents: "none" } : undefined} onClick={() => setMore(false)}>
-        <span className="material-icons">{icon}</span>{label}
+      <Link key={href} href={off ? "#" : href} className={on ? "on" : ""} aria-disabled={!!off} aria-current={on ? "page" : undefined} style={off ? { opacity: .35, pointerEvents: "none" } : undefined}>
+        <span className="material-icons">{icon}</span><span>{label}</span>
       </Link>
     );
   };
 
-  const moreOn = more || extra.some(([href]) => here(p, href)) || here(p, "/people/") || here(p, "/manual/");
   return (
     <nav className={"kit-nav" + (open ? " open" : "")} aria-label="House">
-      {item("/feed/", "Home", "home", "group.read")}
-      <div className="kit-sec">Collaboration</div>
-      {COLLAB.map(([href, label, icon, perm]) => item(href, label, icon, perm))}
-      <div className="kit-sec">Housekeeping</div>
-      {item("/housekeeping/", "Housekeeping", "cleaning_services", "group.read")}
-      <div className="kit-more" ref={pop}>
-        {more && (
-          <div className="kit-pop" role="menu">
-            {item("/people/", "Employees", "badge", "group.read")}
-            {item("/manual/", "Information", "info", "group.read")}
-            {item("/tutorials/", "Tutorials", "school", "group.read")}
-            <div className="kit-sec">House tools</div>
-            {extra.map(([href, label, perm]) => item(href, label, "chevron_right", perm))}
-          </div>
-        )}
-        <button type="button" className={"kit-link" + (moreOn ? " on" : "")} onClick={() => setMore(v => !v)} aria-expanded={more}>
-          <span className="material-icons">more_horiz</span>More
-        </button>
-      </div>
+      {(!q || "home".includes(q)) && item("/feed/", "Home", "home", "group.read")}
+      {groups.map(sec => (
+        <div key={sec.label}>
+          <div className="kit-sec">{sec.label}</div>
+          {sec.items.map(([href, label, icon, perm]) => item(href, label, icon, perm))}
+        </div>
+      ))}
+      {q && groups.length === 0 && <p className="kit-nav-empty">No matching pages.</p>}
     </nav>
   );
 }
-
-export const PAGE_LABELS: Record<string, { label: string; section: string }> = Object.fromEntries(
-  sections.flatMap(sec => sec.items.map(([href, label]) => [href, { label, section: sec.label }])),
-);
