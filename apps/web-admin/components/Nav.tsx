@@ -44,6 +44,15 @@ export const sections: Group[] = [
     ["/manual/", "Information", "info", "group.read"],
     ["/training/", "Training", "menu_book", "group.read"],
   ] },
+  { label: "Workforce", items: [
+    ["/workforce/", "Workforce home", "dashboard", "group.read"],
+    ["/workforce/schedule/", "Schedule", "calendar_view_week", "group.read"],
+    ["/workforce/timesheets/", "Timesheets", "schedule", "group.read"],
+    ["/workforce/leave/", "Leave", "beach_access", "group.read"],
+    ["/workforce/people/", "People", "groups", "group.read"],
+    ["/workforce/reports/", "Workforce reports", "insights", "group.read"],
+    ["/workforce/messages/", "Messages", "forum", "group.read"],
+  ] },
   { label: "People", items: [
     ["/people/", "Employees", "badge", "group.read"],
     ["/guests/", "Guests", "person", "guest.read"],
