@@ -88,3 +88,9 @@ test('a completed record approval is audited and repeat approval is idempotent',
  const second=await request(`/v1/workforce-desk/timesheets/${row.id}/approve`,{});assert.equal(second.statusCode,200,second.body);
  assert.equal((await db.query<{n:number}>(`select count(*)::int n from audit_event where action='timesheet.approve'`)).rows[0].n,1);
 });
+test('cancelled shifts do not block a new placement through the weekly cap',async()=>{
+ const id=(await draft(person)).json().id;
+ await db.exec(`update rota_shift set status='cancelled';insert into rota_shift(property_id,user_id,department,shift_date,start_time,end_time,break_minutes,status) select '${property}','${person}','KITCHEN','2026-10-19'::date+n,'07:00','15:00',0,'cancelled' from generate_series(1,5) n`);
+ const open=await draft(null,{date:'2026-10-25'});assert.equal(open.statusCode,201,open.body);
+ const r=await request(`/v1/workforce-desk/shifts/${open.json().id}/place`,{user_id:person,date:'2026-10-25'});assert.equal(r.statusCode,200,r.body);
+});

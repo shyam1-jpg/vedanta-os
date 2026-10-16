@@ -179,7 +179,7 @@ export default async function workforceDesk(f: FastifyInstance) {
   });
 
   f.get("/v1/workforce-desk/schedule", async (req: any, reply) => {
-    reply.header("x-vedanta-workforce", "smart-v2");
+    reply.header("x-vedanta-workforce", "smart-v2.1");
     const a = await reader(req, reply); if (!a) return;
     const from = day(req.query?.from) ?? new Date().toISOString().slice(0, 10);
     const to = day(req.query?.to) ?? from;
@@ -222,7 +222,7 @@ export default async function workforceDesk(f: FastifyInstance) {
     }
     const weekShifts = (await pool.query(
       `select id, user_id, start_time::text start_time, end_time::text end_time, break_minutes
-       from rota_shift where property_id = $1 and user_id is not null and shift_date between $2::date and $3::date`,
+       from rota_shift where property_id = $1 and user_id is not null and status <> 'cancelled' and shift_date between $2::date and $3::date`,
       [a.propertyId, week.from, week.to],
     )).rows;
     const hours = new Map<string, number>();
@@ -371,7 +371,7 @@ export default async function workforceDesk(f: FastifyInstance) {
     const week = weekRange(date);
     const weekShifts = (await db.query(
       `select id, user_id, start_time::text start_time, end_time::text end_time, break_minutes
-       from rota_shift where property_id = $1 and user_id is not null and shift_date between $2::date and $3::date`,
+       from rota_shift where property_id = $1 and user_id is not null and status <> 'cancelled' and shift_date between $2::date and $3::date`,
       [a.propertyId, week.from, week.to],
     )).rows.map((row: any) => ({ id: row.id, userId: row.user_id, hours: shiftHours(row.start_time, row.end_time, row.break_minutes) }));
     const unavailable = toUser ? (await db.query(
@@ -679,7 +679,7 @@ export default async function workforceDesk(f: FastifyInstance) {
   });
 
   f.get("/v1/workforce-desk/timesheets", async (req: any, reply) => {
-    reply.header("x-vedanta-workforce", "smart-v2");
+    reply.header("x-vedanta-workforce", "smart-v2.1");
     const a = await reader(req, reply); if (!a) return;
     const from = day(req.query?.from) ?? new Date().toISOString().slice(0, 10), to = day(req.query?.to) ?? from;
     if (to < from || Date.parse(to) - Date.parse(from) > 30 * 86400000) return reply.code(422).send(problem(422, "validation", "Choose up to 31 days."));
