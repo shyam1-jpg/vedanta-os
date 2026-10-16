@@ -25,7 +25,7 @@ export default function PwaRegister() {
     window.addEventListener("beforeinstallprompt", onInstall);
 
     if ("serviceWorker" in navigator) {
-      navigator.serviceWorker.register("/sw.js", { scope: "/" }).catch(() => {
+      navigator.serviceWorker.register("/sw.js", { scope: "/", updateViaCache: "none" }).then(registration => registration.update()).catch(() => {
         // The app remains usable online if service-worker registration is unavailable.
       });
     }

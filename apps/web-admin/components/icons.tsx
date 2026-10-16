@@ -3,6 +3,17 @@ import { usePathname } from "next/navigation";
 
 /** One matching icon per page, used in the menu and at the top of each page. */
 export const PAGE_ICONS: Record<string, string> = {
+  "/tutorials/": "M2 9l10-5 10 5-10 5zM6 11v5c3 2 9 2 12 0v-5M21 10v7",
+  "/morning/": "M12 3v2M5 6l2 2M19 6l-2 2M2 15h20M6 15a6 6 0 0 1 12 0M4 20h16",
+  "/book/": "M3 18V8M3 13h18v5M21 18v-3a3 3 0 0 0-3-3h-7v1M7 11.5a1.5 1.5 0 1 0 0-.01",
+  "/pocket/": "M6 2h12v20H6zM10 18h4",
+  "/workforce/": "M3 4h7v7H3zM14 4h7v7h-7zM3 15h7v6H3zM14 15h7v6h-7z",
+  "/workforce/schedule/": "M4 5h16v16H4zM4 10h16M9 3v4M15 3v4M9 10v11M15 10v11",
+  "/workforce/timesheets/": "M12 3a9 9 0 1 0 0 18 9 9 0 0 0 0-18zM12 7v5l3 2",
+  "/workforce/leave/": "M3 12a9 9 0 0 1 18 0c-3-2-6-2-9 0-3-2-6-2-9 0zM12 3v17c0 3 4 3 4 0",
+  "/workforce/people/": "M9 11a4 4 0 1 0 0-8 4 4 0 0 0 0 8zM2 21v-2a5 5 0 0 1 5-5h4a5 5 0 0 1 5 5v2M17 4a4 4 0 0 1 0 7M22 21v-2a5 5 0 0 0-3-4.6",
+  "/workforce/reports/": "M4 20V10M10 20V4M16 20v-7M22 20H2",
+  "/workforce/messages/": "M3 4h18v13H8l-5 4zM7 8h10M7 12h6",
   "/house/": "M3 11l9-7 9 7v9a1 1 0 0 1-1 1h-5v-6H9v6H4a1 1 0 0 1-1-1z",
   "/hub/": "M9 11a3.5 3.5 0 1 0 0-7 3.5 3.5 0 0 0 0 7zM2.5 20c.8-3.6 3.4-5.5 6.5-5.5s5.7 1.9 6.5 5.5M16 4.5a3 3 0 0 1 0 6M18 14.6c2 .5 3.3 2.2 3.8 5",
   "/manager/": "M12 3l8 3v6c0 4.5-3.4 8.3-8 9-4.6-.7-8-4.5-8-9V6zM9 12l2 2 4-4",
@@ -71,4 +82,18 @@ export function PageMark({ labels }: { labels: Record<string, { label: string; s
       <span><small>{info.section}</small>{info.label}</span>
     </div>
   );
+}
+
+/** Local SVG controls stay legible even when external icon fonts cannot load. */
+export function UiIcon({ name, size = 20 }: { name: string; size?: number }) {
+  const paths: Record<string, string> = {
+    menu: "M4 6h16M4 12h16M4 18h16",
+    add: "M12 5v14M5 12h14",
+    bell: "M5 17h14l-2-3V9a5 5 0 0 0-10 0v5zM10 21h4",
+    history: "M3 4v6h6M3 10a9 9 0 1 1 1 8M12 7v5l3 2",
+    bookmark: "M6 3h12v18l-6-4-6 4z",
+    more: "M5 12h.01M12 12h.01M19 12h.01",
+    search: "M10 3a7 7 0 1 0 0 14 7 7 0 0 0 0-14zM15 15l6 6",
+  };
+  return <svg className="ui-icon" width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.8} strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d={paths[name] || paths.more} /></svg>;
 }
