@@ -1,5 +1,35 @@
 "use client";
-import type { ReactNode } from "react";
+import { useEffect, useRef, type ReactNode } from "react";
+
+export function kitStamp(iso?: string | null) {
+  if (!iso) return "";
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return String(iso);
+  return new Intl.DateTimeFormat("en-GB", {
+    timeZone: "Europe/London", day: "2-digit", month: "2-digit", year: "numeric", hour: "2-digit", minute: "2-digit", hour12: false,
+  }).format(d).replace(/\//g, ".").replace(",", "");
+}
+
+/** Top-bar search and Add entry. Add entry is only dispatched for someone who can publish. */
+export function useKitBus(handlers: { onAdd?: () => void | false; onSearch?: (q: string) => void }) {
+  const ref = useRef(handlers);
+  ref.current = handlers;
+  useEffect(() => {
+    const add = () => { ref.current.onAdd?.(); };
+    const search = (e: Event) => ref.current.onSearch?.((e as CustomEvent<string>).detail ?? "");
+    window.addEventListener("vedanta-add", add);
+    window.addEventListener("vedanta-search", search);
+    return () => {
+      window.removeEventListener("vedanta-add", add);
+      window.removeEventListener("vedanta-search", search);
+    };
+  }, []);
+  useEffect(() => {
+    if (sessionStorage.getItem("vedanta.add") !== "1") return;
+    const opened = ref.current.onAdd?.();
+    if (opened !== false) sessionStorage.removeItem("vedanta.add");
+  });
+}
 
 export function initials(name?: string | null) {
   const parts = String(name || "House").trim().split(/\s+/).filter(Boolean);

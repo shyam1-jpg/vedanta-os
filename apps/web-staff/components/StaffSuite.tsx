@@ -45,10 +45,11 @@ export default function StaffSuite({ mode }: { mode: "home" | "handbook" | "news
       {mode !== "home" && mode !== "calendar" && <input className="pocket-search" type="search" value={q} placeholder="Search" aria-label="Search" onChange={e => setQ(e.target.value)} />}
       {mode === "home" && feed && (
         <div>
+          <div className="card kit-welcome"><strong>Welcome online</strong><p className="m">Let&apos;s make great things happen today. You can read and confirm. You cannot post.</p></div>
           {feed.birthdays.map(b => <div className="card" key={b.name}><h2>{b.name}</h2><p className="m">{b.days === 0 ? "Birthday today" : `Birthday ${b.on}`}</p></div>)}
-          {feed.notifications.map(n => <div className="card" key={n.id}><h2>{n.title}</h2><p>{n.body}</p>{!n.read && <button className="btn" onClick={async () => { await api(`/v1/feed/notifications/${n.id}/read`, { method: "POST", body: "{}" }); setFeed(await api("/v1/feed")); }}>Mark read</button>}</div>)}
-          {feed.moments.map(m => <div className="card" key={m.id}><p>{m.body}</p><p className="m">{m.author_name}</p></div>)}
-          {feed.activity.map(a => <div className="card" key={a.id}><h2>{a.title}</h2><p className="m">{a.kind}</p><p>{a.body}</p></div>)}
+          {feed.notifications.map(n => <div className="card pocket-post" key={n.id}><span className="pocket-avatar">H</span><div><h2>{n.title}</h2><p>{n.body}</p>{!n.read && <button className="btn" onClick={async () => { await api(`/v1/feed/notifications/${n.id}/read`, { method: "POST", body: "{}" }); setFeed(await api("/v1/feed")); }}>Mark read</button>}</div></div>)}
+          {feed.moments.map(m => <div className="card pocket-post" key={m.id}><span className="pocket-avatar">{(m.author_name ?? "H").slice(0, 1)}</span><div><strong>{m.author_name ?? "House"}</strong><p>{m.body}</p></div></div>)}
+          {feed.activity.map(a => <div className="card pocket-post" key={a.id}><span className="pocket-avatar">H</span><div><h2>{a.title}</h2><p className="m">{a.kind}</p><p>{a.body}</p></div></div>)}
           {feed.activity.length === 0 && feed.moments.length === 0 && feed.notifications.length === 0 && <div className="card"><h2>Nothing new</h2><p className="m">When the house publishes news or a handbook change, it shows here.</p></div>}
         </div>
       )}
@@ -56,11 +57,10 @@ export default function StaffSuite({ mode }: { mode: "home" | "handbook" | "news
         <div key={ch.id}>
           <h2>{ch.title}</h2>
           {articles.filter(a => a.chapter_id === ch.id && a.title.toLowerCase().includes(q.toLowerCase())).map(a => (
-            <div className="card" key={a.id}>
-              <h2>{a.title}</h2>
-              <p className="m">Version {a.version}{a.signed ? " · signed" : ""}</p>
-              <button className="btn" onClick={async () => setOpen(await api(`/v1/handbook/articles/${a.id}`))}>Open</button>
-            </div>
+            <button className="pocket-row" key={a.id} onClick={async () => setOpen(await api(`/v1/handbook/articles/${a.id}`))}>
+              <span className="material-icons">description</span>
+              <span><strong>{a.title}</strong><span className="m">Version {a.version}{a.signed ? " · signed" : ""}</span></span>
+            </button>
           ))}
         </div>
       ))}

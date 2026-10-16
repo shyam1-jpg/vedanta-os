@@ -1,13 +1,17 @@
 "use client";
 import { useEffect, useState } from "react";
 import { api, ApiError } from "@/lib/api";
-import { DeskBar, EmptyState, EntryRow } from "@/components/OpsChrome";
+import { DeskBar, EmptyState, EntryRow, useKitBus } from "@/components/OpsChrome";
+import { useStore } from "@/lib/store";
+import { mayOperate } from "../../../domains/ops/suite";
 
 type Note = { id: string; department_label: string; shift_label: string; body: string; author_name: string | null; audience: string; recipient_name: string | null; audience_group: string | null; acknowledged: boolean; created_at: string };
 type Person = { id: string; name: string };
 const DEPTS = ["HOUSE", "FRONT", "NIGHT", "HK", "KITCHEN", "RESTAURANT", "MAINT", "GROUNDS", "MGMT"];
 
 export default function HandoverDesk() {
+  const { user } = useStore();
+  const operate = mayOperate(user?.permissions ?? []);
   const [items, setItems] = useState<Note[]>([]);
   const [people, setPeople] = useState<Person[]>([]);
   const [filter, setFilter] = useState({ department: "", shift: "", audience: "", q: "" });
@@ -22,13 +26,14 @@ export default function HandoverDesk() {
   const load = () => api<{ items: Note[] }>(`/v1/ops/handovers?${query}`).then(r => setItems(r.items)).catch(e => setErr(e instanceof ApiError ? e.problem.detail : "Could not open handovers"));
   useEffect(() => { load(); }, [filter.department, filter.shift, filter.audience, filter.q]);
   useEffect(() => { api<{ items: Person[] }>("/v1/ops/tasks/people").then(r => setPeople(r.items)).catch(() => {}); }, []);
+  useKitBus({ onSearch: q => setFilter(f => ({ ...f, q })) });
   return (
     <>
       <div className="topbar"><div><h1>Handovers</h1><p>Shift notes for the next team, a person, or a department. The house log still shows the latest ones.</p></div></div>
       {err && <div className="note">{err}</div>}
       <DeskBar
         query={filter.q} onQuery={q => setFilter({ ...filter, q })} placeholder="Search notes"
-        onAdd={() => setAdding(v => !v)} addLabel={adding ? "Close" : "Add entry"}
+        onAdd={operate ? () => setAdding(v => !v) : undefined} addLabel={adding ? "Close" : "Add entry"}
         filters={<div className="seg">
           <button className={filter.shift === "" ? "on" : ""} onClick={() => setFilter({ ...filter, shift: "" })}>Any shift</button>
           {["am", "pm", "night"].map(s => <button key={s} className={filter.shift === s ? "on" : ""} onClick={() => setFilter({ ...filter, shift: s })}>{s}</button>)}

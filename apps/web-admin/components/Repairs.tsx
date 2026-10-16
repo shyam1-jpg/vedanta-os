@@ -2,6 +2,7 @@
 import { useEffect, useState } from "react";
 import { api, ApiError, API, token } from "@/lib/api";
 import { useStore } from "@/lib/store";
+import { mayOperate } from "../../../domains/ops/suite";
 import { ReportFault } from "@/components/Maintenance";
 import { DeskBar, EmptyState, EntryRow } from "@/components/OpsChrome";
 
@@ -16,7 +17,8 @@ const NEXT: Record<string, [string, string][]> = {
 };
 
 export default function Repairs() {
-  const { can } = useStore();
+  const { can, user } = useStore();
+  const operate = mayOperate(user?.permissions ?? []) && can("maintenance.report");
   const [items, setItems] = useState<Ticket[]>([]);
   const [assignees, setAssignees] = useState<{ id: string; name: string }[]>([]);
   const [closed, setClosed] = useState(false);
@@ -36,7 +38,7 @@ export default function Repairs() {
       {err && <div className="note">{err}</div>}
       <DeskBar
         query={q} onQuery={setQ} placeholder="Search repairs"
-        onAdd={can("maintenance.report") ? () => setReporting(true) : undefined}
+        onAdd={operate ? () => setReporting(true) : undefined}
         addLabel="Add entry"
         filters={<div className="seg"><button className={!closed ? "on" : ""} onClick={() => setClosed(false)}>Open</button><button className={closed ? "on" : ""} onClick={() => setClosed(true)}>Closed</button></div>}
       />
@@ -57,9 +59,9 @@ export default function Repairs() {
               <div><span>Assigned</span><b>{sel.assigned_to ?? "—"}</b></div>
             </div>
             {can("maintenance.work") && <label>Assign<select value={sel.assigned_to_user_id ?? ""} onChange={async e => { await api(`/v1/maintenance/${sel.id}`, { method: "PATCH", body: JSON.stringify({ assigned_to_user_id: e.target.value || null }) }); load(); }}><option value="">Unassigned</option>{assignees.map(p => <option key={p.id} value={p.id}>{p.name}</option>)}</select></label>}
-            <div className="actions">{(NEXT[sel.status] ?? []).map(([cmd, label]) => <button key={cmd} className="btn" onClick={async () => { await api(`/v1/maintenance/${sel.id}/commands/${cmd}`, { method: "POST", body: "{}" }); setSel(null); load(); }}>{label}</button>)}</div>
+            {can("maintenance.work") && <div className="actions">{(NEXT[sel.status] ?? []).map(([cmd, label]) => <button key={cmd} className="btn" onClick={async () => { await api(`/v1/maintenance/${sel.id}/commands/${cmd}`, { method: "POST", body: "{}" }); setSel(null); load(); }}>{label}</button>)}</div>}
             {photos.map(p => <p key={p.id}><a href={`${API}/v1/maintenance/photos/${p.id}`} onClick={e => { e.preventDefault(); fetch(`${API}/v1/maintenance/photos/${p.id}`, { headers: { authorization: `Bearer ${token.get()}` } }).then(r => r.blob()).then(b => window.open(URL.createObjectURL(b))); }}>{p.filename}</a></p>)}
-            {can("maintenance.report") && <label>Photo<input type="file" accept="image/jpeg,image/png,image/webp" onChange={async e => {
+            {operate && <label>Photo<input type="file" accept="image/jpeg,image/png,image/webp" onChange={async e => {
               const file = e.target.files?.[0]; if (!file) return;
               const data = await new Promise<string>(resolve => { const r = new FileReader(); r.onload = () => resolve(String(r.result)); r.readAsDataURL(file); });
               await api(`/v1/maintenance/${sel.id}/photos`, { method: "POST", body: JSON.stringify({ data, filename: file.name }) });

@@ -21,6 +21,7 @@ import {
   audienceAllows,
   buildTextPdf,
   canMoveComplaint,
+  mayOperate,
   mayPublish,
   nextOpenDue,
   parseEventIdeas,
@@ -38,6 +39,9 @@ describe("content publishing", () => {
   it("is granted only by the content.publish permission", () => {
     assert.equal(mayPublish(["group.read", "task.write"]), false);
     assert.equal(mayPublish(["content.publish"]), true);
+    assert.equal(mayOperate(["group.read", "task.write", "maintenance.report"]), false);
+    assert.equal(mayOperate(["leave.approve_hod"]), true);
+    assert.equal(mayOperate(["content.publish"]), true);
   });
 
   it("is seeded only for the owner and the general manager", () => {

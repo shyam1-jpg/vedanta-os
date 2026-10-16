@@ -34,6 +34,29 @@ export function mayPublish(perms: Iterable<string>): boolean {
   return false;
 }
 
+/** Heads of department may open tasks, handovers and repairs.
+ *  Publishing handbook, news, ideas, the diary and the feed stays with content.publish.
+ */
+const OPERATE_PERMISSIONS = [
+  "content.publish",
+  "task.assign",
+  "cover.write",
+  "group.update",
+  "user.manage",
+  "leave.approve_hod",
+  "clock.manage",
+  "maintenance.work",
+  "room.oos.set",
+  "sop.manage",
+] as const;
+
+export function mayOperate(perms: Iterable<string>): boolean {
+  for (const code of perms) {
+    if ((OPERATE_PERMISSIONS as readonly string[]).includes(code)) return true;
+  }
+  return false;
+}
+
 export function parseRecurrence(v: unknown): Recurrence {
   const raw = String(v ?? "none").trim().toLowerCase();
   return (RECURRENCES as readonly string[]).includes(raw) ? raw as Recurrence : "none";

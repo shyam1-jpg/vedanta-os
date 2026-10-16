@@ -10,7 +10,7 @@ WHERE NOT EXISTS (
 );
 
 INSERT INTO handbook_article (
-  tenant_id, property_id, chapter_id, title, body_html, keywords, audience, review_on, status, version
+  tenant_id, property_id, chapter_id, title, body_html, keywords, audience, review_on, status, version, created_by, updated_by
 )
 SELECT t.id, p.id, c.id,
   'Kitchen risk assessments',
@@ -19,7 +19,9 @@ SELECT t.id, p.id, c.id,
   '{}',
   (timezone('Europe/London', now()))::date + 365,
   'live',
-  1
+  1,
+  (SELECT u.id FROM app_user u JOIN membership m ON m.user_id = u.id AND m.property_id = p.id JOIN role r ON r.id = m.role_id AND r.code = 'SYSTEM_OWNER' LIMIT 1),
+  (SELECT u.id FROM app_user u JOIN membership m ON m.user_id = u.id AND m.property_id = p.id JOIN role r ON r.id = m.role_id AND r.code = 'SYSTEM_OWNER' LIMIT 1)
 FROM tenant t
 JOIN property p ON p.tenant_id = t.id
 JOIN handbook_chapter c ON c.property_id = p.id AND c.title = 'Kitchen – Risk Assessments & Training'
@@ -27,8 +29,8 @@ WHERE NOT EXISTS (
   SELECT 1 FROM handbook_article a WHERE a.property_id = p.id AND a.title = 'Kitchen risk assessments'
 );
 
-INSERT INTO handbook_version (article_id, version, title, body_html, keywords, note)
-SELECT a.id, 1, a.title, a.body_html, a.keywords, 'First issue, with the kitchen pack attached.'
+INSERT INTO handbook_version (article_id, version, title, body_html, keywords, edited_by, note)
+SELECT a.id, 1, a.title, a.body_html, a.keywords, a.created_by, 'First issue, with the kitchen pack attached.'
 FROM handbook_article a
 WHERE a.title = 'Kitchen risk assessments'
   AND NOT EXISTS (SELECT 1 FROM handbook_version v WHERE v.article_id = a.id AND v.version = 1);

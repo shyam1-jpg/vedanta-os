@@ -1,7 +1,7 @@
 "use client";
 import { useEffect, useState } from "react";
 import { api, ApiError } from "@/lib/api";
-import { Badge, DeskBar, EmptyState } from "@/components/OpsChrome";
+import { Badge, DeskBar, EmptyState, useKitBus } from "@/components/OpsChrome";
 
 type Appt = { id: string; title: string; body: string; location: string; starts_at: string; ends_at: string | null; audience: string[] };
 type Retreat = { id: string; name: string; organisation: string | null; status: string; arrival: string; departure: string; expected_guests: number | null };
@@ -24,6 +24,7 @@ export default function HouseCalendar() {
     }).catch(e => setErr(e instanceof ApiError ? e.problem.detail : "Could not open the calendar"));
   };
   useEffect(() => { load(); }, [from]);
+  useKitBus({ onAdd: () => { if (!canPublish) return false; setAdding(true); }, onSearch: setQ });
   const days = new Map<string, { appointments: Appt[]; retreats: Retreat[] }>();
   for (const r of retreats) {
     const key = r.arrival;

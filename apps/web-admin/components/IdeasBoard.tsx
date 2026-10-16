@@ -1,7 +1,7 @@
 "use client";
 import { useEffect, useState } from "react";
 import { api, ApiError } from "@/lib/api";
-import { DeskBar, EmptyState, EntryRow } from "@/components/OpsChrome";
+import { DeskBar, EmptyState, EntryRow, useKitBus } from "@/components/OpsChrome";
 
 type Comment = { id: string; body: string; author_name: string | null; created_at: string };
 type Idea = { id: string; title: string; body: string; category: string; status: string; author_name: string | null; comments: Comment[] };
@@ -19,6 +19,7 @@ export default function IdeasBoard() {
   const [sel, setSel] = useState<string | null>(null);
   const load = () => api<{ items: Idea[]; can_publish: boolean }>(`/v1/ideas${filter ? `?status=${filter}` : ""}`).then(r => { setItems(r.items); setCanPublish(r.can_publish); }).catch(e => setErr(e instanceof ApiError ? e.problem.detail : "Could not open ideas"));
   useEffect(() => { load(); }, [filter]);
+  useKitBus({ onAdd: () => { if (!canPublish) return false; setAdding(true); }, onSearch: setQ });
   const shown = items.filter(idea => `${idea.title} ${idea.body} ${idea.category}`.toLowerCase().includes(q.toLowerCase()));
   const open = shown.find(i => i.id === sel) ?? null;
   return (
