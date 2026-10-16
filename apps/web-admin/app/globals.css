@@ -1005,6 +1005,17 @@ input, select, textarea { font: inherit; }
 .kit .ht-hero-nums div { background: #F7F2EF; border-radius: 6px; }
 .kit .ht-hero-nums b { color: #212121; }
 .kit .ht-hero-nums span { color: #757575; }
+.kit-filters a { height: 30px; border: 1px solid #E0E0E0; border-radius: 6px; background: #fff; padding: 0 10px; display: inline-flex; align-items: center; color: #212121; font-weight: 600; font-size: 13px; }
+.kit-filters a.on { background: #F7F2EF; border-color: #D9C5BC; }
+.wf-home { display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 12px; }
+.wf-grid { display: grid; overflow: auto; }
+.wf-person { display: contents; }
+.wf-h, .wf-name, .wf-cell { border-bottom: 1px solid #E0E0E0; border-right: 1px solid #E0E0E0; padding: 6px; font-size: 12px; background: #fff; }
+.wf-h { font-weight: 700; background: #FAFAFA; }
+.wf-name { display: flex; flex-direction: column; justify-content: center; }
+.wf-shift { background: #F7F2EF; border-radius: 4px; padding: 4px 6px; margin-bottom: 4px; display: flex; flex-direction: column; }
+.wf-shift.draft { background: #fff; border: 1px dashed #D9C5BC; }
+.wf-shift strong { font-size: 12px; }
 
 @media (max-width: 900px) {
   .arrive { min-height: 100dvh; grid-template-columns: 1fr; }

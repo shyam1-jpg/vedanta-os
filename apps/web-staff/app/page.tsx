@@ -8,6 +8,7 @@ import MorningDashboard from "../components/MorningDashboard";
 import StaffSuite from "../components/StaffSuite";
 import { staffTrainingSections } from "../../../domains/staff/training.ts";
 import { mayOperate } from "../../../domains/ops/suite.ts";
+import PocketWork from "../components/PocketWork";
 
 type Me = { name: string; email: string; role: string; role_name?: string; permissions?: string[]; property_name?: string | null; property_kicker?: string | null };
 type Prop = { name: string; kicker: string };
@@ -19,7 +20,7 @@ export default function Pocket() {
   const [providers, setProviders] = useState<{ microsoft: boolean; email: boolean; dev: boolean; email_code: boolean } | null>(null);
   const [code, setCode] = useState(""); const [codeSent, setCodeSent] = useState(false); const [busy, setBusy] = useState(false); const [message, setMessage] = useState("");
   const [err, setErr] = useState<string | null>(null);
-  const [tab, setTab] = useState<"morning" | "clock" | "leave" | "duty" | "sop" | "log" | "desk" | "night" | "manual" | "training" | "tasks" | "assets" | "home" | "handbook" | "news" | "ideas" | "calendar" | "repairs">("home");
+  const [tab, setTab] = useState<"morning" | "clock" | "leave" | "duty" | "sop" | "log" | "desk" | "night" | "manual" | "training" | "tasks" | "assets" | "home" | "handbook" | "news" | "ideas" | "calendar" | "repairs" | "work">("home");
   const [moreOpen, setMoreOpen] = useState(false);
   const [desk, setDesk] = useState<{
     today: { weekday: string; title: string; method: string; ingredients: { name: string; qty: string }[] };
@@ -153,7 +154,7 @@ export default function Pocket() {
         {moreOpen && (
           <div className="pocket-more">
             {([
-              ["morning", "Morning board"], ["clock", "Clock"], ["leave", "Holiday"], ["duty", "Duty"], ["log", "House log"],
+              ["news", "News"], ["morning", "Morning board"], ["clock", "Clock"], ["leave", "Holiday"], ["duty", "Duty"], ["log", "House log"],
               ["ideas", "Ideas"], ["calendar", "Diary"], ["repairs", "Repairs"], ["desk", "Front desk"], ["night", "Night"],
               ["manual", "Information"], ["training", "Training"], ["sop", "SOP"], ["assets", "Equipment"],
             ] as const).map(([id, label]) => (
@@ -162,6 +163,7 @@ export default function Pocket() {
           </div>
         )}
         {tab === "home" && <StaffSuite mode="home" />}
+        {tab === "work" && <PocketWork />}
         {tab === "handbook" && <StaffSuite mode="handbook" />}
         {tab === "news" && <StaffSuite mode="news" />}
         {tab === "ideas" && <StaffSuite mode="ideas" />}
@@ -365,13 +367,13 @@ export default function Pocket() {
       <nav className="pocket-nav" aria-label="Pocket">
         {([
           ["home", "Home", "home"],
+          ["work", "Work", "badge"],
           ["handbook", "Book", "menu_book"],
-          ["news", "News", "newspaper"],
           ["tasks", "Tasks", "task_alt"],
         ] as const).map(([id, label, icon]) => (
           <button key={id} className={tab === id ? "on" : ""} onClick={() => { setTab(id); setMoreOpen(false); }}><span className="material-icons">{icon}</span>{label}</button>
         ))}
-        <button className={moreOpen || !["home", "handbook", "news", "tasks"].includes(tab) ? "on" : ""} onClick={() => setMoreOpen(v => !v)}><span className="material-icons">more_horiz</span>More</button>
+        <button className={moreOpen || !["home", "work", "handbook", "tasks"].includes(tab) ? "on" : ""} onClick={() => setMoreOpen(v => !v)}><span className="material-icons">more_horiz</span>More</button>
       </nav>
     </>
   );
