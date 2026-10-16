@@ -2,6 +2,7 @@
 import Link from "next/link";
 import { useEffect, useState } from "react";
 import { API, api, ApiError, token } from "@/lib/api";
+import ScheduleBoard from "@/components/ScheduleBoard";
 
 type View = "home" | "schedule" | "timesheets" | "leave" | "people" | "reports" | "messages";
 const LINKS: [View, string, string][] = [
@@ -72,69 +73,7 @@ function Home() {
 }
 
 function Schedule() {
-  const [week, setWeek] = useState(monday());
-  const [department, setDepartment] = useState("");
-  const [mode, setMode] = useState<"week" | "day">("week");
-  const [day, setDay] = useState(iso(new Date()));
-  const [data, setData] = useState<any>(null);
-  const [err, setErr] = useState<string | null>(null);
-  const [form, setForm] = useState({ user_id: "", date: iso(new Date()), start_time: "09:00", end_time: "17:00", notes: "", department: "KITCHEN" });
-  const from = mode === "day" ? day : week;
-  const to = mode === "day" ? day : addDays(week, 6);
-  const load = () => api<any>(`/v1/workforce-desk/schedule?from=${from}&to=${to}${department ? `&department=${department}` : ""}`).then(setData).catch(e => setErr(errText(e)));
-  useEffect(() => { load(); }, [from, to, department]);
-  const days = mode === "day" ? [day] : Array.from({ length: 7 }, (_, i) => addDays(week, i));
-  const people = data?.people ?? [];
-  const shifts = data?.shifts ?? [];
-  const hoursFor = (id: string | null) => shifts.filter((s: any) => (id ? s.user_id === id : !s.user_id)).reduce((n: number, s: any) => n + s.hours, 0);
-  return (
-    <>
-      {err && <div className="note">{err}</div>}
-      <div className="kit-pagehead">
-        <div className="kit-seg">
-          <button type="button" className={mode === "day" ? "on" : ""} onClick={() => setMode("day")}>Day</button>
-          <button type="button" className={mode === "week" ? "on" : ""} onClick={() => setMode("week")}>Week</button>
-        </div>
-        <label>Department<select value={department} onChange={e => setDepartment(e.target.value)}><option value="">All</option>{DEPTS.filter(Boolean).map(d => <option key={d}>{d}</option>)}</select></label>
-        <button type="button" className="kit-outline" onClick={() => mode === "day" ? setDay(addDays(day, -1)) : setWeek(addDays(week, -7))}>Previous</button>
-        <button type="button" className="kit-outline" onClick={() => mode === "day" ? setDay(addDays(day, 1)) : setWeek(addDays(week, 7))}>Next</button>
-        {data?.can_publish && <button type="button" className="kit-add" onClick={async () => { await api("/v1/workforce-desk/shifts/publish", { method: "POST", body: JSON.stringify({ from, to, department }) }); load(); }}>Publish</button>}
-        {data?.can_approve && <button type="button" className="kit-outline" onClick={async () => { const r = await api<any>("/v1/workforce-desk/shifts/suggest", { method: "POST", body: JSON.stringify({ from, to, department }) }); setErr(`Suggested ${r.suggested}, left ${r.skipped} open so nobody goes over 48 hours.`); load(); }}>Suggest rota</button>}
-      </div>
-      <div className="kit-sheet wf-grid" style={{ gridTemplateColumns: `160px repeat(${days.length}, minmax(90px, 1fr))` }}>
-        <div className="wf-h">Person</div>
-        {days.map(d => <div key={d} className="wf-h">{d.slice(5)} <span className="m">{shifts.filter((s: any) => s.date === d).reduce((n: number, s: any) => n + s.hours, 0).toFixed(1)}h</span></div>)}
-        <div className="wf-name">Open shifts</div>
-        {days.map(d => <Cell key={d} items={shifts.filter((s: any) => !s.user_id && s.date === d)} />)}
-        {people.filter((p: any) => !department || p.department === department).map((p: any) => (
-          <div className="wf-person" key={p.id}>
-            <div className="wf-name">{p.name}<span className="m">{hoursFor(p.id).toFixed(1)}h · {shifts.filter((s: any) => s.user_id === p.id).length} shifts</span></div>
-            {days.map(d => <Cell key={p.id + d} items={shifts.filter((s: any) => s.user_id === p.id && s.date === d)} />)}
-          </div>
-        ))}
-      </div>
-      {data?.can_approve && (
-        <form className="kit-card" onSubmit={async e => { e.preventDefault(); try { await api("/v1/workforce-desk/shifts", { method: "POST", body: JSON.stringify(form) }); load(); } catch (e2) { setErr(errText(e2)); } }}>
-          <h2>Add shift</h2>
-          <div className="frow">
-            <label>Person<select value={form.user_id} onChange={e => setForm({ ...form, user_id: e.target.value })}><option value="">Open shift</option>{people.map((p: any) => <option key={p.id} value={p.id}>{p.name}</option>)}</select></label>
-            <label>Department<select value={form.department} onChange={e => setForm({ ...form, department: e.target.value })}>{DEPTS.filter(Boolean).map(d => <option key={d}>{d}</option>)}</select></label>
-            <label>Date<input type="date" value={form.date} onChange={e => setForm({ ...form, date: e.target.value })} /></label>
-            <label>From<input value={form.start_time} onChange={e => setForm({ ...form, start_time: e.target.value })} /></label>
-            <label>To<input value={form.end_time} onChange={e => setForm({ ...form, end_time: e.target.value })} /></label>
-          </div>
-          <label>Note<input value={form.notes} onChange={e => setForm({ ...form, notes: e.target.value })} /></label>
-          <button className="kit-add" type="submit">{data.can_publish ? "Add draft" : "Save draft"}</button>
-          <p className="m">Drafts stay off the phone until Publish. Templates: {(data.templates ?? []).map((t: any) => t.title).join(", ") || "none yet"}.</p>
-          {data.can_publish && data.templates?.[0] && <button type="button" className="kit-outline" onClick={async () => { await api(`/v1/workforce-desk/templates/${data.templates[0].id}/apply`, { method: "POST", body: JSON.stringify({ week }) }); load(); }}>Apply {data.templates[0].title}</button>}
-        </form>
-      )}
-    </>
-  );
-}
-
-function Cell({ items }: { items: any[] }) {
-  return <div className="wf-cell">{items.map(s => <div key={s.id} className={s.published ? "wf-shift" : "wf-shift draft"}><strong>{String(s.start_time).slice(0, 5)}–{String(s.end_time).slice(0, 5)}</strong><span>{s.published ? s.position || s.department : "Draft"}</span>{s.notes && <span className="m">{s.notes}</span>}</div>)}</div>;
+  return <ScheduleBoard />;
 }
 
 function Timesheets() {
