@@ -3,6 +3,7 @@ import Link from "next/link";
 import { useEffect, useState } from "react";
 import { API, api, ApiError, token } from "@/lib/api";
 import ScheduleBoard from "@/components/ScheduleBoard";
+import SmartTimesheets from "@/components/SmartTimesheets";
 
 type View = "home" | "schedule" | "timesheets" | "leave" | "people" | "reports" | "messages";
 const LINKS: [View, string, string][] = [
@@ -76,24 +77,7 @@ function Schedule() {
   return <ScheduleBoard />;
 }
 
-function Timesheets() {
-  const [week, setWeek] = useState(monday());
-  const [data, setData] = useState<any>(null);
-  useEffect(() => { api(`/v1/workforce-desk/timesheets?from=${week}&to=${addDays(week, 6)}`).then(setData).catch(() => setData({ lines: [] })); }, [week]);
-  return (
-    <div className="kit-sheet">
-      <div className="kit-pagehead" style={{ padding: 10 }}><button type="button" className="kit-outline" onClick={() => setWeek(addDays(week, -7))}>Previous</button><span>{week}</span><button type="button" className="kit-outline" onClick={() => setWeek(addDays(week, 7))}>Next</button></div>
-      {(data?.lines ?? []).map((line: any) => (
-        <div className="kit-row" key={line.id} style={{ height: "auto", padding: "8px 10px" }}>
-          <strong>{line.name}</strong>
-          <span className="m">{line.date} · scheduled {line.scheduled}h · punched {line.punched}h{line.still_in ? " (still in)" : ""} · break {line.break_minutes}m · {line.approved ? "Approved" : "Open"}</span>
-          {data?.can_approve && line.punch_id && !line.still_in && !line.approved && <button type="button" className="kit-outline" onClick={async () => { await api(`/v1/workforce-desk/timesheets/${line.punch_id}/approve`, { method: "POST", body: "{}" }); setData(await api(`/v1/workforce-desk/timesheets?from=${week}&to=${addDays(week, 6)}`)); }}>Approve</button>}
-        </div>
-      ))}
-      {data && data.lines?.length === 0 && <p className="kit-empty">No published shifts in this week.</p>}
-    </div>
-  );
-}
+function Timesheets() { return <SmartTimesheets />; }
 
 function Leave() {
   const [data, setData] = useState<any>(null);

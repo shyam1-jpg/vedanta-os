@@ -5,6 +5,7 @@
  * Guests have no path in here.
  */
 import type { FastifyInstance } from "fastify";
+import { recordWorkClock, WorkClockError } from "./work-clock.ts";
 import { pool, tx } from "./db.ts";
 import { requireActor, allow, problem } from "./auth.ts";
 import { audit } from "./groups.ts";
@@ -38,11 +39,8 @@ export default async function workforce(f: FastifyInstance) {
   f.post("/staff/clock", async (req: any, reply) => {
     const a = await requireActor(req, reply, "STAFF"); if (!a || !allow(a, "clock.self", reply)) return;
     const kind = req.body?.kind === "OUT" ? "OUT" : "IN";
-    const last = await lastKind(a.propertyId, a.userId);
-    if (!canPunch(last, kind)) return reply.code(409).send(problem(409, "clock", kind === "IN" ? "You are already clocked in" : "Clock in first"));
-    const r = await pool.query(`insert into staff_clock (tenant_id, property_id, user_id, kind) values ($1,$2,$3,$4) returning id, kind, at`, [a.tenantId, a.propertyId, a.userId, kind]);
-    await pool.query(`insert into audit_event(tenant_id,property_id,actor_user_id,entity_type,entity_id,action,payload) values ($1,$2,$3,'staff_clock',$4,$5,'{}')`, [a.tenantId, a.propertyId, a.userId, r.rows[0].id, kind === "IN" ? "clock.in" : "clock.out"]);
-    return r.rows[0];
+    try { const result = await recordWorkClock(a, kind); return result.event; }
+    catch(e) { if(e instanceof WorkClockError) return reply.code(409).send(problem(409, "clock", e.message)); throw e; }
   });
   f.get("/staff/clock", async (req, reply) => {
     const a = await requireActor(req, reply, "STAFF"); if (!a || !allow(a, "clock.self", reply)) return;

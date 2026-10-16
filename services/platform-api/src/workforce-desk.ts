@@ -4,10 +4,15 @@
  * Everyone else manages their own availability, leave, swaps and clock.
  */
 import type { FastifyInstance } from "fastify";
-import { pool } from "./db.ts";
+import { pool, tx, type Q } from "./db.ts";
+import { createHash } from "node:crypto";
+import { planOpenRota, placementIssues, type RotaSlot } from "../../../domains/ops/smart-rota.ts";
+import { dailyTimesheets, punchMinutes } from "../../../domains/ops/timesheet.ts";
 import { requireActor, problem, type Actor } from "./auth.ts";
 import { sanitizeRichText } from "../../../domains/ops/suite.ts";
 import { assessDrop, mayApproveDepartment, mayBroadcast, mayDragShift, mayPublishDepartment, mayPublishRota, maySendMessage, ROTA_DEPARTMENTS, shiftHours, suggestOpenShifts, weekRange } from "../../../domains/ops/workforce.ts";
+import { audit } from "./groups.ts";
+import { recordWorkClock, WorkClockError } from "./work-clock.ts";
 import { sendEmail } from "./email.ts";
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
@@ -19,7 +24,7 @@ function uuid(v: unknown): string | null {
 }
 function day(v: unknown): string | null {
   const s = String(v ?? "").slice(0, 10);
-  return /^\d{4}-\d{2}-\d{2}$/.test(s) ? s : null;
+  return /^\d{4}-\d{2}-\d{2}$/.test(s) && Number.isFinite(Date.parse(s)) && new Date(s + "T12:00:00Z").toISOString().slice(0, 10) === s ? s : null;
 }
 function dept(v: unknown): string {
   const s = String(v ?? "").trim().toUpperCase();
@@ -27,7 +32,39 @@ function dept(v: unknown): string {
 }
 function clockTime(v: unknown): string | null {
   const s = String(v ?? "").slice(0, 5);
-  return /^\d{2}:\d{2}$/.test(s) ? s : null;
+  return /^(?:[01]\d|2[0-3]):[0-5]\d$/.test(s) ? s : null;
+}
+
+function rotaSlot(row: any): RotaSlot {
+  return { id: row.id, userId: row.user_id, department: row.department, date: row.date, start: row.start_time, end: row.end_time, breakMinutes: Number(row.break_minutes) || 0, position: row.position || "" };
+}
+function shiftBreak(v: unknown): number | null {
+  const n = v === undefined ? 30 : Number(v);
+  return Number.isInteger(n) && n >= 0 && n < 1440 ? n : null;
+}
+async function rotaWrite<T>(propertyId: string, fn: (db: Q) => Promise<T>): Promise<T> {
+  return tx(async db => {
+    // Every workforce-desk rota command uses the same lock, so concurrent previews/applications cannot double-book.
+    await db.query(`select pg_advisory_xact_lock(hashtextextended($1, 0))`, ['rota:' + propertyId]);
+    return fn(db);
+  });
+}
+async function assignedAround(db: Q, propertyId: string, from: string, to: string) {
+  return (await db.query(`select id, user_id, department, shift_date::text date, start_time::text start_time,
+      end_time::text end_time, break_minutes from rota_shift
+      where property_id = $1 and user_id is not null and status <> 'cancelled'
+      and shift_date between $2::date - 1 and $3::date + 1`, [propertyId, weekRange(from).from, weekRange(to).to])).rows;
+}
+async function assignmentError(db: Q, propertyId: string, slot: RotaSlot): Promise<string | null> {
+  if (!slot.userId) return null;
+  const member = await db.query(`select 1 from staff_department sd join app_user u on u.id = sd.user_id
+    where sd.property_id = $1 and sd.user_id = $2 and sd.department = $3 and u.status = 'ACTIVE'`, [propertyId, slot.userId, slot.department]);
+  if (!member.rowCount) return 'Choose an active person on this department rota.';
+  const assigned = (await assignedAround(db, propertyId, slot.date, slot.date)).map(rotaSlot);
+  const issues = placementIssues(slot, slot.userId, assigned, [], []);
+  if (issues.includes('overlap')) return 'This person already has an overlapping shift, including in another department.';
+  if (issues.includes('hours')) return 'This would exceed the 48-hour planning cap for the week across all departments.';
+  return null;
 }
 
 async function reader(req: any, reply: any): Promise<Actor | null> {
@@ -142,6 +179,7 @@ export default async function workforceDesk(f: FastifyInstance) {
   });
 
   f.get("/v1/workforce-desk/schedule", async (req: any, reply) => {
+    reply.header("x-vedanta-workforce", "smart-v2");
     const a = await reader(req, reply); if (!a) return;
     const from = day(req.query?.from) ?? new Date().toISOString().slice(0, 10);
     const to = day(req.query?.to) ?? from;
@@ -149,7 +187,7 @@ export default async function workforceDesk(f: FastifyInstance) {
     const week = weekRange(from);
     const seeAllDrafts = mayPublishRota(a.perms);
     const params: unknown[] = [a.propertyId, from, to];
-    let where = `s.property_id = $1 and s.shift_date between $2::date and $3::date`;
+    let where = `s.property_id = $1 and s.status <> 'cancelled' and s.shift_date between $2::date and $3::date`;
     if (department) { params.push(department); where += ` and s.department = $${params.length}`; }
     if (!seeAllDrafts) {
       if (a.perms.has("leave.approve_hod") && a.department) {
@@ -224,6 +262,7 @@ export default async function workforceDesk(f: FastifyInstance) {
 
   f.post("/v1/workforce-desk/shifts", async (req: any, reply) => {
     const a = await reader(req, reply); if (!a) return;
+    return rotaWrite(a.propertyId, async db => {
     if (!mayPublishRota(a.perms) && !a.perms.has("leave.approve_hod")) {
       return reply.code(403).send(problem(403, "forbidden", "Heads of department draft the rota. The owner or general manager publishes it."));
     }
@@ -238,58 +277,73 @@ export default async function workforceDesk(f: FastifyInstance) {
     const open = !req.body?.user_id;
     const userId = open ? null : uuid(req.body?.user_id);
     if (!open && !userId) return reply.code(422).send(problem(422, "validation", "Choose a person or leave the shift open"));
+    const breakMinutes = shiftBreak(req.body?.break_minutes);
+    if (breakMinutes === null || shiftHours(start, end, breakMinutes) <= 0 || start === end) return reply.code(422).send(problem(422, "validation", "Use distinct start/end times and a break shorter than the shift."));
+    const conflict = await assignmentError(db, a.propertyId, { id: "new", userId, department, date, start, end, breakMinutes });
+    if (conflict) return reply.code(409).send(problem(409, "rota_conflict", conflict));
     const published = mayPublishRota(a.perms) && req.body?.published === true;
-    const row = (await pool.query(
+    const row = (await db.query(
       `insert into rota_shift (tenant_id, property_id, user_id, department, position, shift_type, shift_date, start_time, end_time, break_minutes, notes, published, created_by)
        values ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13) returning id`,
-      [a.tenantId, a.propertyId, userId, department, String(req.body?.position ?? "").slice(0, 80), open ? "open" : "shift", date, start, end, Number(req.body?.break_minutes) || 30, String(req.body?.notes ?? "").slice(0, 400), published, a.userId],
+      [a.tenantId, a.propertyId, userId, department, String(req.body?.position ?? "").slice(0, 80), open ? "open" : "shift", date, start, end, breakMinutes, String(req.body?.notes ?? "").slice(0, 400), published, a.userId],
     )).rows[0];
     reply.code(201);
     return { id: row.id, published };
+    });
   });
 
   f.post("/v1/workforce-desk/shifts/publish", async (req: any, reply) => {
     const a = await reader(req, reply); if (!a) return;
+    return rotaWrite(a.propertyId, async db => {
     const department = dept(req.body?.department);
     if (!mayPublishDepartment(a.perms, a.department, department)) {
       return reply.code(403).send(problem(403, "forbidden", "You publish your own department. The owner or a general manager publishes any rota."));
     }
     const from = day(req.body?.from);
     const to = day(req.body?.to);
-    if (!from || !to) return reply.code(422).send(problem(422, "validation", "Choose the week to publish"));
-    const r = await pool.query(
+    if (!from || !to || to < from || Date.parse(to) - Date.parse(from) > 30 * 86400000) return reply.code(422).send(problem(422, "validation", "Choose a range of at most 31 days."));
+    const proposed = await db.query(`select id, user_id, department, shift_date::text date, start_time::text start_time, end_time::text end_time, break_minutes from rota_shift where property_id = $1 and not published and status <> 'cancelled' and shift_date between $2::date and $3::date and ($4 = '' or department = $4)`, [a.propertyId, from, to, department]);
+    for (const row of proposed.rows) { const conflict = await assignmentError(db, a.propertyId, rotaSlot(row)); if (conflict) return reply.code(409).send(problem(409, "rota_conflict", conflict)); }
+    const r = await db.query(
       `update rota_shift set published = true, status = 'confirmed'
-       where property_id = $1 and shift_date between $2::date and $3::date and ($4 = '' or department = $4)`,
+       where property_id = $1 and status <> 'cancelled' and not published and shift_date between $2::date and $3::date and ($4 = '' or department = $4)`,
       [a.propertyId, from, to, department],
     );
     return { published: r.rowCount };
+    });
   });
 
   f.post("/v1/workforce-desk/shifts/undo", async (req: any, reply) => {
     const a = await reader(req, reply); if (!a) return;
+    return rotaWrite(a.propertyId, async db => {
     const id = uuid(req.body?.id);
     if (!id) return reply.code(422).send(problem(422, "validation", "Nothing to undo"));
-    const shift = (await pool.query(`select id, department, published from rota_shift where id = $1 and property_id = $2`, [id, a.propertyId])).rows[0];
+    const shift = (await db.query(`select id, user_id, department, start_time::text start_time, end_time::text end_time, break_minutes, published from rota_shift where id = $1 and property_id = $2`, [id, a.propertyId])).rows[0];
     if (!shift) return reply.code(404).send(problem(404, "not_found", "That shift has already gone"));
     if (!mayDragShift(a.perms, a.department, shift.department)) return reply.code(403).send(problem(403, "forbidden", "You can undo changes in your own department."));
     if (req.body?.action === "delete") {
       if (shift.published) return reply.code(409).send(problem(409, "published", "A published shift stays on the rota."));
-      await pool.query(`delete from rota_shift where id = $1 and property_id = $2`, [id, a.propertyId]);
+      await db.query(`delete from rota_shift where id = $1 and property_id = $2`, [id, a.propertyId]);
       return { ok: true };
     }
     const date = day(req.body?.date);
     if (!date) return reply.code(422).send(problem(422, "validation", "Choose the day to restore"));
     const userId = req.body?.user_id ? uuid(req.body.user_id) : null;
-    await pool.query(
+    if (req.body?.user_id && !userId) return reply.code(422).send(problem(422, "validation", "Choose a valid person."));
+    const conflict = await assignmentError(db, a.propertyId, { ...rotaSlot(shift), date, userId });
+    if (conflict) return reply.code(409).send(problem(409, "rota_conflict", conflict));
+    await db.query(
       `update rota_shift set user_id = $2, shift_date = $3::date, published = $4, shift_type = $5 where id = $1 and property_id = $6`,
       [id, userId, date, req.body?.published === true, userId ? "shift" : "open", a.propertyId],
     );
     return { ok: true };
+    });
   });
 
   f.post("/v1/workforce-desk/shifts/:id/place", async (req: any, reply) => {
     const a = await reader(req, reply); if (!a) return;
-    const shift = (await pool.query(
+    return rotaWrite(a.propertyId, async db => {
+    const shift = (await db.query(
       `select id, user_id, department, shift_date::text date, start_time::text start_time, end_time::text end_time,
               break_minutes, notes, position, published
        from rota_shift where id = $1 and property_id = $2`,
@@ -305,24 +359,26 @@ export default async function workforceDesk(f: FastifyInstance) {
     const toUser = req.body?.user_id ? uuid(req.body.user_id) : null;
     if (req.body?.user_id && !toUser) return reply.code(422).send(problem(422, "validation", "Choose a person on this rota"));
     if (toUser) {
-      const onRota = (await pool.query(
+      const onRota = (await db.query(
         `select 1 from staff_department where user_id = $1 and property_id = $2 and department = $3`,
         [toUser, a.propertyId, shift.department],
       )).rowCount;
       if (!onRota) return reply.code(422).send(problem(422, "validation", "That person is not on this department rota."));
     }
     if (!copy && toUser === shift.user_id && date === shift.date) return { id: shift.id, warnings: [], undo: null };
+    const conflict = await assignmentError(db, a.propertyId, { ...rotaSlot(shift), id: copy ? "copy" : shift.id, date, userId: toUser });
+    if (conflict) return reply.code(409).send(problem(409, "rota_conflict", conflict));
     const week = weekRange(date);
-    const weekShifts = (await pool.query(
+    const weekShifts = (await db.query(
       `select id, user_id, start_time::text start_time, end_time::text end_time, break_minutes
        from rota_shift where property_id = $1 and user_id is not null and shift_date between $2::date and $3::date`,
       [a.propertyId, week.from, week.to],
     )).rows.map((row: any) => ({ id: row.id, userId: row.user_id, hours: shiftHours(row.start_time, row.end_time, row.break_minutes) }));
-    const unavailable = toUser ? (await pool.query(
+    const unavailable = toUser ? (await db.query(
       `select 1 from staff_availability where user_id = $1 and property_id = $2 and on_date = $3::date and available = false`,
       [toUser, a.propertyId, date],
     )).rowCount : 0;
-    const onLeave = toUser ? (await pool.query(
+    const onLeave = toUser ? (await db.query(
       `select 1 from absence_request where user_id = $1 and property_id = $2 and status in ('pending','approved') and from_date <= $3::date and to_date >= $3::date
        union all
        select 1 from staff_leave where user_id = $1 and property_id = $2 and status in ('SUBMITTED','HOD_APPROVED','APPROVED') and starts_on <= $3::date and ends_on >= $3::date`,
@@ -339,14 +395,14 @@ export default async function workforceDesk(f: FastifyInstance) {
     });
     if (!verdict.allowed) return reply.code(409).send(problem(409, "hours", verdict.warnings[0]?.message ?? "Over the weekly cap"));
     if (copy) {
-      const created = (await pool.query(
+      const created = (await db.query(
         `insert into rota_shift (tenant_id, property_id, user_id, department, position, shift_type, shift_date, start_time, end_time, break_minutes, notes, published, created_by)
          values ($1,$2,$3,$4,$5,$6,$7::date,$8,$9,$10,$11,false,$12) returning id`,
         [a.tenantId, a.propertyId, toUser, shift.department, shift.position, toUser ? "shift" : "open", date, shift.start_time, shift.end_time, shift.break_minutes, shift.notes, a.userId],
       )).rows[0];
       return { id: created.id, warnings: verdict.warnings, undo: { action: "delete", id: created.id } };
     }
-    await pool.query(
+    await db.query(
       `update rota_shift set user_id = $2, shift_date = $3::date, published = false, shift_type = $4 where id = $1 and property_id = $5`,
       [shift.id, toUser, date, toUser ? "shift" : "open", a.propertyId],
     );
@@ -355,48 +411,42 @@ export default async function workforceDesk(f: FastifyInstance) {
       warnings: verdict.warnings,
       undo: { action: "restore", id: shift.id, user_id: shift.user_id, date: shift.date, published: shift.published },
     };
+    });
   });
 
   f.post("/v1/workforce-desk/shifts/suggest", async (req: any, reply) => {
     const a = await reader(req, reply); if (!a) return;
+    return rotaWrite(a.propertyId, async db => {
     if (!mayPublishRota(a.perms) && !a.perms.has("leave.approve_hod")) return reply.code(403).send(problem(403, "forbidden", "Only a manager can ask for a suggested rota."));
-    const from = day(req.body?.from);
-    const to = day(req.body?.to);
-    if (!from || !to) return reply.code(422).send(problem(422, "validation", "Choose the dates to fill"));
+    const from = day(req.body?.from), to = day(req.body?.to);
+    if (!from || !to || to < from || Date.parse(to) - Date.parse(from) > 30 * 86400000) return reply.code(422).send(problem(422, "validation", "Choose a range of at most 31 days."));
     const department = dept(req.body?.department);
-    const open = (await pool.query(
-      `select id, department, shift_date::text date, start_time::text start_time, end_time::text end_time, break_minutes
-       from rota_shift where property_id = $1 and user_id is null and shift_date between $2::date and $3::date
-         and ($4 = '' or department = $4)`,
-      [a.propertyId, from, to, department],
-    )).rows;
-    const assigned = (await pool.query(
-      `select user_id, shift_date::text date, start_time::text start_time, end_time::text end_time, break_minutes
-       from rota_shift where property_id = $1 and user_id is not null and shift_date between $2::date and $3::date`,
-      [a.propertyId, from, to],
-    )).rows;
-    const off = (await pool.query(
-      `select user_id, on_date::text date from staff_availability where property_id = $1 and available = false and on_date between $2::date and $3::date`,
-      [a.propertyId, from, to],
-    )).rows;
-    const people = (await pool.query(
-      `select distinct u.id, sd.department from staff_department sd
-       join app_user u on u.id = sd.user_id
-       where sd.property_id = $1 and u.status = 'ACTIVE'`,
-      [a.propertyId],
-    )).rows;
-    const hours = new Map<string, number>();
-    for (const row of assigned) hours.set(row.user_id, (hours.get(row.user_id) ?? 0) + shiftHours(row.start_time, row.end_time, row.break_minutes));
-    const unavailable = new Map<string, string[]>();
-    for (const row of off) unavailable.set(row.user_id, [...(unavailable.get(row.user_id) ?? []), row.date]);
-    const placed = suggestOpenShifts(
-      open.map((row: any) => ({ id: row.id, department: row.department, date: row.date, hours: shiftHours(row.start_time, row.end_time, row.break_minutes) })),
-      people.map((p: any) => ({ id: p.id, department: p.department, hours: hours.get(p.id) ?? 0, unavailable: unavailable.get(p.id) ?? [] })),
-    );
-    for (const pick of placed) {
-      await pool.query(`update rota_shift set user_id = $2, shift_type = 'shift', published = false where id = $1 and property_id = $3 and user_id is null`, [pick.shiftId, pick.userId, a.propertyId]);
+    if (!mayPublishDepartment(a.perms, a.department, department)) return reply.code(403).send(problem(403, "forbidden", "Suggest shifts only for a department you manage."));
+    const open = (await db.query(`select id, user_id, department, position, shift_date::text date, start_time::text start_time, end_time::text end_time, break_minutes
+      from rota_shift where property_id = $1 and user_id is null and not published and status <> 'cancelled'
+      and shift_date between $2::date and $3::date and ($4 = '' or department = $4) order by shift_date, start_time, id`, [a.propertyId, from, to, department])).rows;
+    const assigned = await assignedAround(db, a.propertyId, from, to);
+    const roster = (await db.query(`select u.id, u.display_name name, sd.department, coalesce(h.designation,'') designation from staff_department sd join app_user u on u.id = sd.user_id left join staff_hr h on h.user_id = u.id and h.property_id = sd.property_id
+      where sd.property_id = $1 and u.status = 'ACTIVE' order by u.id, sd.department`, [a.propertyId])).rows;
+    const people = new Map<string, { id: string; name: string; departments: string[]; positions: string[] }>();
+    for (const p of roster) { const row = people.get(p.id) ?? { id: p.id, name: p.name, departments: [], positions: [] }; row.departments.push(p.department); if(p.designation&&!row.positions.includes(p.designation))row.positions.push(p.designation);people.set(p.id, row); }
+    const off = (await db.query(`select user_id, on_date::text date from staff_availability where property_id = $1 and available = false
+      and on_date between $2::date - 1 and $3::date + 1`, [a.propertyId, from, to])).rows.map(r => ({ userId: r.user_id, from: r.date, to: r.date }));
+    const leave = (await db.query(`select user_id, from_date::text from_date, to_date::text to_date from absence_request
+      where property_id = $1 and status in ('pending','approved') and to_date >= $2::date - 1 and from_date <= $3::date + 1
+      union all select user_id, starts_on::text, ends_on::text from staff_leave
+      where property_id = $1 and status in ('SUBMITTED','HOD_APPROVED','APPROVED') and ends_on >= $2::date - 1 and starts_on <= $3::date + 1`, [a.propertyId, from, to])).rows.map(r => ({ userId: r.user_id, from: r.from_date, to: r.to_date }));
+    const plan = planOpenRota(open.map(rotaSlot), [...people.values()], assigned.map(rotaSlot), off, leave);
+    const previewToken = createHash('sha256').update(JSON.stringify({ from, to, department, open, assigned: [...assigned].sort((a,b) => a.id.localeCompare(b.id)), off: [...off].sort((a,b) => JSON.stringify(a).localeCompare(JSON.stringify(b))), leave: [...leave].sort((a,b) => JSON.stringify(a).localeCompare(JSON.stringify(b))), roster, plan })).digest('hex');
+    if (req.body?.preview === true) return { ...plan, preview_token: previewToken, suggested: plan.assignments.length, skipped_count: plan.skipped.length, applied: false };
+    if (req.body?.preview_token !== previewToken) return reply.code(409).send(problem(409, "stale_preview", "The rota or availability changed. Review a fresh preview before applying."));
+    for (const pick of plan.assignments) {
+      await db.query(`update rota_shift set user_id = $2, shift_type = 'shift', published = false where id = $1 and property_id = $3 and user_id is null`, [pick.shiftId, pick.userId, a.propertyId]);
+      await audit(db,a,'rota_shift',pick.shiftId,'rota.smart_assign',{from:'open',to:'draft',reason:'Manager reviewed smart rota preview',payload:{user_id:pick.userId,preview_token:previewToken}});
     }
-    return { suggested: placed.length, skipped: open.length - placed.length };
+    return { ...plan, suggested: plan.assignments.length, skipped_count: plan.skipped.length, applied: true };
+
+    });
   });
 
   f.post("/v1/workforce-desk/templates", async (req: any, reply) => {
@@ -624,61 +674,59 @@ export default async function workforceDesk(f: FastifyInstance) {
     const a = await reader(req, reply); if (!a) return;
     if (!a.perms.has("clock.self") && !mayPublishRota(a.perms)) return reply.code(403).send(problem(403, "forbidden", "Clock in on your own phone."));
     const kind = req.body?.kind === "OUT" ? "OUT" : "IN";
-    const open = (await pool.query(`select id from clock_record where user_id = $1 and clocked_out_at is null`, [a.userId])).rows[0];
-    if (kind === "IN" && open) return reply.code(409).send(problem(409, "clock", "You are already clocked in"));
-    if (kind === "OUT" && !open) return reply.code(409).send(problem(409, "clock", "Clock in first"));
-    await pool.query(`insert into staff_clock (tenant_id, property_id, user_id, kind) values ($1,$2,$3,$4)`, [a.tenantId, a.propertyId, a.userId, kind]);
-    if (kind === "IN") {
-      const row = (await pool.query(
-        `insert into clock_record (tenant_id, property_id, user_id) values ($1,$2,$3) returning id, clocked_in_at`,
-        [a.tenantId, a.propertyId, a.userId],
-      )).rows[0];
-      reply.code(201);
-      return row;
-    }
-    const row = (await pool.query(`update clock_record set clocked_out_at = now() where id = $1 returning id, clocked_in_at, clocked_out_at`, [open.id])).rows[0];
-    return row;
+    try { const result=await recordWorkClock(a,kind); if(kind==='IN')reply.code(201);return result.record; }
+    catch(e) { if(e instanceof WorkClockError)return reply.code(409).send(problem(409,"clock",e.message));throw e; }
   });
 
   f.get("/v1/workforce-desk/timesheets", async (req: any, reply) => {
+    reply.header("x-vedanta-workforce", "smart-v2");
     const a = await reader(req, reply); if (!a) return;
-    const from = day(req.query?.from) ?? new Date().toISOString().slice(0, 10);
-    const to = day(req.query?.to) ?? from;
+    const from = day(req.query?.from) ?? new Date().toISOString().slice(0, 10), to = day(req.query?.to) ?? from;
+    if (to < from || Date.parse(to) - Date.parse(from) > 30 * 86400000) return reply.code(422).send(problem(422, "validation", "Choose up to 31 days."));
     const manage = mayPublishRota(a.perms) || a.perms.has("clock.manage") || a.perms.has("leave.approve_hod");
-    const shifts = (await pool.query(
-      `select s.id, s.user_id, u.display_name name, s.department, s.shift_date::text date, s.start_time::text start_time, s.end_time::text end_time, s.break_minutes
-       from rota_shift s join app_user u on u.id = s.user_id
-       where s.property_id = $1 and s.published and s.user_id is not null and s.shift_date between $2::date and $3::date
-         and ($4::boolean or s.user_id = $5)
-       order by s.shift_date, u.display_name`,
-      [a.propertyId, from, to, manage, a.userId],
-    )).rows;
-    const punches = (await pool.query(
-      `select id, user_id, clocked_in_at, clocked_out_at, break_minutes, approved_at
-       from clock_record where property_id = $1 and clocked_in_at::date between $2::date and $3::date`,
-      [a.propertyId, from, to],
-    )).rows;
-    const lines = shifts.map((s: any) => {
-      const punch = punches.find((p: any) => p.user_id === s.user_id && new Date(p.clocked_in_at).toISOString().slice(0, 10) === s.date);
-      const end = punch ? new Date(punch.clocked_out_at ?? Date.now()) : null;
-      const punched = punch && end ? Math.max(0, (end.getTime() - new Date(punch.clocked_in_at).getTime()) / 3600000 - (punch.break_minutes || 0) / 60) : 0;
-      return { ...s, scheduled: shiftHours(s.start_time, s.end_time, s.break_minutes), punched: Math.round(punched * 10) / 10, punch_id: punch?.id ?? null, still_in: Boolean(punch && !punch.clocked_out_at), approved: Boolean(punch?.approved_at) };
-    });
-    return { from, to, lines, ...flags(a) };
+    const shifts = (await pool.query(`select s.id, s.user_id, u.display_name name, s.department, s.shift_date::text date,
+      s.start_time::text start_time, s.end_time::text end_time, s.break_minutes
+      from rota_shift s join app_user u on u.id = s.user_id
+      where s.property_id = $1 and s.published and s.status <> 'cancelled' and s.user_id is not null
+      and s.shift_date between $2::date and $3::date and ($4::boolean or s.user_id = $5) order by s.shift_date, u.display_name, s.start_time`, [a.propertyId, from, to, manage, a.userId])).rows;
+    const punches = (await pool.query(`select c.id, c.user_id, u.display_name name,
+      coalesce((select d.code from membership m left join department d on d.id = m.department_id where m.property_id = $1 and m.user_id = c.user_id limit 1),'') department,
+      c.clocked_in_at, c.clocked_out_at, c.break_minutes, c.approved_at
+      from clock_record c join app_user u on u.id = c.user_id where c.property_id = $1
+      and (c.clocked_in_at at time zone 'Europe/London')::date between $2::date and $3::date
+      and ($4::boolean or c.user_id = $5) order by c.clocked_in_at`, [a.propertyId, from, to, manage, a.userId])).rows;
+    // Older phone events predate the shared clock writer. Show them without silently inventing approvals or breaks.
+    const legacy = (await pool.query(`select s.id, s.user_id, u.display_name name,
+      coalesce((select d.code from membership m left join department d on d.id = m.department_id where m.property_id = $1 and m.user_id = s.user_id limit 1),'') department,
+      s.at clocked_in_at, case when nxt.kind = 'OUT' then nxt.at else null end clocked_out_at,
+      0 break_minutes, null approved_at, 'phone_history' source
+      from staff_clock s join app_user u on u.id = s.user_id
+      left join lateral (select e.kind,e.at from staff_clock e where e.property_id = s.property_id and e.user_id = s.user_id and e.at > s.at order by e.at limit 1) nxt on true
+      where s.property_id = $1 and s.kind = 'IN' and (s.at at time zone 'Europe/London')::date between $2::date and $3::date
+      and ($4::boolean or s.user_id = $5)
+      and not exists(select 1 from clock_record c where c.property_id = s.property_id and c.user_id = s.user_id and abs(extract(epoch from (c.clocked_in_at - s.at))) < 60)
+      order by s.at`, [a.propertyId,from,to,manage,a.userId])).rows;
+    const lines = dailyTimesheets(shifts, [...punches, ...legacy]).map(line => ({ ...line, scheduled: line.scheduled_minutes/60, punched: line.actual_minutes/60, department: line.departments[0]??"", punch_id: line.punches.length===1 && line.punches[0].source!=="phone_history"?line.punches[0].id:null, punches: line.punches.map(p => ({ ...p,
+      can_approve: p.source !== 'phone_history' && !!p.clocked_out_at && !p.approved_at && !line.issues.includes('overlapping_punches') && !line.issues.includes('invalid_clock_pair') && (a.perms.has('clock.manage') || mayApproveDepartment(a.perms, a.department, p.department)) })) }));
+    return { from, to, lines, ...flags(a), can_approve: manage, calculation_version: 2 };
   });
 
   f.post("/v1/workforce-desk/timesheets/:id/approve", async (req: any, reply) => {
     const a = await reader(req, reply); if (!a) return;
-    const row = (await pool.query(
-      `select c.id, c.user_id from clock_record c where c.id = $1 and c.property_id = $2`,
-      [req.params.id, a.propertyId],
-    )).rows[0];
-    if (!row) return reply.code(404).send(problem(404, "not_found", "No punch to approve"));
-    if (!mayApproveDepartment(a.perms, a.department, await userDept(a.propertyId, row.user_id)) && !a.perms.has("clock.manage")) {
-      return reply.code(403).send(problem(403, "forbidden", "A manager approves timesheets."));
-    }
-    await pool.query(`update clock_record set approved_by = $2, approved_at = now() where id = $1`, [row.id, a.userId]);
-    return { ok: true };
+    return tx(async db => {
+      const row = (await db.query(`select id, user_id, clocked_in_at, clocked_out_at, break_minutes, approved_at from clock_record where id = $1 and property_id = $2 for update`, [req.params.id, a.propertyId])).rows[0];
+      if (!row) return reply.code(404).send(problem(404, "not_found", "No punch to approve"));
+      if (!mayApproveDepartment(a.perms, a.department, await userDept(a.propertyId, row.user_id)) && !a.perms.has("clock.manage")) return reply.code(403).send(problem(403, "forbidden", "A manager approves timesheets."));
+      if (!row.clocked_out_at || +new Date(row.clocked_out_at) <= +new Date(row.clocked_in_at)) return reply.code(409).send(problem(409, "open_clock", "A valid clock-out is required before approval."));
+      const overlap = await db.query(`select 1 from clock_record where property_id = $1 and user_id = $2 and id <> $3
+        and clocked_in_at < $4 and coalesce(clocked_out_at, now()) > $5 limit 1`, [a.propertyId, row.user_id, row.id, row.clocked_out_at, row.clocked_in_at]);
+      if (overlap.rowCount) return reply.code(409).send(problem(409, "overlapping_clock", "Overlapping clock records need to be corrected before approval."));
+      if (!row.approved_at) {
+        await db.query(`update clock_record set approved_by = $2, approved_at = now() where id = $1`, [row.id, a.userId]);
+        await audit(db,a,'clock_record',row.id,'timesheet.approve',{from:'open',to:'approved',reason:'Manager reviewed clock record',payload:{user_id:row.user_id,clocked_in_at:row.clocked_in_at,clocked_out_at:row.clocked_out_at,break_minutes:row.break_minutes}});
+      }
+      return { ok: true };
+    });
   });
 
   f.get("/v1/workforce-desk/people", async (req, reply) => {
@@ -722,14 +770,14 @@ export default async function workforceDesk(f: FastifyInstance) {
       byType.set(row.shift_type, (byType.get(row.shift_type) ?? 0) + 1);
     }
     const punches = (await pool.query(
-      `select clocked_in_at, clocked_out_at, approved_at from clock_record
-       where property_id = $1 and clocked_in_at::date between $2::date and $3::date`,
+      `select clocked_in_at, clocked_out_at, break_minutes, approved_at from clock_record
+       where property_id = $1 and (clocked_in_at at time zone 'Europe/London')::date between $2::date and $3::date`,
       [a.propertyId, from, to],
     )).rows;
     let punched = 0; let approved = 0;
     for (const row of punches) {
       if (!row.clocked_out_at) continue;
-      const hours = (new Date(row.clocked_out_at).getTime() - new Date(row.clocked_in_at).getTime()) / 3600000;
+      const hours = punchMinutes(row) / 60;
       punched += hours;
       if (row.approved_at) approved += hours;
     }
