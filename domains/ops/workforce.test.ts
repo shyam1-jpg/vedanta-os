@@ -1,6 +1,6 @@
 import { describe, it } from "node:test";
 import assert from "node:assert/strict";
-import { assessDrop, mayApproveDepartment, mayDragShift, mayPublishDepartment, mayPublishRota, maySendMessage, shiftHours, suggestOpenShifts } from "./workforce.ts";
+import { accrualYear, assessDrop, hourlyAccrual, leaveAvailable, mayApproveDepartment, mayDragShift, mayPublishDepartment, mayPublishRota, maySendMessage, planAutoSchedule, shiftHours, suggestOpenShifts } from "./workforce.ts";
 
 describe("workforce schedule", () => {
   it("counts a shift minus the break, including overnight", () => {
@@ -78,5 +78,36 @@ describe("workforce schedule", () => {
     assert.equal(maySendMessage(["group.read"], { broadcast: true, reply: false, targetsAreManagers: false }), false);
     assert.equal(maySendMessage(["group.read"], { broadcast: false, reply: false, targetsAreManagers: true }), true);
     assert.equal(maySendMessage(["group.read"], { broadcast: false, reply: true, targetsAreManagers: false }), true);
+  });
+
+  it("uses a 1 September leave year, 28 days, and 12.07 percent of hours", () => {
+    assert.deepEqual(accrualYear("2026-10-16"), { year: 2026, from: "2026-09-01", until: "2027-08-31" });
+    assert.deepEqual(accrualYear("2027-01-02"), { year: 2026, from: "2026-09-01", until: "2027-08-31" });
+    assert.equal(hourlyAccrual(100), 12.07);
+    assert.equal(leaveAvailable({ start: 2, accrued: 28, carried: 1, used: 6 }), 25);
+  });
+
+  it("auto-schedules drafts from contracted hours, availability, the 48-hour rule and past patterns", () => {
+    const shifts = [
+      { id: "mon", department: "KITCHEN", date: "2026-10-19", hours: 8, start: "09:00" },
+      { id: "tue", department: "KITCHEN", date: "2026-10-20", hours: 8, start: "09:00" },
+    ];
+    const people = [
+      { id: "shreyas", departments: ["KITCHEN", "HK"], contractedWeekly: 40, unavailable: [], leave: [], weekHours: { "2026-10-19": 40 }, pattern: [{ weekday: 0, start: "09:00", department: "KITCHEN" }] },
+      { id: "chef", departments: ["KITCHEN"], contractedWeekly: 37.5, unavailable: ["2026-10-19"], leave: [], weekHours: { "2026-10-19": 0 }, pattern: [] },
+      { id: "away", departments: ["KITCHEN"], contractedWeekly: 48, unavailable: [], leave: ["2026-10-20"], weekHours: {}, pattern: [{ weekday: 1, start: "09:00", department: "KITCHEN" }] },
+    ];
+    const placed = planAutoSchedule({ shifts, people, excludeUserIds: [], excludeDates: [] });
+    assert.deepEqual(placed, [{ shiftId: "mon", userId: "away" }, { shiftId: "tue", userId: "chef" }]);
+    const forced = planAutoSchedule({ shifts: [shifts[0]], people, excludeDates: ["2026-10-19"] });
+    assert.deepEqual(forced, []);
+    const patterned = planAutoSchedule({
+      shifts: [{ id: "mon", department: "KITCHEN", date: "2026-10-19", hours: 8, start: "09:00" }],
+      people: [
+        { id: "plain", departments: ["KITCHEN"], contractedWeekly: 40, unavailable: [], leave: [], weekHours: {}, pattern: [] },
+        { id: "usual", departments: ["KITCHEN"], contractedWeekly: 40, unavailable: [], leave: [], weekHours: {}, pattern: [{ weekday: 0, start: "09:00", department: "KITCHEN" }] },
+      ],
+    });
+    assert.deepEqual(patterned, [{ shiftId: "mon", userId: "usual" }]);
   });
 });

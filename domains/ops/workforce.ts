@@ -122,3 +122,85 @@ export function maySendMessage(perms: Iterable<string>, opts: { broadcast: boole
   if (opts.broadcast) return false;
   return opts.reply || opts.targetsAreManagers;
 }
+
+/** Annual leave is a fixed 28 days. Hourly staff accrue 12.07% of hours worked. The leave year runs 1 September to 31 August. */
+export const ANNUAL_LEAVE_DAYS = 28;
+export const HOURLY_ACCRUAL_PERCENT = 12.07;
+
+export function accrualYear(date: string): { year: number; from: string; until: string } {
+  const [y, m, d] = date.slice(0, 10).split("-").map(n => Number(n) || 0);
+  const start = m > 9 || (m === 9 && d >= 1) ? y : y - 1;
+  return { year: start, from: `${start}-09-01`, until: `${start + 1}-08-31` };
+}
+
+export function leaveAvailable(row: { start?: number; accrued?: number; carried?: number; used?: number }): number {
+  const n = Number(row.start ?? 0) + Number(row.accrued ?? 0) + Number(row.carried ?? 0) - Number(row.used ?? 0);
+  return Math.round(n * 100) / 100;
+}
+
+export function hourlyAccrual(hours: number, percent = HOURLY_ACCRUAL_PERCENT): number {
+  return Math.round(Math.max(0, hours) * (percent / 100) * 100) / 100;
+}
+
+export type AutoShift = { id: string; department: string; date: string; hours: number; start: string };
+export type AutoPerson = {
+  id: string;
+  departments: string[];
+  contractedWeekly: number;
+  unavailable: string[];
+  leave: string[];
+  weekHours: Record<string, number>;
+  pattern: { weekday: number; start: string; department: string }[];
+};
+
+/** Fill open shifts with drafts. Contracted hours, availability, the 48-hour rule and past patterns are each optional. */
+export function planAutoSchedule(input: {
+  shifts: AutoShift[];
+  people: AutoPerson[];
+  excludeUserIds?: string[];
+  excludeDates?: string[];
+  useContracted?: boolean;
+  useAvailability?: boolean;
+  useRules?: boolean;
+  usePatterns?: boolean;
+  maxHours?: number;
+}): { shiftId: string; userId: string }[] {
+  const excluded = new Set(input.excludeUserIds ?? []);
+  const skipDates = new Set(input.excludeDates ?? []);
+  const useContracted = input.useContracted !== false;
+  const useAvailability = input.useAvailability !== false;
+  const useRules = input.useRules !== false;
+  const usePatterns = input.usePatterns !== false;
+  const capHours = input.maxHours ?? MAX_WEEK_HOURS;
+  const hours = new Map<string, Map<string, number>>();
+  for (const person of input.people) {
+    hours.set(person.id, new Map(Object.entries(person.weekHours).map(([week, n]) => [week, Number(n) || 0])));
+  }
+  const placed: { shiftId: string; userId: string }[] = [];
+  const ordered = [...input.shifts].sort((a, b) => a.date.localeCompare(b.date) || a.start.localeCompare(b.start) || a.id.localeCompare(b.id));
+  for (const shift of ordered) {
+    if (skipDates.has(shift.date)) continue;
+    const week = weekRange(shift.date).from;
+    const weekday = (new Date(`${shift.date}T12:00:00Z`).getUTCDay() + 6) % 7;
+    const candidates = input.people.filter(person => {
+      if (excluded.has(person.id) || !person.departments.includes(shift.department)) return false;
+      if (useAvailability && (person.unavailable.includes(shift.date) || person.leave.includes(shift.date))) return false;
+      const soFar = hours.get(person.id)?.get(week) ?? 0;
+      const ruleCap = useRules ? capHours : 24 * 7;
+      const contractCap = useContracted && person.contractedWeekly > 0 ? person.contractedWeekly : ruleCap;
+      return soFar + shift.hours <= Math.min(ruleCap, contractCap) + 0.001;
+    });
+    candidates.sort((a, b) => {
+      const score = (person: AutoPerson) => usePatterns && person.pattern.some(row => row.weekday === weekday && row.department === shift.department && row.start.slice(0, 5) === shift.start.slice(0, 5)) ? 0 : 1;
+      const diff = score(a) - score(b);
+      if (diff) return diff;
+      return (hours.get(a.id)?.get(week) ?? 0) - (hours.get(b.id)?.get(week) ?? 0) || a.id.localeCompare(b.id);
+    });
+    const pick = candidates[0];
+    if (!pick) continue;
+    const bag = hours.get(pick.id)!;
+    bag.set(week, Math.round(((bag.get(week) ?? 0) + shift.hours) * 10) / 10);
+    placed.push({ shiftId: shift.id, userId: pick.id });
+  }
+  return placed;
+}

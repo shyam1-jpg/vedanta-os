@@ -9,6 +9,7 @@ import { requireActor, problem, type Actor } from "./auth.ts";
 import { sanitizeRichText } from "../../../domains/ops/suite.ts";
 import { assessDrop, mayApproveDepartment, mayBroadcast, mayDragShift, mayPublishDepartment, mayPublishRota, maySendMessage, ROTA_DEPARTMENTS, shiftHours, suggestOpenShifts, weekRange } from "../../../domains/ops/workforce.ts";
 import { sendEmail } from "./email.ts";
+import { audit } from "./workforce-shared.ts";
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 const DEPTS = ["HOUSE", "FRONT", "NIGHT", "HK", "KITCHEN", "RESTAURANT", "MAINT", "GROUNDS", "MGMT"];
@@ -69,8 +70,8 @@ async function notify(a: Actor, userIds: string[], title: string, body: string) 
   for (const id of userIds) {
     if (id === a.userId) continue;
     const person = (await pool.query(`select email from app_user where id = $1`, [id])).rows[0];
-    const pref = (await pool.query(`select digest from wf_digest_pref where user_id = $1`, [id])).rows[0];
-    if (person?.email && !pref?.digest) {
+    const pref = (await pool.query(`select digest, email_notifications from wf_digest_pref where user_id = $1`, [id])).rows[0];
+    if (person?.email && !pref?.digest && pref?.email_notifications !== false) {
       await sendEmail(a, { to: person.email, subject: title, body, kind: "workforce_message" }).catch(() => null);
     }
     await pool.query(`insert into wf_push_outbox (user_id, title, body, status) values ($1,$2,$3,'queued')`, [id, title.slice(0, 140), body.slice(0, 240)]);
@@ -262,6 +263,7 @@ export default async function workforceDesk(f: FastifyInstance) {
        where property_id = $1 and shift_date between $2::date and $3::date and ($4 = '' or department = $4)`,
       [a.propertyId, from, to, department],
     );
+    await audit(a, "publish", `${department || "all"} ${from} to ${to} (${r.rowCount ?? 0})`);
     return { published: r.rowCount };
   });
 
@@ -344,12 +346,14 @@ export default async function workforceDesk(f: FastifyInstance) {
          values ($1,$2,$3,$4,$5,$6,$7::date,$8,$9,$10,$11,false,$12) returning id`,
         [a.tenantId, a.propertyId, toUser, shift.department, shift.position, toUser ? "shift" : "open", date, shift.start_time, shift.end_time, shift.break_minutes, shift.notes, a.userId],
       )).rows[0];
+      await audit(a, "copy-shift", `${shift.department} ${date}`);
       return { id: created.id, warnings: verdict.warnings, undo: { action: "delete", id: created.id } };
     }
     await pool.query(
       `update rota_shift set user_id = $2, shift_date = $3::date, published = false, shift_type = $4 where id = $1 and property_id = $5`,
       [shift.id, toUser, date, toUser ? "shift" : "open", a.propertyId],
     );
+    await audit(a, "move-shift", `${shift.department} ${date}`);
     return {
       id: shift.id,
       warnings: verdict.warnings,
@@ -396,14 +400,15 @@ export default async function workforceDesk(f: FastifyInstance) {
     for (const pick of placed) {
       await pool.query(`update rota_shift set user_id = $2, shift_type = 'shift', published = false where id = $1 and property_id = $3 and user_id is null`, [pick.shiftId, pick.userId, a.propertyId]);
     }
+    await audit(a, "suggest", `${placed.length} drafts`);
     return { suggested: placed.length, skipped: open.length - placed.length };
   });
 
   f.post("/v1/workforce-desk/templates", async (req: any, reply) => {
     const a = await reader(req, reply); if (!a) return;
-    if (!mayPublishRota(a.perms)) return reply.code(403).send(problem(403, "forbidden", "Only the owner or a general manager saves a rota template."));
     const title = String(req.body?.title ?? "").trim().slice(0, 120);
     const department = dept(req.body?.department);
+    if (!mayPublishDepartment(a.perms, a.department, department)) return reply.code(403).send(problem(403, "forbidden", "You save templates for your own department."));
     if (!title || !department) return reply.code(422).send(problem(422, "validation", "Name the template and its department"));
     const row = (await pool.query(
       `insert into rota_template (tenant_id, property_id, title, department, created_by) values ($1,$2,$3,$4,$5) returning id`,
@@ -415,18 +420,18 @@ export default async function workforceDesk(f: FastifyInstance) {
 
   f.post("/v1/workforce-desk/templates/:id/apply", async (req: any, reply) => {
     const a = await reader(req, reply); if (!a) return;
-    if (!mayPublishRota(a.perms) && !a.perms.has("leave.approve_hod")) return reply.code(403).send(problem(403, "forbidden", "Only a manager applies a template."));
     const week = day(req.body?.week);
     if (!week) return reply.code(422).send(problem(422, "validation", "Choose the Monday of the week"));
     const template = (await pool.query(`select id, department from rota_template where id = $1 and property_id = $2`, [req.params.id, a.propertyId])).rows[0];
     if (!template) return reply.code(404).send(problem(404, "not_found", "No such template"));
-    const lines = (await pool.query(`select weekday, start_time::text, end_time::text, break_minutes, position, notes from rota_template_line where template_id = $1`, [template.id])).rows;
+    if (!mayPublishDepartment(a.perms, a.department, template.department)) return reply.code(403).send(problem(403, "forbidden", "You apply templates for your own department."));
+    const lines = (await pool.query(`select weekday, start_time::text, end_time::text, break_minutes, position, notes, user_id from rota_template_line where template_id = $1`, [template.id])).rows;
     let made = 0;
     for (const line of lines) {
       await pool.query(
         `insert into rota_shift (tenant_id, property_id, user_id, department, position, shift_type, shift_date, start_time, end_time, break_minutes, notes, published, created_by)
-         values ($1,$2,null,$3,$4,'open', $5::date + $6, $7, $8, $9, $10, false, $11)`,
-        [a.tenantId, a.propertyId, template.department, line.position, week, line.weekday, line.start_time, line.end_time, line.break_minutes, line.notes, a.userId],
+         values ($1,$2,$3,$4,$5,$6, $7::date + $8, $9, $10, $11, $12, false, $13)`,
+        [a.tenantId, a.propertyId, line.user_id, template.department, line.position, line.user_id ? "shift" : "open", week, line.weekday, line.start_time, line.end_time, line.break_minutes, line.notes, a.userId],
       );
       made += 1;
     }
@@ -461,7 +466,7 @@ export default async function workforceDesk(f: FastifyInstance) {
       [a.userId, year],
     )).rows[0];
     const payslips = (await pool.query(
-      `select id, period_label, period_start::text, period_end::text, gross_pence, net_pence, summary from payslip where user_id = $1 and property_id = $2 order by period_end desc`,
+      `select id, period_label, period_start::text, period_end::text, gross_pence, net_pence, summary, (bytes is not null) as has_file from payslip where user_id = $1 and property_id = $2 order by period_end desc`,
       [a.userId, a.propertyId],
     )).rows;
     const clock = (await pool.query(
@@ -473,7 +478,9 @@ export default async function workforceDesk(f: FastifyInstance) {
        where t.user_id = $1 and m.show_on_clock and t.acknowledged_at is null order by m.created_at desc limit 3`,
       [a.userId],
     )).rows;
-    return { shifts, open, availability, leave: { ...account, used_days: Number(used.days) }, payslips, clock, pinned, ...flags(a) };
+    const profile = (await pool.query(`select phone, preferred_language language from app_user where id = $1`, [a.userId])).rows[0] ?? {};
+    const pref = (await pool.query(`select email_notifications from wf_digest_pref where user_id = $1`, [a.userId])).rows[0];
+    return { user_id: a.userId, shifts, open, availability, leave: { ...account, used_days: Number(used.days) }, payslips, clock, pinned, profile: { ...profile, email: a.email, email_notifications: pref?.email_notifications !== false }, ...flags(a) };
   });
 
   f.put("/v1/workforce-desk/availability", async (req: any, reply) => {
