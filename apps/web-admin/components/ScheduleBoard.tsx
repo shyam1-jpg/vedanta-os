@@ -2,6 +2,7 @@
 import { useEffect, useRef, useState } from "react";
 import { api, ApiError } from "@/lib/api";
 import { assessDrop, dateInRange, ROTA_DEPARTMENTS } from "../../../domains/ops/workforce.ts";
+import ScheduleTools from "@/components/ScheduleTools";
 
 type Shift = {
   id: string;
@@ -49,6 +50,7 @@ export default function ScheduleBoard() {
   const [copyOn, setCopyOn] = useState(false);
   const [drag, setDrag] = useState<Drag | null>(null);
   const [form, setForm] = useState({ user_id: "", date: iso(new Date()), start_time: "09:00", end_time: "17:00", notes: "", department: "KITCHEN" });
+  const [hidden, setHidden] = useState<{ from: string; to: string } | null>(null);
   const dragRef = useRef<Drag | null>(null);
   const pending = useRef<{ shift: Shift; x: number; y: number; pointerId: number; type: string; copy: boolean; armed: boolean } | null>(null);
   const timer = useRef(0);
@@ -60,7 +62,8 @@ export default function ScheduleBoard() {
   const load = () => api<any>(`/v1/workforce-desk/schedule?from=${from}&to=${to}${department ? `&department=${department}` : ""}`).then(setData).catch(e => setErr(errText(e)));
   useEffect(() => { load(); }, [from, to, department]);
 
-  const days = mode === "day" ? [day] : Array.from({ length: 7 }, (_, i) => addDays(week, i));
+  const allDays = mode === "day" ? [day] : Array.from({ length: 7 }, (_, i) => addDays(week, i));
+  const days = hidden ? allDays.filter(d => d < hidden.from || d > hidden.to) : allDays;
   const people: Person[] = data?.people ?? [];
   const shifts: Shift[] = data?.shifts ?? [];
   const departments: { code: string; name: string }[] = data?.departments ?? ROTA_DEPARTMENTS;
@@ -185,8 +188,10 @@ export default function ScheduleBoard() {
           } catch (e2) { setErr(errText(e2)); }
         }}>Undo</button>
         {data?.can_publish && <button type="button" className="kit-add" onClick={async () => { await api("/v1/workforce-desk/shifts/publish", { method: "POST", body: JSON.stringify({ from, to, department }) }); setWarn(""); await load(); }}>{department ? `Publish ${deptName(department, departments)}` : "Publish all departments"}</button>}
-        {!!dragDepartments.length && <button type="button" className="kit-outline" onClick={async () => { const r = await api<any>("/v1/workforce-desk/shifts/suggest", { method: "POST", body: JSON.stringify({ from, to, department }) }); setErr(""); setWarn(`Suggested ${r.suggested}. ${r.skipped} stayed open so nobody goes over 48 hours.`); await load(); }}>Suggest rota</button>}
       </div>
+      <ScheduleTools from={from} to={to} department={department} people={people} shiftIds={shifts.map(s => s.id)} canManage={!!dragDepartments.length || !!data?.can_publish} hidden={hidden} onHide={setHidden} onChanged={load} />
+      {hidden && <p className="m">Hiding {hidden.from} to {hidden.to}.</p>}
+      {!days.length && <p className="m">That period is hidden. Show it again from Tools.</p>}
       {sections.map(section => {
         const rows = people.filter(p => p.departments.includes(section.code));
         const mine = shifts.filter(s => s.department === section.code);

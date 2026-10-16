@@ -76,8 +76,14 @@ export default function PocketWork() {
       </div>
       <div className="card">
         <h2>Payslips</h2>
-        {(mine.payslips ?? []).map((p: any) => <p key={p.id}><strong>{p.period_label}</strong> · £{(p.net_pence / 100).toFixed(2)} net<p className="m">{p.summary}</p></p>)}
+        {(mine.payslips ?? []).map((p: any) => <p key={p.id}><strong>{p.period_label}</strong> · £{(p.net_pence / 100).toFixed(2)} net {p.has_file && <button className="btn ghost" onClick={async () => { const res = await fetch(`/v1/workforce-desk/payslips/${p.id}`, { headers: { authorization: `Bearer ${sessionStorage.getItem("vedanta.staff.token") ?? ""}` } }); window.open(URL.createObjectURL(await res.blob())); }}>Open PDF</button>}<p className="m">{p.summary}</p></p>)}
         {(mine.payslips ?? []).length === 0 && <p className="m">No payslip has been filed for you.</p>}
+      </div>
+      <div className="card">
+        <h2>My details</h2>
+        <label>Phone<input defaultValue={mine.profile?.phone ?? ""} id="pocket-phone" /></label>
+        <label>Language<select defaultValue={mine.profile?.language ?? "en"} id="pocket-language"><option value="en">English</option><option value="pl">Polish</option><option value="ro">Romanian</option><option value="bg">Bulgarian</option><option value="es">Spanish</option></select></label>
+        <button className="btn" onClick={async () => { const phone = (document.getElementById("pocket-phone") as HTMLInputElement).value; const language = (document.getElementById("pocket-language") as HTMLSelectElement).value; await api(`/v1/workforce-desk/people/${mine.user_id}`, { method: "PATCH", body: JSON.stringify({ phone, language, email_notifications: true }) }); setErr("Details saved."); }}>Save</button>
       </div>
       <div className="card">
         <h2>Messages</h2>

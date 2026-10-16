@@ -51,7 +51,10 @@ export const sections: Group[] = [
     ["/workforce/leave/", "Leave", "beach_access", "group.read"],
     ["/workforce/people/", "People", "groups", "group.read"],
     ["/workforce/reports/", "Workforce reports", "insights", "group.read"],
-    ["/workforce/messages/", "Messages", "forum", "group.read"],
+    ["/workforce/chat/", "Chat", "forum", "group.read"],
+    ["/workforce/messages/", "Messages", "mail", "group.read"],
+    ["/workforce/news/", "News and events", "newspaper", "group.read"],
+    ["/workforce/settings/", "Workforce settings", "tune", "group.read"],
   ] },
   { label: "People", items: [
     ["/people/", "Employees", "badge", "group.read"],

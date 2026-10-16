@@ -3,8 +3,15 @@ import Link from "next/link";
 import { useEffect, useState } from "react";
 import { API, api, ApiError, token } from "@/lib/api";
 import ScheduleBoard from "@/components/ScheduleBoard";
+import WorkforceBell from "@/components/WorkforceBell";
+import WorkforceChat from "@/components/WorkforceChat";
+import WorkforceLeave from "@/components/WorkforceLeave";
+import WorkforceNews from "@/components/WorkforceNews";
+import WorkforcePeople from "@/components/WorkforcePeople";
+import WorkforceReports from "@/components/WorkforceReports";
+import WorkforceSettings from "@/components/WorkforceSettings";
 
-type View = "home" | "schedule" | "timesheets" | "leave" | "people" | "reports" | "messages";
+type View = "home" | "schedule" | "timesheets" | "leave" | "people" | "reports" | "messages" | "chat" | "news" | "settings";
 const LINKS: [View, string, string][] = [
   ["home", "/workforce/", "Home"],
   ["schedule", "/workforce/schedule/", "Schedule"],
@@ -12,7 +19,10 @@ const LINKS: [View, string, string][] = [
   ["leave", "/workforce/leave/", "Leave"],
   ["people", "/workforce/people/", "People"],
   ["reports", "/workforce/reports/", "Reports"],
+  ["chat", "/workforce/chat/", "Chat"],
   ["messages", "/workforce/messages/", "Messages"],
+  ["news", "/workforce/news/", "News"],
+  ["settings", "/workforce/settings/", "Settings"],
 ];
 const DEPTS = ["", "KITCHEN", "HK", "FRONT", "RESTAURANT", "MAINT", "GROUNDS", "MGMT", "HOUSE", "NIGHT"];
 
@@ -27,7 +37,6 @@ function addDays(day: string, n: number) {
   d.setDate(d.getDate() + n);
   return iso(d);
 }
-function pounds(pence: number) { return `£${(pence / 100).toFixed(2)}`; }
 function errText(e: unknown) { return e instanceof ApiError ? e.problem.detail : "Something went wrong"; }
 
 export default function WorkforceDesk({ view }: { view: View }) {
@@ -35,17 +44,23 @@ export default function WorkforceDesk({ view }: { view: View }) {
     <div className="kit-page">
       <div className="kit-pagehead">
         <h1>Workforce</h1>
-        <nav className="kit-filters" aria-label="Workforce">
-          {LINKS.map(([id, href, label]) => <Link key={id} href={href} className={view === id ? "on" : ""}>{label}</Link>)}
-        </nav>
+        <div className="kit-pagehead-actions">
+          <WorkforceBell />
+          <nav className="kit-filters" aria-label="Workforce">
+            {LINKS.map(([id, href, label]) => <Link key={id} href={href} className={view === id ? "on" : ""}>{label}</Link>)}
+          </nav>
+        </div>
       </div>
       {view === "home" && <Home />}
       {view === "schedule" && <Schedule />}
       {view === "timesheets" && <Timesheets />}
-      {view === "leave" && <Leave />}
-      {view === "people" && <People />}
-      {view === "reports" && <Reports />}
+      {view === "leave" && <WorkforceLeave />}
+      {view === "people" && <WorkforcePeople />}
+      {view === "reports" && <WorkforceReports />}
       {view === "messages" && <Messages />}
+      {view === "chat" && <WorkforceChat />}
+      {view === "news" && <WorkforceNews />}
+      {view === "settings" && <WorkforceSettings />}
     </div>
   );
 }
@@ -91,84 +106,6 @@ function Timesheets() {
         </div>
       ))}
       {data && data.lines?.length === 0 && <p className="kit-empty">No published shifts in this week.</p>}
-    </div>
-  );
-}
-
-function Leave() {
-  const [data, setData] = useState<any>(null);
-  const [form, setForm] = useState({ from: "", to: "", note: "", kind: "holiday" });
-  const [err, setErr] = useState<string | null>(null);
-  const load = () => api("/v1/workforce-desk/leave").then(setData);
-  useEffect(() => { load().catch(e => setErr(errText(e))); }, []);
-  return (
-    <>
-      {err && <div className="note">{err}</div>}
-      <form className="kit-card" onSubmit={async e => { e.preventDefault(); try { await api("/v1/workforce-desk/leave", { method: "POST", body: JSON.stringify(form) }); setForm({ from: "", to: "", note: "", kind: "holiday" }); load(); } catch (e2) { setErr(errText(e2)); } }}>
-        <h2>Request leave</h2>
-        <div className="frow">
-          <label>From<input type="date" required value={form.from} onChange={e => setForm({ ...form, from: e.target.value })} /></label>
-          <label>To<input type="date" required value={form.to} onChange={e => setForm({ ...form, to: e.target.value })} /></label>
-          <label>Kind<select value={form.kind} onChange={e => setForm({ ...form, kind: e.target.value })}><option>holiday</option><option>sickness</option><option>unpaid</option></select></label>
-        </div>
-        <label>Note<input value={form.note} onChange={e => setForm({ ...form, note: e.target.value })} /></label>
-        <button className="kit-add" type="submit">Send request</button>
-        {data?.can_approve && <button type="button" className="kit-outline" onClick={async () => {
-          const res = await fetch(API + "/v1/workforce-desk/leave/export", { headers: token.get() ? { authorization: `Bearer ${token.get()}` } : {} });
-          const blob = await res.blob();
-          const url = URL.createObjectURL(blob);
-          const a = document.createElement("a");
-          a.href = url; a.download = "leave.csv"; a.click();
-          URL.revokeObjectURL(url);
-        }}>Export register</button>}
-      </form>
-      <div className="kit-sheet">
-        {(data?.accounts ?? []).map((a: any) => <div className="kit-row" key={a.user_id}><strong>{a.name}</strong><span className="m">{a.allowance_days} days allowance · {a.used_days} used · {Number(a.allowance_days) + Number(a.carried_days) - Number(a.used_days)} left</span></div>)}
-        {(data?.items ?? []).map((item: any) => (
-          <div className="kit-row" key={item.id} style={{ height: "auto" }}>
-            <strong>{item.name}</strong>
-            <span className="m">{item.kind} {item.from_date} → {item.to_date} · {item.status}</span>
-            {data?.can_approve && item.status === "pending" && <>
-              <button type="button" className="kit-outline" onClick={async () => { await api(`/v1/workforce-desk/leave/${item.id}/decide`, { method: "POST", body: JSON.stringify({ approve: true }) }); load(); }}>Approve</button>
-              <button type="button" className="kit-outline" onClick={async () => { await api(`/v1/workforce-desk/leave/${item.id}/decide`, { method: "POST", body: JSON.stringify({ approve: false }) }); load(); }}>Decline</button>
-            </>}
-          </div>
-        ))}
-      </div>
-    </>
-  );
-}
-
-function People() {
-  const [data, setData] = useState<any>(null);
-  useEffect(() => { api("/v1/workforce-desk/people").then(setData).catch(() => {}); }, []);
-  const docs = (id: string) => (data?.documents ?? []).filter((d: any) => d.user_id === id);
-  return (
-    <div className="kit-sheet">
-      {(data?.people ?? []).map((p: any) => (
-        <div className="kit-row" key={p.id} style={{ height: "auto", alignItems: "flex-start", padding: "8px 10px" }}>
-          <strong>{p.name}</strong>
-          <span className="m">{p.department_name || p.department || "House"} · {p.role_name}{p.designation ? ` · ${p.designation}` : ""}{p.contracted_hours ? ` · ${p.contracted_hours}h` : ""}</span>
-          <span className="m">{docs(p.id).map((d: any) => d.title).join(", ") || "No documents"}</span>
-        </div>
-      ))}
-    </div>
-  );
-}
-
-function Reports() {
-  const [week, setWeek] = useState(monday());
-  const [data, setData] = useState<any>(null);
-  const [err, setErr] = useState<string | null>(null);
-  useEffect(() => { api(`/v1/workforce-desk/reports?from=${week}&to=${addDays(week, 6)}`).then(setData).catch(e => setErr(errText(e))); }, [week]);
-  if (err) return <div className="note">{err}</div>;
-  if (!data) return <p className="m">Opening reports…</p>;
-  return (
-    <div className="wf-home">
-      <article className="kit-card"><h2>Schedule</h2>{data.schedule.map((row: any) => <p key={row.department}>{row.department}: {row.shifts} shifts, {row.hours}h</p>)}</article>
-      <article className="kit-card"><h2>Shift types</h2>{data.shift_types.map((row: any) => <p key={row.shift_type}>{row.shift_type}: {row.count}</p>)}</article>
-      <article className="kit-card"><h2>Timesheets</h2><p>Scheduled {data.timesheet.scheduled}h · punched {data.timesheet.punched}h · approved {data.timesheet.approved}h</p></article>
-      <article className="kit-card"><h2>Labour and revenue</h2><p>{data.labour.scheduled_hours}h · {pounds(data.labour.cost_pence)} at {pounds(data.labour.rate_pence)}/h</p><p className="m">{data.labour.revenue_note}</p></article>
     </div>
   );
 }
