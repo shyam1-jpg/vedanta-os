@@ -118,10 +118,7 @@ export default async function staffSuite(f: FastifyInstance) {
        where a.property_id=$1 order by a.title`,
       [a.propertyId, a.userId],
     )).rows.filter((row: any) => (publishing(a) || row.status === "live") && canSee(a, row.audience));
-    const visibleChapters = publishing(a)
-      ? chapters
-      : chapters.filter((c: any) => articles.some((art: any) => art.chapter_id === c.id));
-    return { chapters: visibleChapters, articles, can_publish: publishing(a) };
+    return { chapters, articles, can_publish: publishing(a) };
   });
 
   f.post("/v1/handbook/chapters", async (req: any, reply) => {
@@ -154,9 +151,11 @@ export default async function staffSuite(f: FastifyInstance) {
     const a = await reader(req, reply); if (!a || denyPublish(a, reply)) return;
     const title = clean(req.body?.title, 180);
     const chapter = uuid(req.body?.chapter_id);
-    if (!title || !chapter) return reply.code(422).send(problem(422, "validation", "Choose a chapter and a title"));
-    const owned = await pool.query(`select id from handbook_chapter where id=$1 and property_id=$2`, [chapter, a.propertyId]);
-    if (!owned.rowCount) return reply.code(404).send(problem(404, "not_found", "No such chapter"));
+    if (!title) return reply.code(422).send(problem(422, "validation", "Name the article"));
+    if (chapter) {
+      const owned = await pool.query(`select id from handbook_chapter where id=$1 and property_id=$2`, [chapter, a.propertyId]);
+      if (!owned.rowCount) return reply.code(404).send(problem(404, "not_found", "No such chapter"));
+    }
     const body = sanitizeRichText(String(req.body?.body_html ?? req.body?.body ?? ""));
     const keywords = tags(req.body?.keywords);
     const audience = tags(req.body?.audience, true);
@@ -713,5 +712,60 @@ export default async function staffSuite(f: FastifyInstance) {
       [a.propertyId, from, to],
     )).rows;
     return { from, to, by_user: byUser, by_room: byRoom, cleaned };
+  });
+
+  f.get("/v1/tutorials", async (req, reply) => {
+    const a = await reader(req, reply); if (!a) return;
+    const items = (await pool.query(
+      `select id, title, category, summary, video_url, filename, is_new, created_at, (bytes is not null) has_file
+       from ops_tutorial where property_id = $1 order by created_at desc`,
+      [a.propertyId],
+    )).rows;
+    return { items, can_publish: publishing(a) };
+  });
+
+  f.post("/v1/tutorials", { bodyLimit: 4_000_000 }, async (req: any, reply) => {
+    const a = await reader(req, reply); if (!a || denyPublish(a, reply)) return;
+    const title = clean(req.body?.title, 160);
+    if (!title) return reply.code(422).send(problem(422, "validation", "Name the tutorial"));
+    const url = clean(req.body?.video_url, 400);
+    if (url && !/^https:\/\//i.test(url)) return reply.code(422).send(problem(422, "validation", "Use an https video link"));
+    let mime: string | null = null;
+    let bytes: Buffer | null = null;
+    let filename: string | null = null;
+    if (req.body?.data) {
+      const m = /^data:(video\/(?:mp4|webm)|application\/pdf);base64,([a-z0-9+/=\s]+)$/i.exec(String(req.body.data).trim());
+      if (!m) return reply.code(422).send(problem(422, "validation", "Upload an MP4, WebM or PDF under 3 MB"));
+      bytes = Buffer.from(m[2].replace(/\s/g, ""), "base64");
+      if (!bytes.length || bytes.length > 3_000_000) return reply.code(422).send(problem(422, "validation", "Keep the file under 3 MB"));
+      mime = m[1].toLowerCase();
+      filename = clean(req.body?.filename, 140) || "tutorial";
+    }
+    const row = (await pool.query(
+      `insert into ops_tutorial (tenant_id, property_id, title, category, summary, video_url, filename, mime, bytes, is_new, created_by)
+       values ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11) returning id`,
+      [a.tenantId, a.propertyId, title, clean(req.body?.category, 80), clean(req.body?.summary, 800), url || null, filename, mime, bytes, req.body?.is_new !== false, a.userId],
+    )).rows[0];
+    reply.code(201);
+    return { id: row.id };
+  });
+
+  f.delete("/v1/tutorials/:id", async (req: any, reply) => {
+    const a = await reader(req, reply); if (!a || denyPublish(a, reply)) return;
+    const r = await pool.query(`delete from ops_tutorial where property_id = $1 and id = $2`, [a.propertyId, req.params.id]);
+    if (!r.rowCount) return reply.code(404).send(problem(404, "not_found", "No such tutorial"));
+    return { ok: true };
+  });
+
+  f.get("/v1/tutorials/:id/file", async (req: any, reply) => {
+    const a = await reader(req, reply); if (!a) return;
+    const row = (await pool.query(
+      `select filename, mime, bytes from ops_tutorial where property_id = $1 and id = $2`,
+      [a.propertyId, req.params.id],
+    )).rows[0];
+    if (!row?.bytes) return reply.code(404).send(problem(404, "not_found", "No file on this tutorial"));
+    reply.header("content-type", row.mime || "application/octet-stream");
+    reply.header("content-disposition", `inline; filename="${String(row.filename || "tutorial").replace(/"/g, "")}"`);
+    return reply.send(row.bytes);
   });
 }

@@ -5,7 +5,7 @@ import { useEffect, useRef, useState } from "react";
 import { useStore } from "@/lib/store";
 
 export const sections: { label: string; items: [string, string, string | null][] }[] = [
-  { label: "Operations", items: [["/feed/", "Home", "group.read"], ["/handbook/", "Handbook", "group.read"], ["/news/", "News", "group.read"], ["/ideas/", "Ideas", "group.read"], ["/calendar/", "Calendar", "group.read"], ["/handovers/", "Handovers", "group.read"], ["/tasks/", "Tasks", "group.read"], ["/repairs/", "Repairs", "maintenance.read"], ["/requests/", "Guest requests", "group.read"], ["/complaints/", "Complaints", "group.read"], ["/housekeeping/", "Housekeeping", "group.read"], ["/people/", "Employees", "group.read"]] },
+  { label: "Operations", items: [["/feed/", "Home", "group.read"], ["/handbook/", "Handbook", "group.read"], ["/news/", "News", "group.read"], ["/ideas/", "Ideas", "group.read"], ["/calendar/", "Calendar", "group.read"], ["/handovers/", "Handovers", "group.read"], ["/tasks/", "Tasks", "group.read"], ["/repairs/", "Repairs", "maintenance.read"], ["/requests/", "Guest requests", "group.read"], ["/complaints/", "Complaints", "group.read"], ["/housekeeping/", "Housekeeping", "group.read"], ["/tutorials/", "Tutorials", "group.read"], ["/people/", "Employees", "group.read"]] },
   { label: "The house", items: [["/house/", "Today", "group.read"], ["/hub/", "Staff hub", "group.read"], ["/manager/", "Manager view", "report.read"], ["/readiness/", "Retreat readiness", "group.read"], ["/pre-retreat/", "Pre-retreat", "group.read"], ["/groups/", "Bookings", "group.read"], ["/rooms/", "Room board", "group.read"]] },
   { label: "In service", items: [["/ops/", "House log", "group.read"], ["/front/", "Front desk", "group.read"], ["/night/", "Night porter", "group.read"], ["/service/", "Department boards", "group.read"], ["/manual/", "Manual", "group.read"], ["/training/", "Training", "group.read"], ["/maintenance/", "Maintenance", "maintenance.read"], ["/kitchen/", "Kitchen", "covers.read"]] },
   { label: "Intelligence", items: [["/duty-manager/", "AI Duty Manager", "group.read"], ["/programme/", "Programme sheet", "group.read"], ["/finance/", "Finance dashboard", "report.read"]] },
@@ -25,7 +25,7 @@ const COLLAB: [string, string, string, string | null][] = [
   ["/complaints/", "Complaints", "report", "group.read"],
 ];
 
-const PRIMARY = new Set(["/feed/", ...COLLAB.map(row => row[0]), "/housekeeping/", "/people/", "/manual/"]);
+const PRIMARY = new Set(["/feed/", ...COLLAB.map(row => row[0]), "/housekeeping/", "/people/", "/manual/", "/tutorials/"]);
 
 function here(path: string | null, href: string) {
   const a = (path || "/").replace(/\/$/, "") || "/";
@@ -71,6 +71,7 @@ export default function Nav({ open }: { open: boolean }) {
           <div className="kit-pop" role="menu">
             {item("/people/", "Employees", "badge", "group.read")}
             {item("/manual/", "Information", "info", "group.read")}
+            {item("/tutorials/", "Tutorials", "school", "group.read")}
             <div className="kit-sec">House tools</div>
             {extra.map(([href, label, perm]) => item(href, label, "chevron_right", perm))}
           </div>
