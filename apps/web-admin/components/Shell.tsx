@@ -4,6 +4,8 @@ import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import Nav, { PAGE_LABELS } from "@/components/Nav";
 import { initials } from "@/components/OpsChrome";
+import { PageIcon, UiIcon } from "@/components/icons";
+import "./Workspace.css";
 import PwaRegister from "@/components/PwaRegister";
 import { StoreProvider, useStore } from "@/lib/store";
 import { token } from "@/lib/api";
@@ -116,12 +118,12 @@ function HouseShell({ children }: { children: ReactNode }) {
   return (
     <div className={"kit" + (navOpen ? "" : " nav-closed")}>
       <header className="kit-top">
-        <button type="button" className="kit-icon" aria-label="Menu" onClick={() => setNavOpen(v => !v)}><span className="material-icons">menu</span></button>
-        <Link href="/feed/" className="kit-logo" aria-label="Home"><img src="/vedanta-official-logo.png" alt="The Vedanta" /></Link>
-        <input className="kit-search" type="search" placeholder="Search..." aria-label="Search" value={query} onChange={e => setQuery(e.target.value)} />
+        <button type="button" className="kit-icon" aria-label="Menu" onClick={() => setNavOpen(v => !v)}><UiIcon name="menu" /></button>
+        <Link href="/feed/" className="kit-logo" aria-label="Home"><img src="/vedanta-official-logo.png" alt="The Vedanta" /><span className="workspace-release">WORKSPACE 7</span></Link>
+        <input className="kit-search" type="search" placeholder="Search your workspace…" aria-label="Search" value={query} onChange={e => setQuery(e.target.value)} />
         {publish && (
           <div className="kit-pop-wrap">
-            <button type="button" className="kit-add" onClick={addEntry}><span className="material-icons">add</span> Add entry</button>
+            <button type="button" className="kit-add" onClick={addEntry}><UiIcon name="add" /> Add entry</button>
             {pop === "add" && (
               <div className="kit-pop kit-pop-down" role="menu">
                 {ADD_MENU.map(([to, label]) => <button type="button" key={to} onClick={() => goAdd(to)}>{label}</button>)}
@@ -129,9 +131,9 @@ function HouseShell({ children }: { children: ReactNode }) {
             )}
           </div>
         )}
-        <button type="button" className="kit-icon" aria-label="Notifications" onClick={() => router.push("/feed/#notifications")}><span className="material-icons">notifications_none</span></button>
+        <button type="button" className="kit-icon" aria-label="Notifications" onClick={() => router.push("/feed/#notifications")}><UiIcon name="bell" /></button>
         <div className="kit-pop-wrap kit-hide-sm">
-          <button type="button" className="kit-icon" aria-label="History" onClick={() => setPop(pop === "history" ? null : "history")}><span className="material-icons">history</span></button>
+          <button type="button" className="kit-icon" aria-label="History" onClick={() => setPop(pop === "history" ? null : "history")}><UiIcon name="history" /></button>
           {pop === "history" && (
             <div className="kit-pop kit-pop-down" role="menu">
               {history.length === 0 && <p>No pages yet.</p>}
@@ -140,7 +142,7 @@ function HouseShell({ children }: { children: ReactNode }) {
           )}
         </div>
         <div className="kit-pop-wrap kit-hide-sm">
-          <button type="button" className={"kit-icon" + (marked ? " on" : "")} aria-label="Bookmarks" onClick={() => setPop(pop === "bookmark" ? null : "bookmark")}><span className="material-icons">{marked ? "bookmark" : "bookmark_border"}</span></button>
+          <button type="button" className={"kit-icon" + (marked ? " on" : "")} aria-label="Bookmarks" onClick={() => setPop(pop === "bookmark" ? null : "bookmark")}><UiIcon name="bookmark" /></button>
           {pop === "bookmark" && (
             <div className="kit-pop kit-pop-down" role="menu">
               <button type="button" onClick={toggleMark}>{marked ? "Remove this page" : "Bookmark this page"}</button>
@@ -164,11 +166,11 @@ function HouseShell({ children }: { children: ReactNode }) {
         <main className="main">{children}</main>
       </div>
       <nav className="kit-bottom" aria-label="Phone">
-        <Link href="/feed/" className={href === "/feed/" ? "on" : ""}><span className="material-icons">home</span>Home</Link>
-        <Link href="/news/" className={href === "/news/" ? "on" : ""}><span className="material-icons">newspaper</span>News</Link>
-        <Link href="/handbook/" className={href === "/handbook/" ? "on" : ""}><span className="material-icons">menu_book</span>Book</Link>
-        <Link href="/tasks/" className={href === "/tasks/" ? "on" : ""}><span className="material-icons">task_alt</span>Tasks</Link>
-        <button type="button" onClick={() => setNavOpen(true)}><span className="material-icons">more_horiz</span>More</button>
+        <Link href="/feed/" className={href === "/feed/" ? "on" : ""}><PageIcon href="/feed/" size={21} />Home</Link>
+        <Link href="/news/" className={href === "/news/" ? "on" : ""}><PageIcon href="/news/" size={21} />News</Link>
+        <Link href="/handbook/" className={href === "/handbook/" ? "on" : ""}><PageIcon href="/handbook/" size={21} />Book</Link>
+        <Link href="/tasks/" className={href === "/tasks/" ? "on" : ""}><PageIcon href="/tasks/" size={21} />Tasks</Link>
+        <button type="button" onClick={() => setNavOpen(true)}><UiIcon name="more" />More</button>
       </nav>
       <PwaRegister />
     </div>

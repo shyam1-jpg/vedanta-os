@@ -2,6 +2,7 @@
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useEffect, useState } from "react";
+import { PageIcon } from "@/components/icons";
 import { useStore } from "@/lib/store";
 
 type Item = [string, string, string, string | null];
@@ -112,13 +113,14 @@ export default function Nav({ open }: { open: boolean }) {
     const on = here(p, href);
     return (
       <Link key={href} href={off ? "#" : href} className={on ? "on" : ""} aria-disabled={!!off} aria-current={on ? "page" : undefined} style={off ? { opacity: .35, pointerEvents: "none" } : undefined}>
-        <span className="material-icons">{icon}</span><span>{label}</span>
+        <span className="nav-icon-tile"><PageIcon href={href} size={20} /></span><span>{label}</span>
       </Link>
     );
   };
 
   return (
     <nav className={"kit-nav" + (open ? " open" : "")} aria-label="House">
+      <div className="workspace-brand"><span className="workspace-symbol">V<span>✦</span></span><div>VEDANTA<span>WORKSPACE <b>7</b></span></div></div>
       {(!q || "home".includes(q)) && item("/feed/", "Home", "home", "group.read")}
       {groups.map(sec => (
         <div key={sec.label}>
