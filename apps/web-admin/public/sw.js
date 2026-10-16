@@ -1,4 +1,4 @@
-const CACHE = "vedanta-os-workspace-7-20261016";
+const CACHE = "vedanta-os-smart-workforce-20261016";
 const APP_SHELL = ["/house/", "/kitchen/", "/manifest.json"];
 
 self.addEventListener("install", (event) => {

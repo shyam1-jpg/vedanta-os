@@ -272,3 +272,11 @@ Property facts: config states 45 rooms; live imported inventory is 42 (see Data 
   - No database, permissions, authentication or Render configuration changes.
   - Verify publication in PR #34 and Render's vedanta-admin deployment history;
     a successful local build alone is not confirmation of a live deployment.
+
+- 2026-10-16 · Smart workforce scheduling and timesheets
+  - Rota suggestions now preview first, explain skipped shifts, balance weekly hours, and check cross-department overlaps, leave/unavailability and an 11-hour planning rest gap. Reviewed assignments stay draft; stale previews are rejected and applications are audited.
+  - Workforce-desk create/place/undo/publish commands share a property transaction lock; assignment validation checks overlapping shifts and the 48-hour planning cap. Zero-minute breaks are preserved.
+  - Added date/search controls, week summaries, printable rota and keyboard-accessible Move / copy controls.
+  - Timesheets reconcile all shifts and clock records per person/London date without reusing a clock record for multiple shifts. Added minute-accurate totals, variance/review filters, staff summaries, individual-record approval, CSV and print. Open/overlapping records cannot be approved; approvals are audited and idempotent.
+  - Phone and workforce-desk clock commands now write both clock registers atomically. Historical phone-only entries remain visible and flagged, without invented breaks/approvals.
+  - Checks: focused scheduling/timekeeping domain and API integration tests, existing staff hours/payroll tests, and production admin build. Authenticated browser verification remains outstanding.
